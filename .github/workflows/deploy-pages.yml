@@ -18,6 +18,10 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # VITE_API_BASE_URL은 빌드 시 번들에 박힘. 환경(Environment) 시크릿만 쓰는 경우
+    # 여기 environment 이름이 GitHub 설정의 환경 이름과 정확히 같아야 secrets.VITE_API_BASE_URL이 주입됩니다.
+    # (환경 대신 쓰려면: 저장소 Settings → Secrets → Actions → Repository secrets에 넣어도 됨)
+    environment: main - eoroff-api
     steps:
       - uses: actions/checkout@v4
 

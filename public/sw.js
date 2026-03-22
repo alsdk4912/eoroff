@@ -1,7 +1,6 @@
-const CACHE_NAME = "eor-pwa-v6-eoroff";
+/* GitHub Pages: 예전 index.html이 캐시에 남으면 VITE_DEPLOY_TAG(빌드 SHA)가 영원히 안 바뀐 것처럼 보임 → HTML은 네트워크 우선 */
+const CACHE_NAME = "eor-pwa-v9-eoroff-auto-update";
 const APP_SHELL = [
-  "./",
-  "./index.html",
   "./manifest.json",
   "./icon.svg",
   "./icon-192.png",
@@ -38,6 +37,23 @@ self.addEventListener("fetch", (event) => {
   const looksLikeApi = url.pathname.includes("/api/");
   if (crossOrigin || looksLikeApi) {
     event.respondWith(fetch(event.request));
+    return;
+  }
+
+  const path = url.pathname;
+  const isHtmlShell =
+    event.request.mode === "navigate" ||
+    event.request.destination === "document" ||
+    path.endsWith("index.html") ||
+    path.endsWith("/eoroff") ||
+    path.endsWith("/eoroff/");
+
+  if (isHtmlShell) {
+    event.respondWith(
+      fetch(event.request, { cache: "no-store" })
+        .then((res) => res)
+        .catch(() => caches.match("./index.html"))
+    );
     return;
   }
 

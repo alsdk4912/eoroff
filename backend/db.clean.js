@@ -154,3 +154,19 @@ export function execute(sql, ...params) {
   return db.prepare(sql).run(...params);
 }
 
+/** SQLite 동기 트랜잭션 (요청 INSERT + 골드키 차감 등) */
+export function runTransaction(fn) {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    fn();
+    db.exec("COMMIT");
+  } catch (e) {
+    try {
+      db.exec("ROLLBACK");
+    } catch {
+      /* ignore */
+    }
+    throw e;
+  }
+}
+

@@ -2,6 +2,26 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
+    <!-- GitHub Pages: 예전 서비스워커가 옛 index/JS를 물고 빌드 번호가 안 바뀌는 것처럼 보일 때가 있어, github.io에서는 SW 제거 후 미등록 -->
+    <script>
+      (function () {
+        try {
+          if (
+            typeof location !== "undefined" &&
+            location.hostname &&
+            location.hostname.endsWith("github.io") &&
+            navigator.serviceWorker
+          ) {
+            navigator.serviceWorker.getRegistrations().then(function (regs) {
+              regs.forEach(function (r) {
+                r.unregister();
+              });
+            });
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#2B9EF0" />
     <meta name="apple-mobile-web-app-capable" content="yes" />

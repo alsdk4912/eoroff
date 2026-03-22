@@ -1,7 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import { execute, initDb, queryAll, queryOne } from "./db.clean.js";
+import { execute, initDb, queryAll, queryOne, runTransaction } from "./db.clean.js";
 
 const app = express();
 app.use(cors());
@@ -71,16 +71,45 @@ app.post("/api/admin/users/:id/reset-password", (req, res) => {
 
 app.post("/api/requests", (req, res) => {
   try {
-    execute(
-      "INSERT INTO requests (id, user_id, leave_date, leave_type, status, requested_at, memo) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      req.body.id,
-      req.body.userId,
-      req.body.leaveDate,
-      req.body.leaveType,
-      req.body.status,
-      req.body.requestedAt,
-      req.body.memo ?? ""
-    );
+    const {
+      id,
+      userId,
+      leaveDate,
+      leaveType,
+      status,
+      requestedAt,
+      memo = "",
+    } = req.body ?? {};
+
+    if (leaveType === "GOLDKEY") {
+      const g = queryOne("SELECT remaining_count FROM goldkeys WHERE user_id = ?", userId);
+      if (!g || Number(g.remaining_count) <= 0) {
+        return res.status(400).json({ error: "잔여 골드키가 없습니다." });
+      }
+    }
+
+    runTransaction(() => {
+      execute(
+        "INSERT INTO requests (id, user_id, leave_date, leave_type, status, requested_at, memo) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        id,
+        userId,
+        leaveDate,
+        leaveType,
+        status,
+        requestedAt,
+        memo
+      );
+      if (leaveType === "GOLDKEY") {
+        const r = execute(
+          "UPDATE goldkeys SET used_count = used_count + 1, remaining_count = remaining_count - 1 WHERE user_id = ? AND remaining_count > 0",
+          userId
+        );
+        if (!r.changes) {
+          throw new Error("골드키 잔여 차감에 실패했습니다.");
+        }
+      }
+    });
+
     res.json({ ok: true });
   } catch (err) {
     console.error("POST /api/requests", err);
@@ -89,16 +118,35 @@ app.post("/api/requests", (req, res) => {
 });
 
 app.post("/api/requests/:id/cancel", (req, res) => {
-  execute("UPDATE requests SET status = 'CANCELLED' WHERE id = ?", req.params.id);
-  execute(
-    "INSERT INTO cancellations (id, leave_request_id, cancelled_by, cancel_reason, cancelled_at) VALUES (?, ?, ?, ?, ?)",
-    req.body.cancellationId,
-    req.params.id,
-    req.body.cancelledBy,
-    req.body.cancelReason,
-    req.body.cancelledAt
-  );
-  res.json({ ok: true });
+  try {
+    const row = queryOne(
+      "SELECT user_id, leave_type, status FROM requests WHERE id = ?",
+      req.params.id
+    );
+    if (!row) return res.status(404).json({ error: "요청을 찾을 수 없습니다." });
+
+    runTransaction(() => {
+      if (row.status === "APPLIED" && row.leave_type === "GOLDKEY") {
+        execute(
+          "UPDATE goldkeys SET used_count = CASE WHEN used_count > 0 THEN used_count - 1 ELSE 0 END, remaining_count = min(quota_total, remaining_count + 1) WHERE user_id = ?",
+          row.user_id
+        );
+      }
+      execute("UPDATE requests SET status = 'CANCELLED' WHERE id = ?", req.params.id);
+      execute(
+        "INSERT INTO cancellations (id, leave_request_id, cancelled_by, cancel_reason, cancelled_at) VALUES (?, ?, ?, ?, ?)",
+        req.body.cancellationId,
+        req.params.id,
+        req.body.cancelledBy,
+        req.body.cancelReason,
+        req.body.cancelledAt
+      );
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /api/requests/:id/cancel", err);
+    res.status(500).json({ error: String(err?.message || err) });
+  }
 });
 
 app.post("/api/requests/:id/select", (req, res) => {

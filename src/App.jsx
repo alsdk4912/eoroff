@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Link, Navigate, Route, Routes } from "react-router-dom";
 import {
   holidaysCache as seedHolidays,
   initialAdjustmentLogs,
@@ -13,13 +13,16 @@ import {
 import { leaveTypeLabel, leaveTypeOrder, statusLabel, validateRequest } from "./utils/rules";
 import { api } from "./api/client";
 
-/** DB·표시용 날짜 문자열 정규화 (UTC/시간대 깨짐 방지) */
+/** DB·표시용 날짜 문자열 정규화 (UTC/시간대 깨짐 방지 — `T` 포함 ISO는 slice만 하면 -1일 됨) */
 function normalizeLeaveDateStr(s) {
-  const t = String(s ?? "")
-    .trim()
-    .slice(0, 10)
-    .replace(/\//g, "-");
-  return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : t;
+  const raw = String(s ?? "").trim().replace(/\//g, "-");
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  if (/^\d{4}-\d{2}-\d{2}T/.test(raw) || /Z|[+-]\d{2}:?\d{2}$/.test(raw)) {
+    const d = new Date(raw);
+    if (!Number.isNaN(d.getTime())) return toLocalYMD(d);
+  }
+  const head = raw.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(head) ? head : raw;
 }
 
 /** 로컬 달력 기준 YYYY-MM-DD (Date UTC 변환 금지) */
@@ -39,28 +42,14 @@ function isWinnerStatus(status) {
   return status === "SELECTED" || status === "APPROVED";
 }
 
-/** 해당 휴가일에 관리자 승인(선정)이 하나라도 있으면 */
-function hasSelectedOnSameDate(allRequests, leaveDate) {
-  return allRequests.some((r) => r.leaveDate === leaveDate && isWinnerStatus(r.status));
-}
-
 /**
- * 신청(APPLIED 등): 유형 색. 선정(SELECTED): 유형 색 유지.
- * 같은 날짜에 선정이 있으면 선정자 제외 전부 회색.
- * 취소: 취소선 (+ 위 규칙에 따라 회색 가능)
+ * 유형별 색상은 항상 표시 (골드키=빨강 등). 취소 건만 취소선.
+ * (이전: 같은 날 다른 사람 승인 시 전부 회색 처리 → 골드키만 신청해도 회색으로 보이는 오해 유발)
  */
-function buildLeaveChipClass(leaveType, status, leaveDate, allRequests) {
-  const parts = ["selected-item"];
+function buildLeaveChipClass(leaveType, status) {
+  const parts = ["selected-item", leaveTypeCssClass(leaveType)];
   if (status === "CANCELLED") parts.push("request-cancelled");
-  const approvedOnDate = hasSelectedOnSameDate(allRequests, leaveDate);
-  if (isWinnerStatus(status)) parts.push(leaveTypeCssClass(leaveType));
-  else if (approvedOnDate) parts.push("request-dimmed-by-approval");
-  else parts.push(leaveTypeCssClass(leaveType));
   return parts.join(" ");
-}
-
-function isDimmedRow(r, allRequests) {
-  return hasSelectedOnSameDate(allRequests, r.leaveDate) && !isWinnerStatus(r.status);
 }
 
 /** iOS/Safari type=date -1일 버그 회피: 연·월·일 분리 */
@@ -114,7 +103,6 @@ function YmdSplitInput({ value, onChange, disabled }) {
 }
 
 function App() {
-  const location = useLocation();
   const [auth, setAuth] = useLocalStorage("or.auth", null);
   const [users, setUsers] = useState(seedUsers);
   const [requests, setRequests] = useLocalStorage("or.requests", initialRequests);
@@ -186,19 +174,6 @@ function App() {
       cancelled = true;
     };
   }, [isLoggedIn, auth?.userId]);
-
-  useEffect(() => {
-    if (!isLoggedIn || location.pathname !== "/calendar") return;
-    void (async () => {
-      try {
-        const data = await api.bootstrap();
-        applyBootstrapPayload(data);
-        setServerMode(true);
-      } catch {
-        setServerMode(false);
-      }
-    })();
-  }, [location.pathname, isLoggedIn, auth?.userId]);
 
   useEffect(() => {
     if (!isLoggedIn || !isAdmin) return;
@@ -357,15 +332,7 @@ function App() {
       } catch {
         doneNote += " (목록 갱신에 실패했습니다. 새로고침 해 보세요.)";
       }
-      if (leaveType === "GOLDKEY" && myGoldkey) {
-        setGoldkeys((prev) =>
-          prev.map((g) =>
-            g.userId === auth.userId
-              ? { ...g, usedCount: g.usedCount + 1, remainingCount: Math.max(0, g.remainingCount - 1) }
-              : g
-          )
-        );
-      }
+      /* 골드키 차감은 서버 INSERT 시 DB 반영 → bootstrap으로 잔여 동기화 */
     } else {
       setRequests((prev) => {
         const next = [...prev, payload];
@@ -423,6 +390,25 @@ function App() {
       return next;
     });
     setCancellations((prev) => [...prev, { id: payload.cancellationId, leaveRequestId: requestId, ...payload }]);
+    if (!serverMode && target?.status === "APPLIED" && target?.leaveType === "GOLDKEY") {
+      setGoldkeys((prev) => {
+        const next = prev.map((g) =>
+          g.userId === target.userId
+            ? {
+                ...g,
+                usedCount: Math.max(0, g.usedCount - 1),
+                remainingCount: Math.min(g.quotaTotal, g.remainingCount + 1),
+              }
+            : g
+        );
+        try {
+          localStorage.setItem("or.goldkeys", JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
+    }
     if (serverMode) {
       try {
         await api.cancelRequest(requestId, payload);
@@ -554,7 +540,7 @@ function App() {
 
       <Routes>
         <Route path="/request" element={<RequestPage leaveType={leaveType} setLeaveType={setLeaveType} leaveDate={leaveDate} setLeaveDate={setLeaveDate} memo={memo} setMemo={setMemo} submitRequest={submitRequest} myGoldkey={myGoldkey} message={message} />} />
-        <Route path="/my" element={<MyRequestsPage myRequests={myRequests} allRequests={requests} cancelRequest={cancelRequest} />} />
+        <Route path="/my" element={<MyRequestsPage myRequests={myRequests} cancelRequest={cancelRequest} />} />
         <Route path="/dashboard" element={<DashboardPage dashboard={dashboard} goldkeys={goldkeys} cancellations={cancellations} users={users} />} />
         <Route
           path="/calendar"
@@ -566,7 +552,6 @@ function App() {
               selectedYmd={calendarSelectedYmd}
               setSelectedYmd={setCalendarSelectedYmd}
               dayRequests={calendarDayRequests}
-              allRequests={requests}
               users={users}
               leaveType={leaveType}
               setLeaveType={setLeaveType}
@@ -614,11 +599,11 @@ function LoginPage({ onLogin }) {
         </form>
         {error ? <p className="msg">{error}</p> : null}
         <p className="help" style={{ marginTop: 12 }}>
-          배포 주소: <strong>alsdk4912.github.io/eoroff</strong> · 빌드{" "}
+          <strong>alsdk4912.github.io/eoroff</strong> · 빌드{" "}
           {import.meta.env.VITE_DEPLOY_TAG
             ? String(import.meta.env.VITE_DEPLOY_TAG).slice(0, 7)
             : "로컬"}{" "}
-          — 이 글자가 안 바뀌면 아직 예전 페이지입니다. GitHub Actions 배포를 확인하세요.
+          (GitHub Actions 배포 커밋 앞 7자리. 배포 후 바뀌면 최신 페이지입니다.)
         </p>
       </section>
     </div>
@@ -644,7 +629,7 @@ function RequestPage({ leaveType, setLeaveType, leaveDate, setLeaveDate, memo, s
   );
 }
 
-function MyRequestsPage({ myRequests, allRequests, cancelRequest }) {
+function MyRequestsPage({ myRequests, cancelRequest }) {
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [search, setSearch] = useState("");
   function matchesStatusFilter(r) {
@@ -688,13 +673,11 @@ function MyRequestsPage({ myRequests, allRequests, cancelRequest }) {
             {rows.map((r) => (
               <tr
                 key={r.id}
-                className={[r.status === "CANCELLED" ? "request-cancelled-row" : "", isDimmedRow(r, allRequests) ? "request-dimmed-row" : ""]
-                  .filter(Boolean)
-                  .join(" ")}
+                className={r.status === "CANCELLED" ? "request-cancelled-row" : ""}
               >
                 <td>{r.leaveDate}</td>
                 <td>
-                  <span className={`leave-type-pill ${buildLeaveChipClass(r.leaveType, r.status, r.leaveDate, allRequests)}`}>{leaveTypeLabel(r.leaveType)}</span>
+                  <span className={`leave-type-pill ${buildLeaveChipClass(r.leaveType, r.status)}`}>{leaveTypeLabel(r.leaveType)}</span>
                 </td>
                 <td>{statusLabel(r.status)}</td>
                 <td>{new Date(r.requestedAt).toLocaleString("ko-KR")}</td>
@@ -825,7 +808,6 @@ function CalendarPage({
   selectedYmd,
   setSelectedYmd,
   dayRequests,
-  allRequests,
   users,
   leaveType,
   setLeaveType,
@@ -839,6 +821,12 @@ function CalendarPage({
   isAdmin,
 }) {
   const [detailTab, setDetailTab] = useState("list");
+
+  useEffect(() => {
+    if (!selectedYmd) return;
+    setLeaveDate(selectedYmd);
+  }, [selectedYmd, setLeaveDate]);
+
   const selectedCell = selectedYmd ? calendarData.find((c) => c.date === selectedYmd) : null;
   const approvedIds = new Set((selectedCell?.approvedApplicants ?? []).map((item) => item.userId));
   const nurseUsers = users.filter((u) => u.role === "NURSE");
@@ -932,7 +920,7 @@ function CalendarPage({
                   <ul className="calendar-applicant-list">
                     {dayRequests.map((r) => (
                       <li key={r.id} className="calendar-applicant-item">
-                        <span className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status, r.leaveDate, allRequests)}`}>
+                        <span className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status)}`}>
                           {users.find((u) => u.id === r.userId)?.name ?? r.userId} · {typeFullLabel(r.leaveType)} · {statusLabel(r.status)}
                         </span>
                       </li>
@@ -1035,7 +1023,7 @@ function AdminPage({ appliedRequests, allRequests, users, selectRequest, rejectR
                   <td>{users.find((u) => u.id === r.userId)?.name}</td>
                   <td>{r.leaveDate}</td>
                   <td>
-                    <span className={`leave-type-pill ${buildLeaveChipClass(r.leaveType, r.status, r.leaveDate, allRequests)}`}>{leaveTypeLabel(r.leaveType)}</span>
+                    <span className={`leave-type-pill ${buildLeaveChipClass(r.leaveType, r.status)}`}>{leaveTypeLabel(r.leaveType)}</span>
                   </td>
                   <td>{new Date(r.requestedAt).toLocaleString("ko-KR")}</td>
                   <td className="row wrap">
@@ -1099,12 +1087,13 @@ function SettingsPage({ apiKey, setApiKey, syncYear, setSyncYear, syncMonth, set
 
 function mapRequestRow(r) {
   const ld = r.leave_date ?? r.leaveDate;
+  const lt = String(r.leave_type ?? r.leaveType ?? "").trim();
   return {
     id: r.id,
     userId: r.user_id ?? r.userId,
     leaveDate: normalizeLeaveDateStr(ld),
-    leaveType: r.leave_type ?? r.leaveType,
-    status: r.status,
+    leaveType: lt,
+    status: String(r.status ?? "").trim(),
     requestedAt: r.requested_at ?? r.requestedAt,
     memo: r.memo ?? "",
     cancelLocked: Boolean(r.cancel_locked ?? r.cancelLocked),
