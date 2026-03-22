@@ -1,7 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import { execute, initDb, queryAll, queryOne, runTransaction } from "./db.clean.js";
+import { execute, initDb, isLikelyEphemeralDeployRisk, queryAll, queryOne, runTransaction } from "./db.clean.js";
 
 const app = express();
 app.use(cors());
@@ -12,7 +12,21 @@ initDb();
 const PORT = Number(process.env.PORT) || 4015;
 const HOST = process.env.HOST || "0.0.0.0";
 
-app.get("/api/health", (_, res) => res.json({ ok: true, storage: "sqlite" }));
+app.get("/api/health", (_, res) => {
+  const ephemeral = isLikelyEphemeralDeployRisk();
+  res.json({
+    ok: true,
+    storage: "sqlite",
+    /** true면 코드 업데이트·재배포 시 DB 파일이 날아갈 수 있음 (신청 내역 유실) */
+    dataLossRiskOnDeploy: ephemeral,
+    sqlitePathSet: Boolean(process.env.SQLITE_PATH),
+    ...(ephemeral
+      ? {
+          hint: "Render Dashboard → Disk 추가 후 SQLITE_PATH를 디스크 마운트 경로 아래 파일로 설정 (예: /data/eoroff.sqlite). 무료 웹 서비스는 Disk 미지원일 수 있어 유료 인스턴스가 필요할 수 있습니다.",
+        }
+      : {}),
+  });
+});
 
 app.get("/api/bootstrap", (_, res) => {
   res.json({

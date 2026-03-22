@@ -3,17 +3,37 @@ import path from "path";
 import Database from "better-sqlite3";
 
 let db;
+/** initDb 이후 절대경로 (헬스·로그용) */
+let resolvedDbPath = "";
 
 function resolveDbPath() {
-  if (process.env.SQLITE_PATH) return process.env.SQLITE_PATH;
-  return path.join(process.cwd(), "backend", "app.sqlite");
+  if (process.env.SQLITE_PATH) return path.resolve(process.env.SQLITE_PATH);
+  return path.resolve(process.cwd(), "backend", "app.sqlite");
+}
+
+export function getResolvedDbPath() {
+  return resolvedDbPath;
+}
+
+/** Render 등: 디스크 미고정이면 재배포 시 DB가 비어 신청 내역이 사라질 수 있음 */
+export function isLikelyEphemeralDeployRisk() {
+  return process.env.RENDER === "true" && !process.env.SQLITE_PATH;
 }
 
 export function initDb() {
   const dbPath = resolveDbPath();
+  resolvedDbPath = dbPath;
   const dir = path.dirname(dbPath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
+  }
+
+  if (isLikelyEphemeralDeployRisk()) {
+    console.warn(
+      "[db] RENDER + SQLITE_PATH 없음 → 재배포/슬립 시 프로젝트 폴더의 SQLite가 새로 만들어져 휴가 신청 내역이 사라질 수 있습니다. Persistent Disk를 붙이고 Environment에 SQLITE_PATH=/data/eoroff.sqlite 처럼 디스크 경로를 지정하세요."
+    );
+  } else {
+    console.log(`[db] SQLite: ${dbPath}`);
   }
 
   db = new Database(dbPath);
