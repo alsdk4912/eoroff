@@ -541,7 +541,7 @@ function App() {
       <Routes>
         <Route path="/request" element={<RequestPage leaveType={leaveType} setLeaveType={setLeaveType} leaveDate={leaveDate} setLeaveDate={setLeaveDate} memo={memo} setMemo={setMemo} submitRequest={submitRequest} myGoldkey={myGoldkey} message={message} />} />
         <Route path="/my" element={<MyRequestsPage myRequests={myRequests} cancelRequest={cancelRequest} />} />
-        <Route path="/dashboard" element={<DashboardPage dashboard={dashboard} goldkeys={goldkeys} cancellations={cancellations} users={users} />} />
+        <Route path="/dashboard" element={<DashboardPage dashboard={dashboard} goldkeys={goldkeys} requests={requests} cancellations={cancellations} users={users} />} />
         <Route
           path="/calendar"
           element={
@@ -704,18 +704,28 @@ function MyRequestsPage({ myRequests, cancelRequest }) {
   );
 }
 
-function DashboardPage({ dashboard, goldkeys, cancellations, users }) {
+/** 골드키는 신청이 곧 사용으로 간주 — 취소된 건만 제외하고 신청 건수를 센다 */
+function countGoldkeyApplyUse(requests, userId) {
+  return requests.filter(
+    (r) => r.userId === userId && r.leaveType === "GOLDKEY" && r.status !== "CANCELLED"
+  ).length;
+}
+
+function DashboardPage({ dashboard, goldkeys, requests, cancellations, users }) {
   return (
     <>
       <section className="card">
         <h2>골드키 잔여 내역</h2>
+        <p className="help" style={{ marginBottom: 10 }}>
+          골드키는 휴가 선정이 확정되는 유형이라, 아래 <strong>신청·사용</strong> 열은 골드키로 넣은 신청 건수(취소 제외)와 같습니다. 잔여 = 총개수 − 신청·사용.
+        </p>
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
                 <th>이름</th>
                 <th>골드키 총개수</th>
-                <th>사용개수</th>
+                <th>신청·사용</th>
                 <th>잔여개수</th>
               </tr>
             </thead>
@@ -727,14 +737,18 @@ function DashboardPage({ dashboard, goldkeys, cancellations, users }) {
                     users.find((u) => u.id === b.userId)?.name || ""
                   )
                 )
-                .map((g) => (
-                  <tr key={g.userId}>
-                    <td>{users.find((u) => u.id === g.userId)?.name ?? g.userId}</td>
-                    <td>{g.quotaTotal}</td>
-                    <td>{g.usedCount}</td>
-                    <td>{g.remainingCount}</td>
-                  </tr>
-                ))}
+                .map((g) => {
+                  const applyUse = countGoldkeyApplyUse(requests, g.userId);
+                  const remaining = Math.max(0, (g.quotaTotal ?? 0) - applyUse);
+                  return (
+                    <tr key={g.userId}>
+                      <td>{users.find((u) => u.id === g.userId)?.name ?? g.userId}</td>
+                      <td>{g.quotaTotal}</td>
+                      <td>{applyUse}</td>
+                      <td>{remaining}</td>
+                    </tr>
+                  );
+                })}
             </tbody>
           </table>
         </div>
@@ -1042,7 +1056,38 @@ function AdminPage({ appliedRequests, allRequests, users, selectRequest, rejectR
         </div>
       </section>
       <section className="card"><h2>일반휴가 협의 메모</h2><ul>{notes.map((n) => <li key={n.id}>요청ID {n.leaveRequestId} / 순번 {n.agreedOrder} / {n.content}</li>)}</ul></section>
-      <section className="card"><h2>골드키 관리(조회 전용)</h2><div className="table-wrap"><table><thead><tr><th>간호사</th><th>총할당</th><th>사용</th><th>잔여</th></tr></thead><tbody>{goldkeys.map((g) => <tr key={g.userId}><td>{users.find((u) => u.id === g.userId)?.name}</td><td>{g.quotaTotal}</td><td>{g.usedCount}</td><td>{g.remainingCount}</td></tr>)}</tbody></table></div></section>
+      <section className="card">
+        <h2>골드키 관리(조회 전용)</h2>
+        <p className="help" style={{ marginBottom: 8 }}>
+          신청·사용 = 골드키 신청 건수(취소 제외). 잔여 = 총할당 − 신청·사용.
+        </p>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>간호사</th>
+                <th>총할당</th>
+                <th>신청·사용</th>
+                <th>잔여</th>
+              </tr>
+            </thead>
+            <tbody>
+              {goldkeys.map((g) => {
+                const applyUse = countGoldkeyApplyUse(allRequests, g.userId);
+                const remaining = Math.max(0, (g.quotaTotal ?? 0) - applyUse);
+                return (
+                  <tr key={g.userId}>
+                    <td>{users.find((u) => u.id === g.userId)?.name}</td>
+                    <td>{g.quotaTotal}</td>
+                    <td>{applyUse}</td>
+                    <td>{remaining}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </>
   );
 }
