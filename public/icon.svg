@@ -1,15 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#007bff" />
-      <stop offset="100%" stop-color="#005fd1" />
-    </linearGradient>
-  </defs>
-  <rect width="512" height="512" rx="112" fill="url(#bg)" />
-  <g fill="none" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M92 256c38-54 95-112 164-112s126 58 164 112c-38 54-95 112-164 112S130 310 92 256z" stroke-width="28" />
-    <circle cx="256" cy="256" r="56" stroke-width="24" />
-    <path d="M362 152l62-62" stroke-width="20" />
-    <path d="M408 120l16-30" stroke-width="18" />
+  <rect width="512" height="512" rx="96" fill="#2B9EF0" />
+  <!-- 구름 -->
+  <g fill="none" stroke="#ffffff" stroke-width="10" stroke-linecap="round">
+    <path d="M320 118c-8-22-35-34-58-26-6-28-35-46-64-40-22 4-40 22-44 44-18 2-32 18-32 36 0 22 18 40 40 40h98c26 0 48-20 52-46 4-2 6-4 8-8z" />
   </g>
+  <!-- 야자수 -->
+  <g fill="none" stroke="#ffffff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M128 400V280" />
+    <path d="M148 400V300" />
+    <path d="M118 268c-28-48-22-92 8-120" />
+    <path d="M138 278c18-62 8-108-18-132" />
+    <path d="M158 288c32-58 28-102 2-128" />
+    <path d="M108 248c-42-8-62 12-68 38" />
+    <path d="M168 258c38-18 58-8 72 14" />
+  </g>
+  <!-- EOR -->
+  <text x="310" y="258" fill="#ffffff" font-family="system-ui, -apple-system, sans-serif" font-size="88" font-weight="800">EOR</text>
+  <!-- 휴가시스템 -->
+  <text x="256" y="378" fill="#ffffff" font-family="system-ui, -apple-system, 'Apple SD Gothic Neo', sans-serif" font-size="44" font-weight="600" text-anchor="middle">휴가시스템</text>
 </svg>
