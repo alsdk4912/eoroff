@@ -1,13 +1,15 @@
-# Render: New → Blueprint → GitHub eoroff 연결
-# ⚠️ 대시보드로만 만들었다면 Root Directory 가 "src" 로 되어 있으면 실패함 → 비우거나 "." 로 (아래 rootDir 참고)
+# Render: New → Blueprint → GitHub eoroff 만 연결 (기존 Elixir 서비스는 삭제 후 새로)
 services:
   - type: web
     name: eoroff-api
     runtime: node
     plan: free
     region: singapore
-    # 저장소 최상단에 package.json 이 있을 때 (React src 폴더가 아님!)
     rootDir: .
-    buildCommand: npm install --omit=dev
+    # 대시보드 Build에 "added" 등이 붙으면 bash: added: command not found → 칸 비우고 Blueprint만 쓰기
+    buildCommand: npm run render:install
     startCommand: npm start
     healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22.12.0"

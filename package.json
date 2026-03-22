@@ -12,7 +12,8 @@
     "dev:all": "concurrently \"npm run dev\" \"npm run dev:server\"",
     "build": "vite build",
     "preview": "vite preview",
-    "start": "node backend/server.clean.js"
+    "start": "node backend/server.clean.js",
+    "render:install": "npm install --omit=dev"
   },
   "dependencies": {
     "cors": "^2.8.5",

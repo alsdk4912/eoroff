@@ -5,6 +5,11 @@
 `package.json` 을 `/src/` 안에서 찾는다고 나오면 → Render에 **Root Directory 가 `src` 로 잘못 들어간 것**입니다.  
 **`package.json`은 GitHub 저장소 맨 바깥(최상단)** 에 있어야 합니다.
 
+### `bash: added: command not found`
+
+Render **Build Command** 칸 맨 앞에 **`added`** 같은 단어가 들어가 있을 때 납니다 (diff 복사 실수).  
+**Settings → Build & Deploy → Build Command** 를 **완전히 비운 뒤** 저장하고, **Blueprint 다시 적용**하거나 한 줄만 넣으세요: `npm run render:install`
+
 ---
 
 ## 방법 A — Blueprint로 한 번에 (추천)
@@ -34,7 +39,7 @@
 | **Branch** | `main` |
 | **Root Directory** | **비움** (아무 글자도 없음. `src` 넣지 마세요) |
 | **Runtime** | **Node** |
-| **Build Command** | `npm install --omit=dev` |
+| **Build Command** | `npm run render:install` |
 | **Start Command** | `npm start` |
 
 4. **Create Web Service**
