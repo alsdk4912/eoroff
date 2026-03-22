@@ -1,9 +1,12 @@
-# 버전2 저장소 이름: eoroff → https://<USER>.github.io/eoroff/
+# Pages 배포 전 필수: 저장소 Settings → Pages → Source = "GitHub Actions" 선택
+# (안 하면 deploy 단계에서 Failed to create deployment 404 발생)
 name: Deploy GitHub Pages
 
 on:
   push:
     branches: [main, master]
+  # Actions 탭 → 이 워크플로 → Run workflow (수동 실행)
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -21,7 +24,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
       - run: npm ci
       - name: Build (base = /eoroff/ 자동)

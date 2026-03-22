@@ -110,7 +110,8 @@ function App() {
         msg.includes("Failed to fetch") ||
         msg.includes("Load failed") ||
         msg.includes("NetworkError") ||
-        /^HTTP 404\b/.test(msg);
+        /^HTTP 404\b/.test(msg) ||
+        /^HTTP 405\b/.test(msg);
 
       if (!allowOfflineLogin) {
         throw new Error(msg || "로그인에 실패했습니다. 이름/비밀번호를 확인하세요.");

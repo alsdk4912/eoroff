@@ -1,4 +1,5 @@
 // 로컬: 폰으로 http://192.168.x.x:5175 접속 시 API는 자동으로 http://192.168.x.x:4015
+// GitHub Pages: VITE_API_BASE_URL 없이 /api 로 POST 하면 정적 서버가 405를 돌려줌 → Render URL을 Actions Secret에 넣거나 null 처리
 const DEV_API_PORT = 4015;
 
 function getResolvedApiBase() {
@@ -6,7 +7,10 @@ function getResolvedApiBase() {
   if (raw !== undefined && raw !== null && String(raw).trim() !== "") {
     return String(raw).trim().replace(/\/$/, "");
   }
-  if (import.meta.env.PROD) return "";
+  if (import.meta.env.PROD) {
+    // API 주소를 빌드에 넣지 않으면 상대 /api 로 POST → 정적 호스팅에서 405. 오프라인 로그인만 사용.
+    return null;
+  }
   if (typeof window !== "undefined") {
     const h = window.location.hostname;
     if (h && h !== "localhost" && h !== "127.0.0.1") {
@@ -16,10 +20,16 @@ function getResolvedApiBase() {
   return `http://localhost:${DEV_API_PORT}`;
 }
 
-const BASE_URL = `${getResolvedApiBase()}/api`;
+const API_ROOT = (() => {
+  const b = getResolvedApiBase();
+  return b === null ? null : `${b}/api`;
+})();
 
 async function requestJson(path, options = {}) {
-  const res = await fetch(`${BASE_URL}${path}`, {
+  if (API_ROOT === null) {
+    throw new TypeError("Failed to fetch");
+  }
+  const res = await fetch(`${API_ROOT}${path}`, {
     headers: { "Content-Type": "application/json" },
     ...options,
   });
@@ -62,7 +72,8 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   downloadBackupSql: async () => {
-    const res = await fetch(`${BASE_URL}/admin/backup-sql`);
+    if (API_ROOT === null) throw new TypeError("Failed to fetch");
+    const res = await fetch(`${API_ROOT}/admin/backup-sql`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.text();
   },
