@@ -10,6 +10,8 @@
 
 ## 2. Render (백엔드 API)
 
+- DB는 **`better-sqlite3`** (Render에서 `node:sqlite` 내장 모듈은 동작하지 않는 경우가 많음).
+- Build: `npm install` (native 모듈 빌드 포함). Node **20+** 권장.
 - Start command 예: `npm start` → `node backend/server.clean.js`
 - Root에 `backend/app.sqlite`만 쓰면 **무료 인스턴스 재시작 시 DB가 초기화**될 수 있음. 데이터를 유지하려면 **Persistent Disk**를 마운트하고 DB 경로를 디스크로 두는 설정이 필요합니다.
 

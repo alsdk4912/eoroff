@@ -1,9 +1,24 @@
-import { DatabaseSync } from "node:sqlite";
+import fs from "fs";
+import path from "path";
+import Database from "better-sqlite3";
 
 let db;
 
+function resolveDbPath() {
+  if (process.env.SQLITE_PATH) return process.env.SQLITE_PATH;
+  return path.join(process.cwd(), "backend", "app.sqlite");
+}
+
 export function initDb() {
-  db = new DatabaseSync("./backend/app.sqlite");
+  const dbPath = resolveDbPath();
+  const dir = path.dirname(dbPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  db = new Database(dbPath);
+  db.pragma("journal_mode = WAL");
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -154,19 +169,7 @@ export function execute(sql, ...params) {
   return db.prepare(sql).run(...params);
 }
 
-/** SQLite 동기 트랜잭션 (요청 INSERT + 골드키 차감 등) */
+/** SQLite 트랜잭션 (better-sqlite3: 예외 시 자동 롤백) */
 export function runTransaction(fn) {
-  db.exec("BEGIN IMMEDIATE");
-  try {
-    fn();
-    db.exec("COMMIT");
-  } catch (e) {
-    try {
-      db.exec("ROLLBACK");
-    } catch {
-      /* ignore */
-    }
-    throw e;
-  }
+  db.transaction(fn)();
 }
-
