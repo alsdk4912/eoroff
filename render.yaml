@@ -1,0 +1,13 @@
+# Render: New → Blueprint → GitHub eoroff 연결
+# ⚠️ 대시보드로만 만들었다면 Root Directory 가 "src" 로 되어 있으면 실패함 → 비우거나 "." 로 (아래 rootDir 참고)
+services:
+  - type: web
+    name: eoroff-api
+    runtime: node
+    plan: free
+    region: singapore
+    # 저장소 최상단에 package.json 이 있을 때 (React src 폴더가 아님!)
+    rootDir: .
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    healthCheckPath: /api/health
