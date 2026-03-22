@@ -121,7 +121,7 @@ function App() {
       const matches = users.filter((u) => normalizeLoginName(u.name) === n);
       if (matches.length === 0) {
         throw new Error(
-          "API 서버에 연결할 수 없습니다. 배포된 백엔드 주소(VITE_API_BASE_URL)를 빌드에 넣었는지 확인하거나, 샘플 목록의 이름·비밀번호(1234)로 시도하세요."
+          "지금은 API에 연결되지 않았습니다(GitHub Actions 빌드에 VITE_API_BASE_URL Secret 없음 등). 오프라인 로그인은 DB와 같은 이름만 됩니다: 오민아·김해림·관리자 등(비번 1234). Render를 쓰면 Secret 넣고 Pages를 다시 배포하세요."
         );
       }
       if (matches.length > 1) throw new Error("동명이인이 있어 로그인할 수 없습니다.");

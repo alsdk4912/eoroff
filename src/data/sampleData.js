@@ -1,13 +1,49 @@
-// 서버 부트스트랩 이전에 화면이 뜨도록 하는 최소 seed 데이터입니다.
-// 로그인 이후에는 `/api/bootstrap` 결과로 실제 데이터가 덮어써집니다.
+// 서버 부트스트랩 전 초기 화면용. backend/db.clean.js 시드와 동일한 이름·id (API 없을 때 오프라인 로그인)
+// 로그인 후 `/api/bootstrap`이 있으면 서버 데이터로 덮어씀.
 
-export const users = [
-  { id: "u_admin_001", name: "관리자", role: "ADMIN", employeeNo: "A0001" },
-  { id: "u_admin_002", name: "진기숙", role: "ADMIN", employeeNo: "A0002" },
-  { id: "u_nurse_001", name: "오민아", role: "NURSE", employeeNo: "N0001" },
+const NURSE_NAMES = [
+  "오민아",
+  "이양희",
+  "김해림",
+  "손다솜",
+  "양현아",
+  "유진",
+  "이지선",
+  "임희종",
+  "장성필",
+  "장지은",
+  "정수영",
+  "최유경",
+  "최유리",
+  "최종선",
+  "허정숙",
+  "이현숙",
 ];
 
-export const initialGoldkeys = [{ userId: "u_nurse_001", quotaTotal: 10, usedCount: 0, remainingCount: 10 }];
+const ADMIN_NAMES = ["관리자", "진기숙"];
+
+export const users = [
+  ...NURSE_NAMES.map((name, idx) => ({
+    id: `u_nurse_${idx + 1}`,
+    name,
+    role: "NURSE",
+    employeeNo: `N${String(idx + 1).padStart(4, "0")}`,
+  })),
+  ...ADMIN_NAMES.map((name, idx) => ({
+    id: `u_admin_${idx + 1}`,
+    name,
+    role: "ADMIN",
+    employeeNo: `A${String(idx + 1).padStart(4, "0")}`,
+  })),
+];
+
+export const initialGoldkeys = NURSE_NAMES.map((_, idx) => ({
+  userId: `u_nurse_${idx + 1}`,
+  quotaTotal: 10,
+  usedCount: 0,
+  remainingCount: 10,
+}));
+
 export const initialRequests = [];
 export const initialPriorityNotes = [];
 export const initialCancellations = [];
