@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, Navigate, Route, Routes, useNavigate } from "react-router-dom";
+import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import {
   holidaysCache as seedHolidays,
   initialAdjustmentLogs,
@@ -13,8 +13,108 @@ import {
 import { leaveTypeLabel, leaveTypeOrder, statusLabel, validateRequest } from "./utils/rules";
 import { api } from "./api/client";
 
+/** DB·표시용 날짜 문자열 정규화 (UTC/시간대 깨짐 방지) */
+function normalizeLeaveDateStr(s) {
+  const t = String(s ?? "")
+    .trim()
+    .slice(0, 10)
+    .replace(/\//g, "-");
+  return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : t;
+}
+
+/** 로컬 달력 기준 YYYY-MM-DD (Date UTC 변환 금지) */
+function toLocalYMD(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function leaveTypeCssClass(leaveType) {
+  return `type-${String(leaveType || "").toLowerCase()}`;
+}
+
+/** v2 서버는 승인 시 APPROVED, 레거시 데이터는 SELECTED */
+function isWinnerStatus(status) {
+  return status === "SELECTED" || status === "APPROVED";
+}
+
+/** 해당 휴가일에 관리자 승인(선정)이 하나라도 있으면 */
+function hasSelectedOnSameDate(allRequests, leaveDate) {
+  return allRequests.some((r) => r.leaveDate === leaveDate && isWinnerStatus(r.status));
+}
+
+/**
+ * 신청(APPLIED 등): 유형 색. 선정(SELECTED): 유형 색 유지.
+ * 같은 날짜에 선정이 있으면 선정자 제외 전부 회색.
+ * 취소: 취소선 (+ 위 규칙에 따라 회색 가능)
+ */
+function buildLeaveChipClass(leaveType, status, leaveDate, allRequests) {
+  const parts = ["selected-item"];
+  if (status === "CANCELLED") parts.push("request-cancelled");
+  const approvedOnDate = hasSelectedOnSameDate(allRequests, leaveDate);
+  if (isWinnerStatus(status)) parts.push(leaveTypeCssClass(leaveType));
+  else if (approvedOnDate) parts.push("request-dimmed-by-approval");
+  else parts.push(leaveTypeCssClass(leaveType));
+  return parts.join(" ");
+}
+
+function isDimmedRow(r, allRequests) {
+  return hasSelectedOnSameDate(allRequests, r.leaveDate) && !isWinnerStatus(r.status);
+}
+
+/** iOS/Safari type=date -1일 버그 회피: 연·월·일 분리 */
+function YmdSplitInput({ value, onChange, disabled }) {
+  const parsed = useMemo(() => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || "").trim());
+    if (m) return { y: m[1], mo: m[2], d: m[3] };
+    const t = toLocalYMD(new Date()).split("-");
+    return { y: t[0], mo: t[1], d: t[2] };
+  }, [value]);
+
+  const maxDay = new Date(Number(parsed.y), Number(parsed.mo), 0).getDate();
+  const safeD = String(Math.min(Math.max(1, Number(parsed.d)), maxDay)).padStart(2, "0");
+
+  const years = useMemo(() => {
+    const cy = new Date().getFullYear();
+    return Array.from({ length: 9 }, (_, i) => String(cy - 3 + i));
+  }, []);
+
+  const update = (ny, nmo, nd) => {
+    const max = new Date(Number(ny), Number(nmo), 0).getDate();
+    const dn = Math.min(Math.max(1, Number(nd)), max);
+    onChange(`${ny}-${String(nmo).padStart(2, "0")}-${String(dn).padStart(2, "0")}`);
+  };
+
+  return (
+    <div className="ymd-split row wrap">
+      <select disabled={disabled} className="ymd-select" aria-label="연도" value={parsed.y} onChange={(e) => update(e.target.value, parsed.mo, safeD)}>
+        {years.map((yy) => (
+          <option key={yy} value={yy}>
+            {yy}년
+          </option>
+        ))}
+      </select>
+      <select disabled={disabled} className="ymd-select" aria-label="월" value={parsed.mo} onChange={(e) => update(parsed.y, e.target.value, safeD)}>
+        {Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, "0")).map((mo) => (
+          <option key={mo} value={mo}>
+            {Number(mo)}월
+          </option>
+        ))}
+      </select>
+      <select disabled={disabled} className="ymd-select" aria-label="일" value={safeD} onChange={(e) => update(parsed.y, parsed.mo, e.target.value)}>
+        {Array.from({ length: maxDay }, (_, i) => String(i + 1).padStart(2, "0")).map((dd) => (
+          <option key={dd} value={dd}>
+            {Number(dd)}일
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 function App() {
-  const navigate = useNavigate();
+  const location = useLocation();
   const [auth, setAuth] = useLocalStorage("or.auth", null);
   const [users, setUsers] = useState(seedUsers);
   const [requests, setRequests] = useLocalStorage("or.requests", initialRequests);
@@ -26,7 +126,7 @@ function App() {
   const [holidays, setHolidays] = useLocalStorage("or.holidays", seedHolidays);
 
   const [leaveType, setLeaveType] = useState("GOLDKEY");
-  const [leaveDate, setLeaveDate] = useState("");
+  const [leaveDate, setLeaveDate] = useState(() => toLocalYMD(new Date()));
   const [memo, setMemo] = useState("");
   const [message, setMessage] = useState("");
   const [apiMessage, setApiMessage] = useState("");
@@ -35,6 +135,8 @@ function App() {
   const [restoreSqlText, setRestoreSqlText] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [serverMode, setServerMode] = useState(false);
+  /** 첫 bootstrap 완료 전에 서버 저장·덮어쓰기 레이스 방지 */
+  const [dataHydrated, setDataHydrated] = useState(false);
   const now = new Date();
   const [syncYear, setSyncYear] = useState(String(now.getFullYear()));
   const [syncMonth, setSyncMonth] = useState(String(now.getMonth() + 1).padStart(2, "0"));
@@ -42,15 +144,61 @@ function App() {
     `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
   );
   const [managedUsers, setManagedUsers] = useState([]);
+  /** 달력에서 선택한 날짜(YYYY-MM-DD) — 상세 패널·신청 탭에 사용 */
+  const [calendarSelectedYmd, setCalendarSelectedYmd] = useState(null);
 
   const currentUser = users.find((u) => u.id === auth?.userId);
   const isAdmin = currentUser?.role === "ADMIN";
   const myGoldkey = goldkeys.find((g) => g.userId === auth?.userId);
   const isLoggedIn = Boolean(auth?.userId);
 
+  function applyBootstrapPayload(data) {
+    setUsers(data.users.map((u) => ({ id: u.id, name: u.name, role: u.role, employeeNo: u.employee_no })));
+    setRequests(data.requests.map(mapRequestRow));
+    setNotes(data.notes.map((n) => ({ id: n.id, leaveRequestId: n.leave_request_id, content: n.content, agreedOrder: n.agreed_order })));
+    setCancellations(data.cancellations.map((c) => ({ id: c.id, leaveRequestId: c.leave_request_id, cancelledBy: c.cancelled_by, cancelReason: c.cancel_reason, cancelledAt: c.cancelled_at })));
+    setSelections(data.selections.map((s) => ({ id: s.id, leaveRequestId: s.leave_request_id, selectedBy: s.selected_by, selectedAt: s.selected_at })));
+    setGoldkeys(data.goldkeys.map((g) => ({ userId: g.user_id, quotaTotal: g.quota_total, usedCount: g.used_count, remainingCount: g.remaining_count })));
+    setAdjustmentLogs(data.logs.map((l) => ({ id: l.id, userId: l.user_id, beforeQuota: l.before_quota, afterQuota: l.after_quota, changedBy: l.changed_by, changedAt: l.changed_at })));
+    setHolidays(data.holidays.map((h) => ({ holidayDate: h.holiday_date, holidayName: h.holiday_name, isHoliday: Boolean(h.is_holiday) })));
+  }
+
   useEffect(() => {
-    if (isLoggedIn) bootstrap();
-  }, [isLoggedIn]);
+    if (!isLoggedIn) {
+      setDataHydrated(true);
+      return;
+    }
+    let cancelled = false;
+    setDataHydrated(false);
+    void (async () => {
+      try {
+        const data = await api.bootstrap();
+        if (cancelled) return;
+        applyBootstrapPayload(data);
+        setServerMode(true);
+      } catch {
+        if (!cancelled) setServerMode(false);
+      } finally {
+        if (!cancelled) setDataHydrated(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn, auth?.userId]);
+
+  useEffect(() => {
+    if (!isLoggedIn || location.pathname !== "/calendar") return;
+    void (async () => {
+      try {
+        const data = await api.bootstrap();
+        applyBootstrapPayload(data);
+        setServerMode(true);
+      } catch {
+        setServerMode(false);
+      }
+    })();
+  }, [location.pathname, isLoggedIn, auth?.userId]);
 
   useEffect(() => {
     if (!isLoggedIn || !isAdmin) return;
@@ -74,14 +222,7 @@ function App() {
   async function bootstrap() {
     try {
       const data = await api.bootstrap();
-      setUsers(data.users.map((u) => ({ id: u.id, name: u.name, role: u.role, employeeNo: u.employee_no })));
-      setRequests(data.requests.map(mapRequestRow));
-      setNotes(data.notes.map((n) => ({ id: n.id, leaveRequestId: n.leave_request_id, content: n.content, agreedOrder: n.agreed_order })));
-      setCancellations(data.cancellations.map((c) => ({ id: c.id, leaveRequestId: c.leave_request_id, cancelledBy: c.cancelled_by, cancelReason: c.cancel_reason, cancelledAt: c.cancelled_at })));
-      setSelections(data.selections.map((s) => ({ id: s.id, leaveRequestId: s.leave_request_id, selectedBy: s.selected_by, selectedAt: s.selected_at })));
-      setGoldkeys(data.goldkeys.map((g) => ({ userId: g.user_id, quotaTotal: g.quota_total, usedCount: g.used_count, remainingCount: g.remaining_count })));
-      setAdjustmentLogs(data.logs.map((l) => ({ id: l.id, userId: l.user_id, beforeQuota: l.before_quota, afterQuota: l.after_quota, changedBy: l.changed_by, changedAt: l.changed_at })));
-      setHolidays(data.holidays.map((h) => ({ holidayDate: h.holiday_date, holidayName: h.holiday_name, isHoliday: Boolean(h.is_holiday) })));
+      applyBootstrapPayload(data);
       setServerMode(true);
     } catch {
       setServerMode(false);
@@ -121,7 +262,7 @@ function App() {
       const matches = users.filter((u) => normalizeLoginName(u.name) === n);
       if (matches.length === 0) {
         throw new Error(
-          "지금은 API에 연결되지 않았습니다(GitHub Actions 빌드에 VITE_API_BASE_URL Secret 없음 등). 오프라인 로그인은 DB와 같은 이름만 됩니다: 오민아·김해림·관리자 등(비번 1234). Render를 쓰면 Secret 넣고 Pages를 다시 배포하세요."
+          "지금은 API에 연결되지 않아 오프라인 로그인만 됩니다. 이름은 DB 시드와 동일해야 합니다(김해림·이양희 등, 비번 1234). 전원이 같은 DB를 쓰려면 GitHub Secret VITE_API_BASE_URL을 넣고 Pages를 다시 빌드하세요."
         );
       }
       if (matches.length > 1) throw new Error("동명이인이 있어 로그인할 수 없습니다.");
@@ -156,7 +297,7 @@ function App() {
     () => ({
       total: requests.length,
       applied: requests.filter((r) => r.status === "APPLIED").length,
-      selected: requests.filter((r) => r.status === "SELECTED").length,
+      selected: requests.filter((r) => isWinnerStatus(r.status)).length,
       cancelled: requests.filter((r) => r.status === "CANCELLED").length,
     }),
     [requests]
@@ -166,15 +307,23 @@ function App() {
     return buildMonthMatrix(year, month, requests, users);
   }, [calendarMonth, requests, users]);
 
-  function handleCalendarDateSelect(date, options = {}) {
-    setLeaveDate(date);
-    if (options.navigate !== false) {
-      navigate("/request");
-    }
-  }
+  const calendarDayRequests = useMemo(() => {
+    if (!calendarSelectedYmd) return [];
+    return [...requests]
+      .filter((r) => r.leaveDate === calendarSelectedYmd)
+      .sort((a, b) =>
+        a.leaveDate !== b.leaveDate
+          ? a.leaveDate.localeCompare(b.leaveDate)
+          : leaveTypeOrder(a.leaveType) - leaveTypeOrder(b.leaveType) || a.requestedAt.localeCompare(b.requestedAt)
+      );
+  }, [requests, calendarSelectedYmd]);
 
   async function submitRequest(e) {
     e.preventDefault();
+    if (!dataHydrated) {
+      setMessage("데이터를 불러오는 중입니다. 잠시 후 다시 시도해 주세요.");
+      return;
+    }
     const error = validateRequest({
       leaveType,
       leaveDate,
@@ -193,56 +342,102 @@ function App() {
       memo,
       cancelLocked: false,
     };
-    setRequests((prev) => [...prev, payload]);
-    if (serverMode) await api.createRequest(payload);
-    if (leaveType === "GOLDKEY" && myGoldkey) {
-      setGoldkeys((prev) =>
-        prev.map((g) =>
-          g.userId === auth.userId
-            ? { ...g, usedCount: g.usedCount + 1, remainingCount: Math.max(0, g.remainingCount - 1) }
-            : g
-        )
-      );
+    setMessage("");
+    let doneNote = "휴가 신청이 등록되었습니다.";
+
+    if (serverMode) {
+      try {
+        await api.createRequest(payload);
+      } catch (err) {
+        setMessage(`서버에 저장하지 못했습니다: ${err?.message || err}. 네트워크·API 주소를 확인하세요.`);
+        return;
+      }
+      try {
+        await bootstrap();
+      } catch {
+        doneNote += " (목록 갱신에 실패했습니다. 새로고침 해 보세요.)";
+      }
+      if (leaveType === "GOLDKEY" && myGoldkey) {
+        setGoldkeys((prev) =>
+          prev.map((g) =>
+            g.userId === auth.userId
+              ? { ...g, usedCount: g.usedCount + 1, remainingCount: Math.max(0, g.remainingCount - 1) }
+              : g
+          )
+        );
+      }
+    } else {
+      setRequests((prev) => {
+        const next = [...prev, payload];
+        try {
+          localStorage.setItem("or.requests", JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
+      if (leaveType === "GOLDKEY" && myGoldkey) {
+        setGoldkeys((prev) => {
+          const next = prev.map((g) =>
+            g.userId === auth.userId
+              ? { ...g, usedCount: g.usedCount + 1, remainingCount: Math.max(0, g.remainingCount - 1) }
+              : g
+          );
+          try {
+            localStorage.setItem("or.goldkeys", JSON.stringify(next));
+          } catch {
+            /* ignore */
+          }
+          return next;
+        });
+      }
     }
-    setMessage("휴가 신청이 등록되었습니다.");
-    setLeaveDate("");
+
+    setMessage(doneNote);
+    setLeaveDate(calendarSelectedYmd ?? toLocalYMD(new Date()));
     setMemo("");
   }
 
   async function cancelRequest(requestId) {
     const target = requests.find((r) => r.id === requestId);
-    if (target?.cancelLocked) return false;
-
-    setRequests((prev) =>
-      prev.map((r) => (r.id === requestId ? { ...r, cancelLocked: true } : r))
-    );
-
+    if (target?.cancelLocked) return;
     const reason = window.prompt("취소 사유를 입력하세요");
-    if (!reason) {
-      setRequests((prev) =>
-        prev.map((r) => (r.id === requestId ? { ...r, cancelLocked: false } : r))
-      );
-      return false;
-    }
+    if (!reason) return;
     const payload = {
       cancellationId: `lc_${Date.now()}`,
       cancelledBy: auth.userId,
       cancelReason: reason,
       cancelledAt: new Date().toISOString(),
     };
-    setRequests((prev) =>
-      prev.map((r) => (r.id === requestId ? { ...r, status: "CANCELLED", cancelLocked: true } : r))
-    );
+    const prevSnapshot = requests;
+    const prevCancellations = cancellations;
+    setRequests((prev) => {
+      const next = prev.map((r) => (r.id === requestId ? { ...r, status: "CANCELLED", cancelLocked: true } : r));
+      if (!serverMode) {
+        try {
+          localStorage.setItem("or.requests", JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+      }
+      return next;
+    });
     setCancellations((prev) => [...prev, { id: payload.cancellationId, leaveRequestId: requestId, ...payload }]);
-    try {
-      if (serverMode) await api.cancelRequest(requestId, payload);
-    } catch (e) {
-      setRequests((prev) =>
-        prev.map((r) => (r.id === requestId ? { ...r, status: "APPLIED", cancelLocked: false } : r))
-      );
-      throw e;
+    if (serverMode) {
+      try {
+        await api.cancelRequest(requestId, payload);
+        await bootstrap();
+      } catch (e) {
+        window.alert?.(`취소 반영 실패: ${e?.message || e}`);
+        setRequests(prevSnapshot);
+        setCancellations(prevCancellations);
+        try {
+          localStorage.setItem("or.requests", JSON.stringify(prevSnapshot));
+        } catch {
+          /* ignore */
+        }
+      }
     }
-    return true;
   }
 
   async function selectRequest(requestId) {
@@ -253,12 +448,26 @@ function App() {
     };
     setRequests((prev) => prev.map((r) => (r.id === requestId ? { ...r, status: "APPROVED" } : r)));
     setSelections((prev) => [...prev, { id: payload.selectionId, leaveRequestId: requestId, ...payload }]);
-    if (serverMode) await api.selectRequest(requestId, payload);
+    if (serverMode) {
+      try {
+        await api.selectRequest(requestId, payload);
+        await bootstrap();
+      } catch (e) {
+        window.alert?.(`선정 반영 실패: ${e?.message || e}`);
+      }
+    }
   }
 
   async function rejectRequest(requestId) {
     setRequests((prev) => prev.map((r) => (r.id === requestId ? { ...r, status: "REJECTED" } : r)));
-    if (serverMode) await api.rejectRequest(requestId);
+    if (serverMode) {
+      try {
+        await api.rejectRequest(requestId);
+        await bootstrap();
+      } catch (e) {
+        window.alert?.(`미선정 반영 실패: ${e?.message || e}`);
+      }
+    }
   }
 
   async function addPriorityNote(requestId) {
@@ -321,10 +530,13 @@ function App() {
   return (
     <div className="app">
       <header className="top">
-        <h1>EOR 휴가 시스템</h1>
+        <h1>EOR 휴가 시스템 (v2 · eoroff)</h1>
         <div className="row wrap">
           <span className="help">
-            {currentUser?.name} ({currentUser?.role}) / {serverMode ? "DB 모드" : "로컬 모드"}
+            {currentUser?.name} ({currentUser?.role}) / {serverMode ? "DB 모드" : "로컬 모드"} · Pages: alsdk4912.github.io/eoroff · 빌드{" "}
+            {import.meta.env.VITE_DEPLOY_TAG
+              ? String(import.meta.env.VITE_DEPLOY_TAG).slice(0, 7)
+              : "로컬"}
           </span>
           <button onClick={handleLogout}>로그아웃</button>
         </div>
@@ -341,14 +553,37 @@ function App() {
       </nav>
 
       <Routes>
-        <Route path="/" element={<Navigate to="/calendar" />} />
         <Route path="/request" element={<RequestPage leaveType={leaveType} setLeaveType={setLeaveType} leaveDate={leaveDate} setLeaveDate={setLeaveDate} memo={memo} setMemo={setMemo} submitRequest={submitRequest} myGoldkey={myGoldkey} message={message} />} />
-        <Route path="/my" element={<MyRequestsPage myRequests={myRequests} cancelRequest={cancelRequest} />} />
+        <Route path="/my" element={<MyRequestsPage myRequests={myRequests} allRequests={requests} cancelRequest={cancelRequest} />} />
         <Route path="/dashboard" element={<DashboardPage dashboard={dashboard} goldkeys={goldkeys} cancellations={cancellations} users={users} />} />
-        <Route path="/calendar" element={<CalendarPage calendarMonth={calendarMonth} setCalendarMonth={setCalendarMonth} calendarData={calendarData} users={users} isAdmin={isAdmin} onDateSelect={handleCalendarDateSelect} />} />
+        <Route
+          path="/calendar"
+          element={
+            <CalendarPage
+              calendarMonth={calendarMonth}
+              setCalendarMonth={setCalendarMonth}
+              calendarData={calendarData}
+              selectedYmd={calendarSelectedYmd}
+              setSelectedYmd={setCalendarSelectedYmd}
+              dayRequests={calendarDayRequests}
+              allRequests={requests}
+              users={users}
+              leaveType={leaveType}
+              setLeaveType={setLeaveType}
+              leaveDate={leaveDate}
+              setLeaveDate={setLeaveDate}
+              memo={memo}
+              setMemo={setMemo}
+              submitRequest={submitRequest}
+              myGoldkey={myGoldkey}
+              message={message}
+              isAdmin={isAdmin}
+            />
+          }
+        />
         <Route path="/account" element={<AccountPage onChangePassword={handleChangePassword} message={accountMessage} />} />
-        <Route path="/admin" element={isAdmin ? <AdminPage appliedRequests={appliedRequests} users={users} selectRequest={selectRequest} rejectRequest={rejectRequest} addPriorityNote={addPriorityNote} notes={notes} goldkeys={goldkeys} /> : <Navigate to="/request" />} />
-        <Route path="/settings" element={isAdmin ? <SettingsPage apiKey={apiKey} setApiKey={setApiKey} syncYear={syncYear} setSyncYear={setSyncYear} syncMonth={syncMonth} setSyncMonth={setSyncMonth} syncHolidays={syncHolidays} holidays={holidays} apiMessage={apiMessage} backupMessage={backupMessage} restoreSqlText={restoreSqlText} setRestoreSqlText={setRestoreSqlText} onBackup={handleBackupSql} onRestore={handleRestoreSql} managedUsers={managedUsers} onResetPassword={handleResetPassword} accountMessage={accountMessage} /> : <Navigate to="/request" />} />
+        <Route path="/admin" element={isAdmin ? <AdminPage appliedRequests={appliedRequests} allRequests={requests} users={users} selectRequest={selectRequest} rejectRequest={rejectRequest} addPriorityNote={addPriorityNote} notes={notes} goldkeys={goldkeys} /> : <Navigate to="/calendar" />} />
+        <Route path="/settings" element={isAdmin ? <SettingsPage apiKey={apiKey} setApiKey={setApiKey} syncYear={syncYear} setSyncYear={setSyncYear} syncMonth={syncMonth} setSyncMonth={setSyncMonth} syncHolidays={syncHolidays} holidays={holidays} apiMessage={apiMessage} backupMessage={backupMessage} restoreSqlText={restoreSqlText} setRestoreSqlText={setRestoreSqlText} onBackup={handleBackupSql} onRestore={handleRestoreSql} managedUsers={managedUsers} onResetPassword={handleResetPassword} accountMessage={accountMessage} /> : <Navigate to="/calendar" />} />
         <Route path="*" element={<Navigate to="/calendar" />} />
       </Routes>
     </div>
@@ -378,6 +613,13 @@ function LoginPage({ onLogin }) {
           <button type="submit">로그인</button>
         </form>
         {error ? <p className="msg">{error}</p> : null}
+        <p className="help" style={{ marginTop: 12 }}>
+          배포 주소: <strong>alsdk4912.github.io/eoroff</strong> · 빌드{" "}
+          {import.meta.env.VITE_DEPLOY_TAG
+            ? String(import.meta.env.VITE_DEPLOY_TAG).slice(0, 7)
+            : "로컬"}{" "}
+          — 이 글자가 안 바뀌면 아직 예전 페이지입니다. GitHub Actions 배포를 확인하세요.
+        </p>
       </section>
     </div>
   );
@@ -391,7 +633,8 @@ function RequestPage({ leaveType, setLeaveType, leaveDate, setLeaveDate, memo, s
         <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)}>
           <option value="GOLDKEY">골드키</option><option value="GENERAL_PRIORITY">일반-우선</option><option value="GENERAL_NORMAL">일반-후순위</option>
         </select>
-        <input type="date" value={leaveDate} onChange={(e) => setLeaveDate(e.target.value)} />
+        <label className="ymd-label">휴가일 (연·월·일)</label>
+        <YmdSplitInput value={leaveDate} onChange={setLeaveDate} />
         <input type="text" placeholder="신청 메모" value={memo} onChange={(e) => setMemo(e.target.value)} />
         <button type="submit">신청</button>
       </form>
@@ -401,29 +644,79 @@ function RequestPage({ leaveType, setLeaveType, leaveDate, setLeaveDate, memo, s
   );
 }
 
-function MyRequestsPage({ myRequests, cancelRequest }) {
+function MyRequestsPage({ myRequests, allRequests, cancelRequest }) {
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [search, setSearch] = useState("");
-  async function handleCancelClick(requestId) {
-    await cancelRequest(requestId);
+  function matchesStatusFilter(r) {
+    if (statusFilter === "ALL") return true;
+    if (statusFilter === "SELECTED") return isWinnerStatus(r.status);
+    return r.status === statusFilter;
   }
-
-  const rows = myRequests.filter((r) => (statusFilter === "ALL" || r.status === statusFilter) && (`${r.leaveDate} ${leaveTypeLabel(r.leaveType)} ${statusLabel(r.status)}`).toLowerCase().includes(search.toLowerCase()));
+  const rows = myRequests.filter(
+    (r) =>
+      matchesStatusFilter(r) &&
+      `${r.leaveDate} ${leaveTypeLabel(r.leaveType)} ${statusLabel(r.status)}`
+        .toLowerCase()
+        .includes(search.toLowerCase())
+  );
   return (
     <section className="card">
       <h2>내 신청내역</h2>
       <div className="row wrap">
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-          <option value="ALL">전체 상태</option><option value="APPLIED">신청</option><option value="SELECTED">선정</option><option value="CANCELLED">취소</option><option value="REJECTED">미선정</option>
+          <option value="ALL">전체 상태</option>
+          <option value="APPLIED">신청</option>
+          <option value="SELECTED">승인·선정</option>
+          <option value="APPROVED">승인(APPROVED)</option>
+          <option value="CANCELLED">취소</option>
+          <option value="REJECTED">미선정</option>
         </select>
         <input placeholder="날짜/유형/상태 검색" value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
-      <div className="table-wrap"><table><thead><tr><th>휴가일</th><th>유형</th><th>상태</th><th>신청시각</th><th>액션</th></tr></thead><tbody>{rows.map((r) => {
-        const isLocked = Boolean(r.cancelLocked);
-        const showButton = r.status === "APPLIED" || isLocked;
-        const buttonLabel = isLocked ? "취소 처리됨" : "취소";
-        return <tr key={r.id}><td>{r.leaveDate}</td><td>{leaveTypeLabel(r.leaveType)}</td><td>{statusLabel(r.status)}</td><td>{new Date(r.requestedAt).toLocaleString("ko-KR")}</td><td>{showButton ? <button disabled={isLocked || r.status !== "APPLIED"} onClick={() => handleCancelClick(r.id)}>{buttonLabel}</button> : "-"}</td></tr>;
-      })}</tbody></table></div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>휴가일</th>
+              <th>유형</th>
+              <th>상태</th>
+              <th>신청시각</th>
+              <th>액션</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr
+                key={r.id}
+                className={[r.status === "CANCELLED" ? "request-cancelled-row" : "", isDimmedRow(r, allRequests) ? "request-dimmed-row" : ""]
+                  .filter(Boolean)
+                  .join(" ")}
+              >
+                <td>{r.leaveDate}</td>
+                <td>
+                  <span className={`leave-type-pill ${buildLeaveChipClass(r.leaveType, r.status, r.leaveDate, allRequests)}`}>{leaveTypeLabel(r.leaveType)}</span>
+                </td>
+                <td>{statusLabel(r.status)}</td>
+                <td>{new Date(r.requestedAt).toLocaleString("ko-KR")}</td>
+                <td>
+                  {(() => {
+                    const isLocked = Boolean(r.cancelLocked);
+                    const showButton = r.status === "APPLIED" || isLocked;
+                    const buttonLabel = isLocked ? "취소 처리됨" : "취소";
+                    return showButton ? (
+                      <button type="button" disabled={isLocked || r.status !== "APPLIED"} onClick={() => void cancelRequest(r.id)}>
+                        {buttonLabel}
+                      </button>
+                    ) : (
+                      "-"
+                    );
+                  })()}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
@@ -446,7 +739,11 @@ function DashboardPage({ dashboard, goldkeys, cancellations, users }) {
             <tbody>
               {goldkeys
                 .slice()
-                .sort((a, b) => (users.find((u) => u.id === a.userId)?.name || "").localeCompare(users.find((u) => u.id === b.userId)?.name || ""))
+                .sort((a, b) =>
+                  (users.find((u) => u.id === a.userId)?.name || "").localeCompare(
+                    users.find((u) => u.id === b.userId)?.name || ""
+                  )
+                )
                 .map((g) => (
                   <tr key={g.userId}>
                     <td>{users.find((u) => u.id === g.userId)?.name ?? g.userId}</td>
@@ -458,9 +755,35 @@ function DashboardPage({ dashboard, goldkeys, cancellations, users }) {
             </tbody>
           </table>
         </div>
-        <p className="help">참고: 전체 신청 {dashboard.total} / 신청중 {dashboard.applied} / 취소 {dashboard.cancelled}</p>
+        <p className="help">
+          참고: 전체 신청 {dashboard.total} / 신청중 {dashboard.applied} / 승인·선정 {dashboard.selected} / 취소 {dashboard.cancelled}
+        </p>
       </section>
-      <section className="card"><h2>취소 이력</h2><div className="table-wrap"><table><thead><tr><th>요청ID</th><th>취소자</th><th>사유</th><th>시각</th></tr></thead><tbody>{cancellations.map((c) => <tr key={c.id}><td>{c.leaveRequestId}</td><td>{users.find((u) => u.id === c.cancelledBy)?.name ?? c.cancelledBy}</td><td>{c.cancelReason}</td><td>{new Date(c.cancelledAt).toLocaleString("ko-KR")}</td></tr>)}</tbody></table></div></section>
+      <section className="card">
+        <h2>취소 이력</h2>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>요청ID</th>
+                <th>취소자</th>
+                <th>사유</th>
+                <th>시각</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cancellations.map((c) => (
+                <tr key={c.id}>
+                  <td>{c.leaveRequestId}</td>
+                  <td>{users.find((u) => u.id === c.cancelledBy)?.name ?? c.cancelledBy}</td>
+                  <td>{c.cancelReason}</td>
+                  <td>{new Date(c.cancelledAt).toLocaleString("ko-KR")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </>
   );
 }
@@ -495,80 +818,188 @@ function AccountPage({ onChangePassword, message }) {
   );
 }
 
-function CalendarPage({ calendarMonth, setCalendarMonth, calendarData, users, isAdmin, onDateSelect }) {
-  const [selectedDate, setSelectedDate] = useState("");
-  const selectedCell = calendarData.find((c) => c.date === selectedDate);
+function CalendarPage({
+  calendarMonth,
+  setCalendarMonth,
+  calendarData,
+  selectedYmd,
+  setSelectedYmd,
+  dayRequests,
+  allRequests,
+  users,
+  leaveType,
+  setLeaveType,
+  leaveDate,
+  setLeaveDate,
+  memo,
+  setMemo,
+  submitRequest,
+  myGoldkey,
+  message,
+  isAdmin,
+}) {
+  const [detailTab, setDetailTab] = useState("list");
+  const selectedCell = selectedYmd ? calendarData.find((c) => c.date === selectedYmd) : null;
   const approvedIds = new Set((selectedCell?.approvedApplicants ?? []).map((item) => item.userId));
   const nurseUsers = users.filter((u) => u.role === "NURSE");
   const workingUsers = nurseUsers.filter((u) => !approvedIds.has(u.id));
 
-  function handleDateClick(cell) {
-    if (!cell.inMonth) return;
-    setSelectedDate(cell.date);
-    if (isAdmin) {
-      onDateSelect(cell.date, { navigate: false });
-      return;
-    }
-    onDateSelect(cell.date, { navigate: true });
-  }
-
   return (
     <section className="card">
-      <h2>전체 휴가 달력(월간)</h2>
-      <div className="row wrap">
+      <h2>휴가 달력(월간)</h2>
+      <p className="help">
+        {isAdmin
+          ? "날짜를 누르면 아래에서 신청 현황을 보고, 하단 관리자 패널에서 승인된 휴가자·출근자를 확인할 수 있습니다."
+          : "날짜를 누르면 아래에서 신청 인원·이름을 확인하고, 같은 화면에서 휴가를 신청할 수 있습니다."}
+      </p>
+      <div className="row">
         <label>월 선택 </label>
         <input type="month" value={calendarMonth} onChange={(e) => setCalendarMonth(e.target.value)} />
-        <span className="help">날짜를 누르면 {isAdmin ? "해당일 휴가/출근자 현황을 확인" : "해당일로 신청 화면 이동"}합니다.</span>
       </div>
       <div className="calendar">
         {["일", "월", "화", "수", "목", "금", "토"].map((d) => (
-          <div key={d} className="calendar-head">{d}</div>
+          <div key={d} className="calendar-head">
+            {d}
+          </div>
         ))}
-        {calendarData.map((cell, idx) => (
-          <button
-            key={`${cell.date}-${idx}`}
-            type="button"
-            className={`calendar-cell clickable ${cell.inMonth ? "" : "muted"} ${selectedDate === cell.date ? "active-day" : ""}`}
-            onClick={() => handleDateClick(cell)}
-          >
-            <div className="calendar-date">{cell.inMonth ? cell.day : ""}</div>
-            {cell.inMonth && cell.requestCount > 0 ? <div className="badge">신청 {cell.requestCount}</div> : null}
-            {cell.inMonth && cell.applicants.map((item) => (
-              <div
-                key={item.id}
-                className={`selected-item type-${item.leaveType.toLowerCase()} status-${normalizeStatus(item.status)}`}
-              >
-                {typeFullLabel(item.leaveType)} {item.name}
-              </div>
-            ))}
-          </button>
-        ))}
+        {calendarData.map((cell, idx) => {
+          const isSel = cell.inMonth && selectedYmd === cell.date;
+          return (
+            <div
+              key={`${cell.date}-${idx}`}
+              role={cell.inMonth ? "button" : undefined}
+              tabIndex={cell.inMonth ? 0 : undefined}
+              className={`calendar-cell ${cell.inMonth ? "calendar-cell--clickable" : "muted"}${isSel ? " calendar-cell--selected" : ""}`}
+              onClick={() => {
+                if (!cell.inMonth) return;
+                setSelectedYmd(cell.date);
+                setLeaveDate(cell.date);
+                setDetailTab("list");
+              }}
+              onKeyDown={(e) => {
+                if (!cell.inMonth) return;
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setSelectedYmd(cell.date);
+                  setLeaveDate(cell.date);
+                  setDetailTab("list");
+                }
+              }}
+            >
+              <div className="calendar-date">{cell.day}</div>
+              {cell.requestCount > 0 ? (
+                <div className="badge badge--count-only">신청 {cell.requestCount}명</div>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
-      {isAdmin && selectedCell ? (
+
+      <div className="calendar-detail">
+        {!selectedYmd ? (
+          <p className="help calendar-detail-placeholder">달력에서 날짜를 선택하세요.</p>
+        ) : (
+          <>
+            <h3 className="calendar-detail-title">{selectedYmd} 상세</h3>
+            <div className="calendar-detail-tabs" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={detailTab === "list"}
+                className={detailTab === "list" ? "calendar-tab calendar-tab--active" : "calendar-tab"}
+                onClick={() => setDetailTab("list")}
+              >
+                신청 현황
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={detailTab === "apply"}
+                className={detailTab === "apply" ? "calendar-tab calendar-tab--active" : "calendar-tab"}
+                onClick={() => {
+                  setDetailTab("apply");
+                  if (selectedYmd) setLeaveDate(selectedYmd);
+                }}
+              >
+                휴가 신청
+              </button>
+            </div>
+            {detailTab === "list" ? (
+              <div className="calendar-detail-body" role="tabpanel">
+                {dayRequests.length === 0 ? (
+                  <p className="help">이 날짜에 등록된 신청이 없습니다.</p>
+                ) : (
+                  <ul className="calendar-applicant-list">
+                    {dayRequests.map((r) => (
+                      <li key={r.id} className="calendar-applicant-item">
+                        <span className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status, r.leaveDate, allRequests)}`}>
+                          {users.find((u) => u.id === r.userId)?.name ?? r.userId} · {typeFullLabel(r.leaveType)} · {statusLabel(r.status)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ) : (
+              <div className="calendar-detail-body calendar-detail-body--apply" role="tabpanel">
+                <p className="help">선택한 날짜: {selectedYmd} (아래에서 연·월·일을 바꿀 수 있습니다)</p>
+                <form className="grid calendar-apply-form" onSubmit={submitRequest}>
+                  <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)}>
+                    <option value="GOLDKEY">골드키</option>
+                    <option value="GENERAL_PRIORITY">일반-우선</option>
+                    <option value="GENERAL_NORMAL">일반-후순위</option>
+                  </select>
+                  <div className="calendar-apply-ymd">
+                    <span className="help">휴가일</span>
+                    <YmdSplitInput value={leaveDate} onChange={setLeaveDate} />
+                  </div>
+                  <input type="text" placeholder="신청 메모" value={memo} onChange={(e) => setMemo(e.target.value)} />
+                  <button type="submit">신청</button>
+                </form>
+                <p className="help">내 골드키 잔여: {myGoldkey?.remainingCount ?? 0} / {myGoldkey?.quotaTotal ?? 0}</p>
+                {message ? <p className="msg">{message}</p> : null}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {isAdmin && selectedYmd && selectedCell?.inMonth ? (
         <section className="admin-day-panel">
-          <h3>{selectedCell.date} 관리자 상세</h3>
+          <h3>{selectedYmd} 관리자 상세</h3>
           <div className="admin-day-grid">
             <div>
-              <h4>휴가자</h4>
+              <h4>휴가자 (승인·선정)</h4>
               <ul>
-                {selectedCell.approvedApplicants.length === 0 ? <li>없음</li> : selectedCell.approvedApplicants.map((item) => <li key={item.id}>{item.name} ({typeFullLabel(item.leaveType)})</li>)}
+                {selectedCell.approvedApplicants.length === 0 ? (
+                  <li>없음</li>
+                ) : (
+                  selectedCell.approvedApplicants.map((item) => (
+                    <li key={item.id}>
+                      {item.name} ({typeFullLabel(item.leaveType)})
+                    </li>
+                  ))
+                )}
               </ul>
             </div>
             <div>
               <h4>출근자</h4>
               <ul>
-                {workingUsers.length === 0 ? <li>없음</li> : workingUsers.map((u) => <li key={u.id}>{u.name}</li>)}
+                {workingUsers.length === 0 ? (
+                  <li>없음</li>
+                ) : (
+                  workingUsers.map((u) => <li key={u.id}>{u.name}</li>)
+                )}
               </ul>
             </div>
           </div>
-          <button type="button" onClick={() => onDateSelect(selectedCell.date, { navigate: true })}>이 날짜로 신청 화면 이동</button>
         </section>
       ) : null}
     </section>
   );
 }
 
-function AdminPage({ appliedRequests, users, selectRequest, rejectRequest, addPriorityNote, notes, goldkeys }) {
+function AdminPage({ appliedRequests, allRequests, users, selectRequest, rejectRequest, addPriorityNote, notes, goldkeys }) {
   const [nameSearch, setNameSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("ALL");
   const rows = appliedRequests.filter((r) => {
@@ -587,7 +1018,40 @@ function AdminPage({ appliedRequests, users, selectRequest, rejectRequest, addPr
             <option value="ALL">전체 유형</option><option value="GOLDKEY">골드키</option><option value="GENERAL_PRIORITY">일반-우선</option><option value="GENERAL_NORMAL">일반-후순위</option>
           </select>
         </div>
-        <div className="table-wrap"><table><thead><tr><th>간호사</th><th>휴가일</th><th>유형</th><th>신청시각</th><th>액션</th></tr></thead><tbody>{rows.map((r) => <tr key={r.id}><td>{users.find((u) => u.id === r.userId)?.name}</td><td>{r.leaveDate}</td><td>{leaveTypeLabel(r.leaveType)}</td><td>{new Date(r.requestedAt).toLocaleString("ko-KR")}</td><td className="row wrap"><button onClick={() => selectRequest(r.id)}>승인</button><button onClick={() => rejectRequest(r.id)}>반려</button>{r.leaveType !== "GOLDKEY" ? <button onClick={() => addPriorityNote(r.id)}>협의메모</button> : null}</td></tr>)}</tbody></table></div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>간호사</th>
+                <th>휴가일</th>
+                <th>유형</th>
+                <th>신청시각</th>
+                <th>액션</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id}>
+                  <td>{users.find((u) => u.id === r.userId)?.name}</td>
+                  <td>{r.leaveDate}</td>
+                  <td>
+                    <span className={`leave-type-pill ${buildLeaveChipClass(r.leaveType, r.status, r.leaveDate, allRequests)}`}>{leaveTypeLabel(r.leaveType)}</span>
+                  </td>
+                  <td>{new Date(r.requestedAt).toLocaleString("ko-KR")}</td>
+                  <td className="row wrap">
+                    <button type="button" onClick={() => void selectRequest(r.id)}>
+                      승인
+                    </button>
+                    <button type="button" onClick={() => void rejectRequest(r.id)}>
+                      반려
+                    </button>
+                    {r.leaveType !== "GOLDKEY" ? <button onClick={() => addPriorityNote(r.id)}>협의메모</button> : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
       <section className="card"><h2>일반휴가 협의 메모</h2><ul>{notes.map((n) => <li key={n.id}>요청ID {n.leaveRequestId} / 순번 {n.agreedOrder} / {n.content}</li>)}</ul></section>
       <section className="card"><h2>골드키 관리(조회 전용)</h2><div className="table-wrap"><table><thead><tr><th>간호사</th><th>총할당</th><th>사용</th><th>잔여</th></tr></thead><tbody>{goldkeys.map((g) => <tr key={g.userId}><td>{users.find((u) => u.id === g.userId)?.name}</td><td>{g.quotaTotal}</td><td>{g.usedCount}</td><td>{g.remainingCount}</td></tr>)}</tbody></table></div></section>
@@ -634,15 +1098,16 @@ function SettingsPage({ apiKey, setApiKey, syncYear, setSyncYear, syncMonth, set
 }
 
 function mapRequestRow(r) {
+  const ld = r.leave_date ?? r.leaveDate;
   return {
     id: r.id,
-    userId: r.user_id,
-    leaveDate: r.leave_date,
-    leaveType: r.leave_type,
+    userId: r.user_id ?? r.userId,
+    leaveDate: normalizeLeaveDateStr(ld),
+    leaveType: r.leave_type ?? r.leaveType,
     status: r.status,
-    requestedAt: r.requested_at,
-    memo: r.memo,
-    cancelLocked: false,
+    requestedAt: r.requested_at ?? r.requestedAt,
+    memo: r.memo ?? "",
+    cancelLocked: Boolean(r.cancel_locked ?? r.cancelLocked),
   };
 }
 
@@ -670,16 +1135,18 @@ function buildMonthMatrix(year, month, allRequests, users) {
   for (let i = 0; i < 42; i += 1) {
     const d = new Date(start);
     d.setDate(start.getDate() + i);
-    const iso = d.toISOString().slice(0, 10);
+    const iso = toLocalYMD(d);
+    const dayReqs = allRequests.filter((r) => r.leaveDate === iso);
     cells.push({
       date: iso,
       day: d.getDate(),
       inMonth: d.getMonth() === month - 1,
-      applicants: allRequests
-        .filter((r) => r.leaveDate === iso && r.status !== "CANCELLED")
-        .sort((a, b) =>
-          leaveTypeOrder(a.leaveType) - leaveTypeOrder(b.leaveType) ||
-          a.requestedAt.localeCompare(b.requestedAt)
+      requestCount: dayReqs.length,
+      applicants: dayReqs
+        .filter((r) => r.status !== "CANCELLED")
+        .sort(
+          (a, b) =>
+            leaveTypeOrder(a.leaveType) - leaveTypeOrder(b.leaveType) || a.requestedAt.localeCompare(b.requestedAt)
         )
         .map((r) => ({
           id: r.id,
@@ -688,11 +1155,11 @@ function buildMonthMatrix(year, month, allRequests, users) {
           status: r.status,
           name: users.find((u) => u.id === r.userId)?.name ?? r.userId,
         })),
-      approvedApplicants: allRequests
-        .filter((r) => r.leaveDate === iso && isApprovedStatus(r.status))
-        .sort((a, b) =>
-          leaveTypeOrder(a.leaveType) - leaveTypeOrder(b.leaveType) ||
-          a.requestedAt.localeCompare(b.requestedAt)
+      approvedApplicants: dayReqs
+        .filter((r) => isWinnerStatus(r.status))
+        .sort(
+          (a, b) =>
+            leaveTypeOrder(a.leaveType) - leaveTypeOrder(b.leaveType) || a.requestedAt.localeCompare(b.requestedAt)
         )
         .map((r) => ({
           id: r.id,
@@ -701,21 +1168,9 @@ function buildMonthMatrix(year, month, allRequests, users) {
           status: r.status,
           name: users.find((u) => u.id === r.userId)?.name ?? r.userId,
         })),
-      requestCount: allRequests.filter((r) => r.leaveDate === iso).length,
     });
   }
   return cells;
-}
-
-function isApprovedStatus(status) {
-  return status === "APPROVED" || status === "SELECTED";
-}
-
-function normalizeStatus(status) {
-  if (status === "SELECTED") return "approved";
-  if (status === "APPROVED") return "approved";
-  if (status === "REJECTED") return "rejected";
-  return "pending";
 }
 
 function typeFullLabel(leaveType) {

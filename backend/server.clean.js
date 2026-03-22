@@ -70,17 +70,22 @@ app.post("/api/admin/users/:id/reset-password", (req, res) => {
 });
 
 app.post("/api/requests", (req, res) => {
-  execute(
-    "INSERT INTO requests (id, user_id, leave_date, leave_type, status, requested_at, memo) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    req.body.id,
-    req.body.userId,
-    req.body.leaveDate,
-    req.body.leaveType,
-    req.body.status,
-    req.body.requestedAt,
-    req.body.memo ?? ""
-  );
-  res.json({ ok: true });
+  try {
+    execute(
+      "INSERT INTO requests (id, user_id, leave_date, leave_type, status, requested_at, memo) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      req.body.id,
+      req.body.userId,
+      req.body.leaveDate,
+      req.body.leaveType,
+      req.body.status,
+      req.body.requestedAt,
+      req.body.memo ?? ""
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /api/requests", err);
+    res.status(500).json({ error: String(err?.message || err) });
+  }
 });
 
 app.post("/api/requests/:id/cancel", (req, res) => {

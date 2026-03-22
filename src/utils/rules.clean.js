@@ -6,10 +6,10 @@ const LEAVE_TYPE_LABEL = {
 
 const STATUS_LABEL = {
   APPLIED: "신청",
-  SELECTED: "승인",
+  SELECTED: "선정",
   APPROVED: "승인",
   CANCELLED: "취소",
-  REJECTED: "반려",
+  REJECTED: "미선정",
 };
 
 export function toMonthString(dateLike) {
@@ -44,6 +44,13 @@ function holidaySetFromCache(holidaysCache) {
   return new Set(arr.filter((h) => h.isHoliday).map((h) => h.holidayDate));
 }
 
+function toLocalYMD(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 function getNthBusinessDay(year, monthIndex, n, holidaysCache) {
   const holidaySet = holidaySetFromCache(holidaysCache);
   let count = 0;
@@ -51,7 +58,7 @@ function getNthBusinessDay(year, monthIndex, n, holidaysCache) {
 
   while (d.getMonth() === monthIndex) {
     const dayOfWeek = d.getDay();
-    const iso = d.toISOString().slice(0, 10);
+    const iso = toLocalYMD(d);
     const isBusiness = dayOfWeek !== 0 && dayOfWeek !== 6 && !holidaySet.has(iso);
     if (isBusiness) {
       count += 1;
@@ -62,10 +69,22 @@ function getNthBusinessDay(year, monthIndex, n, holidaysCache) {
   return new Date(year, monthIndex, 1);
 }
 
+/** `YYYY-MM-DD`(date input)를 로컬 자정으로 해석 — `new Date('YYYY-MM-DD')`는 UTC라 타임존에 따라 하루 어긋남 */
+function parseYmdAsLocalDate(ymd) {
+  const s = String(ymd ?? "").trim();
+  const p = s.split("-");
+  if (p.length !== 3) return new Date(NaN);
+  const y = Number(p[0]);
+  const mo = Number(p[1]);
+  const d = Number(p[2]);
+  if (!y || !mo || !d) return new Date(NaN);
+  return new Date(y, mo - 1, d);
+}
+
 export function validateRequest({ leaveType, leaveDate, now, remainingGoldkey, holidaysCache }) {
   if (!leaveType || !leaveDate) return "휴가유형과 날짜를 입력하세요.";
 
-  const target = new Date(leaveDate);
+  const target = parseYmdAsLocalDate(leaveDate);
   if (Number.isNaN(target.getTime())) return "날짜 형식이 올바르지 않습니다.";
 
   const targetMonth = toMonthString(target);

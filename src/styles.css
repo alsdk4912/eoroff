@@ -310,119 +310,6 @@ button:hover {
   }
 }
 
-/* ===== v2 calendar approval visualization ===== */
-.calendar-cell.clickable {
-  text-align: left;
-  width: 100%;
-  cursor: pointer;
-}
-
-.calendar-cell.active-day {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
-}
-
-.selected-item {
-  border: 1px solid transparent;
-}
-
-.selected-item.status-approved {
-  opacity: 1;
-}
-
-.selected-item.status-pending {
-  opacity: 0.55;
-  text-decoration: line-through;
-  background: #e5e7eb !important;
-  color: #4b5563 !important;
-  border-color: #9ca3af;
-}
-
-.selected-item.status-rejected {
-  opacity: 0.6;
-  text-decoration: line-through;
-  background: #f3f4f6 !important;
-  color: #6b7280 !important;
-  border: 1px dashed #9ca3af;
-}
-
-.admin-day-panel {
-  margin-top: 14px;
-  border: 1px solid #dbeafe;
-  border-radius: 12px;
-  padding: 12px;
-  background: #f8fbff;
-}
-
-.admin-day-panel h3 {
-  margin: 0 0 8px;
-  font-size: 16px;
-}
-
-.admin-day-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-
-.admin-day-grid h4 {
-  margin: 0 0 6px;
-  font-size: 14px;
-}
-
-.admin-day-grid ul {
-  margin: 0;
-  padding-left: 16px;
-}
-
-@media (max-width: 768px) {
-  .admin-day-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* v2 visual overrides */
-.calendar-date {
-  background: #ffffff !important;
-  color: #111827 !important;
-}
-
-.calendar-cell.muted .calendar-date {
-  visibility: hidden;
-}
-
-.calendar-cell.muted .badge,
-.calendar-cell.muted .selected-item {
-  display: none !important;
-}
-
-/* Calendar visual tuning requested */
-.calendar-head {
-  background: #eaf6ff !important;
-  border: 1px solid #d7ebfb !important;
-  border-radius: 10px;
-  color: #1f2937 !important;
-  font-weight: 800 !important;
-}
-
-.calendar-cell {
-  background: #ffffff !important;
-  border: 1px solid #e5e7eb !important;
-  color: #111827 !important;
-}
-
-.calendar-cell.clickable {
-  background: #ffffff !important;
-  border: 1px solid #e5e7eb !important;
-  color: #111827 !important;
-}
-
-.calendar-cell.clickable:hover {
-  background: #ffffff !important;
-  border-color: #d1d5db !important;
-}
-
 /* --------- Overrides (latest UI requirements) --------- */
 body::before {
   content: "" !important;
@@ -1648,5 +1535,235 @@ button {
 
   .selected-item {
     font-size: 11px;
+  }
+}
+
+/* ========== 휴가 유형 색상 · 관리자 선정/미선정 표시 (최종) ========== */
+.leave-type-pill {
+  display: inline-block;
+}
+
+/* 신청 상태: 골드키 빨강, 일반-우선 노랑, 일반-후순위 초록 */
+.selected-item.type-goldkey,
+.leave-type-pill.selected-item.type-goldkey {
+  background: #fecaca !important;
+  color: #991b1b !important;
+  border-color: #ef4444 !important;
+}
+
+.selected-item.type-general_priority,
+.leave-type-pill.selected-item.type-general_priority {
+  background: #fef08a !important;
+  color: #854d0e !important;
+  border-color: #eab308 !important;
+}
+
+.selected-item.type-general_normal,
+.leave-type-pill.selected-item.type-general_normal {
+  background: #bbf7d0 !important;
+  color: #14532d !important;
+  border-color: #22c55e !important;
+}
+
+/* 같은 날짜에 선정자가 있을 때, 선정자 제외 신청자 전부 회색 */
+.selected-item.request-dimmed-by-approval {
+  background: #e2e8f0 !important;
+  color: #64748b !important;
+  border-color: #94a3b8 !important;
+}
+
+tr.request-dimmed-row td {
+  color: #64748b !important;
+}
+
+tr.request-dimmed-row .leave-type-pill.selected-item {
+  background: #e2e8f0 !important;
+  color: #64748b !important;
+  border-color: #94a3b8 !important;
+}
+
+/* 취소 건: 취소선 (유형 색은 유지) */
+.selected-item.request-cancelled {
+  text-decoration: line-through !important;
+  opacity: 0.88;
+}
+
+tr.request-cancelled-row td {
+  text-decoration: line-through !important;
+  color: #64748b !important;
+}
+
+tr.request-cancelled-row .leave-type-pill.selected-item {
+  text-decoration: line-through !important;
+}
+
+tr.request-dimmed-row td button,
+tr.request-cancelled-row td button {
+  text-decoration: none !important;
+}
+
+.ymd-split {
+  gap: 8px;
+  align-items: center;
+}
+
+.ymd-select {
+  min-width: 88px;
+  font-weight: 700;
+}
+
+.grid .ymd-label {
+  grid-column: 1 / -1;
+  font-size: 13px;
+  font-weight: 700;
+  color: #475569;
+  margin: 0;
+}
+
+.grid .ymd-split {
+  grid-column: 1 / -1;
+}
+
+.calendar-apply-form .calendar-apply-ymd {
+  grid-column: 1 / -1;
+}
+
+.calendar-apply-ymd .help {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.calendar-cell--clickable {
+  cursor: pointer;
+}
+
+.calendar-cell--clickable:hover {
+  background: #f8fafc;
+}
+
+.calendar-cell--clickable:focus-visible {
+  outline: 2px solid #1d4ed8;
+  outline-offset: 2px;
+}
+
+.calendar-cell--selected {
+  background: #eff6ff !important;
+  border-color: #3b82f6 !important;
+  box-shadow: inset 0 0 0 2px rgba(59, 130, 246, 0.35);
+}
+
+.badge--count-only {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.calendar-detail {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #dbeafe;
+}
+
+.calendar-detail-placeholder {
+  margin: 0;
+}
+
+.calendar-detail-title {
+  margin: 0 0 10px;
+  font-size: 17px;
+}
+
+.calendar-detail-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.calendar-tab {
+  cursor: pointer;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid #bfdbfe;
+  background: #fff;
+  color: #1e40af;
+  font-weight: 800;
+}
+
+.calendar-tab--active {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #fff;
+}
+
+.calendar-detail-body {
+  min-height: 80px;
+}
+
+.calendar-detail-body--apply .grid {
+  margin-top: 8px;
+}
+
+.calendar-applicant-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.calendar-applicant-item {
+  margin: 0;
+}
+
+.calendar-applicant-name {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  line-height: 1.4;
+}
+
+.calendar-cell {
+  max-height: 120px;
+  overflow: hidden;
+}
+
+.admin-day-panel {
+  margin-top: 14px;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  padding: 12px;
+  background: #f8fbff;
+}
+
+.admin-day-panel h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.admin-day-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.admin-day-grid h4 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.admin-day-grid ul {
+  margin: 0;
+  padding-left: 16px;
+}
+
+@media (max-width: 768px) {
+  .admin-day-grid {
+    grid-template-columns: 1fr;
   }
 }

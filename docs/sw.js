@@ -1,4 +1,4 @@
-const CACHE_NAME = "eor-pwa-v1";
+const CACHE_NAME = "eor-pwa-v6-eoroff";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -7,13 +7,11 @@ const APP_SHELL = [
   "./icon-192.png",
   "./icon-512.png",
   "./apple-touch-icon.png",
-  "./favicon-32.png"
+  "./favicon-32.png",
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
-  );
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
   self.skipWaiting();
 });
 
@@ -21,9 +19,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(
-        keys
-          .filter((key) => key !== CACHE_NAME)
-          .map((key) => caches.delete(key))
+        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
       )
     )
   );
@@ -32,6 +28,20 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+
+  let url;
+  try {
+    url = new URL(event.request.url);
+  } catch {
+    return;
+  }
+
+  const crossOrigin = url.origin !== self.location.origin;
+  const looksLikeApi = url.pathname.includes("/api/");
+  if (crossOrigin || looksLikeApi) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
 
   event.respondWith(
     caches.match(event.request).then((cached) => {

@@ -1,6 +1,4 @@
 export * from "./rules.clean.js";
-
-export * from "./rules.clean.js";
 /*
 const LEAVE_TYPE_LABEL = {
   GOLDKEY: "골드키",
