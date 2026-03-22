@@ -1,4 +1,4 @@
-const CACHE_NAME = "eor-pwa-v2-palm-2026";
+const CACHE_NAME = "eor-pwa-v2-square-icon";
 const APP_SHELL = [
   "./",
   "./index.html",
