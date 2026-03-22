@@ -10,44 +10,42 @@
 
 ## 2. Render (백엔드 API) — **휴가 신청 내역이 사라지지 않게 하려면**
 
-앱 코드는 배포 시 `requests` 테이블을 **삭제하지 않습니다**. 그런데도 업데이트 후 신청이 안 보이면, 거의 항상 **SQLite 파일이 재배포마다 새로 생겼기 때문**입니다.
+앱은 **`@libsql/client`** 로 DB에 붙습니다.
 
-- Render **무료 Web Service**는 기본적으로 **영구 디스크가 없음** → 빌드/재시작 시 프로젝트 폴더의 `backend/app.sqlite`가 **초기화**될 수 있음.
-- **해결:** **Persistent Disk**를 서비스에 붙이고, 환경 변수 **`SQLITE_PATH`** 를 **디스크 마운트 경로 아래**로 지정합니다.
+- **권장(무료 플랜 유지): [Turso](https://turso.tech/) 무료 DB**  
+  - DB는 Turso 쪽에 있으므로 Render를 재배포해도 **신청 내역이 유지**됩니다.  
+  - Render **Environment** 에 다음을 넣습니다.  
+    - `TURSO_DATABASE_URL` — Turso 대시보드의 **Database URL** (보통 `libsql://...`)  
+    - `TURSO_AUTH_TOKEN` — 해당 DB용 **토큰**  
+  - (선택) `LIBSQL_DATABASE_URL` / `LIBSQL_AUTH_TOKEN` 도 동일 의미로 인식합니다.  
+  - 배포 후 `GET .../api/health` 에서 `remoteDb: true`, `dataLossRiskOnDeploy: false` 인지 확인합니다.
 
-### 설정 예시 (디스크 마운트를 `/data` 로 했다고 가정)
+### 대안: Render Persistent Disk + 로컬 SQLite 파일
 
-1. Render → **eoroff-api** → **Disks** → Add Disk  
-   - Mount path: `/data`  
-   - Size: 플랜에 맞게 (최소 1GB 등)
-2. **Environment** → Add Environment Variable  
-   - Key: `SQLITE_PATH`  
-   - Value: `/data/eoroff.sqlite`
-3. 서비스 **재시작** (또는 재배포)
+- Turso 없이 **`TURSO_*` 를 비우면** 로컬 파일(`backend/app.sqlite` 또는 `SQLITE_PATH`)을 씁니다.  
+- Render **무료 Web Service**는 보통 **영구 디스크 없음** → 재시작·재배포 시 파일 DB가 **초기화**될 수 있습니다.  
+- **Disk를 쓸 수 있는 플랜**이면 Disk를 마운트하고 **`SQLITE_PATH`** 를 그 아래 파일로 지정합니다.
 
-이후에는 같은 `eoroff.sqlite` 파일을 계속 쓰므로, **코드를 푸시해도 이전 휴가 신청 내역이 유지**됩니다.
+#### Disk 설정 예시 (마운트 `/data`)
 
-> **참고:** 무료 플랜에서 Disk를 쓸 수 없다면 Render 정책상 **유료 인스턴스**로 올리거나, 외부 DB(예: 관리형 PostgreSQL)로 이전해야 합니다. Disk 없이는 “절대 유실 없음”을 인프라에서 보장하기 어렵습니다.
+1. Render → **eoroff-api** → **Disks** → Add Disk — Mount: `/data`  
+2. **Environment** → `SQLITE_PATH` = `/data/eoroff.sqlite`  
+3. 재시작
 
-### 무료 + Disk 불가일 때
+### 무료 + Disk 불가 + Turso 미사용
 
-- **`SQLITE_PATH`만 아무 경로로 넣는 것**으로는 신청 내역이 **재배포 후에도 남지 않습니다.** (영구로 쓸 디스크가 없으면 결국 매번 새 파일이거나 휘발성 경로와 같음)
-- **재배포(3번)** 는 서비스 갱신용일 뿐, **데이터 유지와는 무관**합니다.
-- 이 경우 선택지는 대략 다음뿐입니다.  
-  - **유료로 올려서 Disk 사용**  
-  - **외부 무료/저가 DB**로 바꾸기 (앱 코드 수정 필요: 예 Turso·Neon·Supabase 등)  
-  - **받아들이기**: 재배포마다 DB가 초기화될 수 있음 (중요 데이터는 별도 백업 불가능에 가까움)
+- 이 조합이면 **`dataLossRiskOnDeploy: true`** 가 될 수 있으며, 재배포 시 데이터 유실 위험이 큽니다. **Turso 연동을 권장**합니다.
 
-### 헬스 체크로 확인
+### 헬스 체크
 
 `GET https://eoroff-api.onrender.com/api/health`
 
-- `dataLossRiskOnDeploy: true` 이면 **지금 설정으로는 재배포 시 DB 유실 위험**이 큽니다 → 위처럼 `SQLITE_PATH` + Disk 필요.
-- `dataLossRiskOnDeploy: false` 이면 `SQLITE_PATH`가 잡혀 있는 상태입니다.
+- `dataLossRiskOnDeploy: true` → Turso 연동 또는 Disk + `SQLITE_PATH` 필요.  
+- `remoteDb: true` → 원격 libSQL 사용 중.
 
 ### 기타
 
-- DB는 **`better-sqlite3`**. Build: `npm run render:install`, Start: `npm start`
+- Build: `npm run render:install`, Start: `npm start`  
 - Node **20+** 권장.
 
 ## 3. 캐시·서비스 워커

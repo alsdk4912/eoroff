@@ -1,117 +1,151 @@
 import fs from "fs";
 import path from "path";
-import Database from "better-sqlite3";
+import { createClient } from "@libsql/client";
 
-let db;
-/** initDb 이후 절대경로 (헬스·로그용) */
+let client;
+/** initDb 이후 로컬일 때만 절대경로 (헬스·로그용) */
 let resolvedDbPath = "";
 
-function resolveDbPath() {
+function resolveLocalDbPath() {
   if (process.env.SQLITE_PATH) return path.resolve(process.env.SQLITE_PATH);
   return path.resolve(process.cwd(), "backend", "app.sqlite");
 }
 
+/** Turso / libSQL 원격 (환경변수 둘 다 있을 때) */
+export function isUsingRemoteDb() {
+  const url = process.env.TURSO_DATABASE_URL || process.env.LIBSQL_DATABASE_URL;
+  const token = process.env.TURSO_AUTH_TOKEN || process.env.LIBSQL_AUTH_TOKEN;
+  return Boolean(url && token);
+}
+
 export function getResolvedDbPath() {
+  if (isUsingRemoteDb()) {
+    const raw = process.env.TURSO_DATABASE_URL || process.env.LIBSQL_DATABASE_URL || "";
+    try {
+      const normalized = raw.replace(/^libsql:/i, "https:");
+      const u = new URL(normalized);
+      return `remote:${u.hostname}`;
+    } catch {
+      return "remote:libsql";
+    }
+  }
   return resolvedDbPath;
 }
 
-/** Render 등: 디스크 미고정이면 재배포 시 DB가 비어 신청 내역이 사라질 수 있음 */
+/**
+ * Render 무료 + 로컬 파일 SQLite만 위험.
+ * Turso(원격 libSQL)면 재배포해도 DB는 Turso 쪽에 남음.
+ */
 export function isLikelyEphemeralDeployRisk() {
+  if (isUsingRemoteDb()) return false;
   return process.env.RENDER === "true" && !process.env.SQLITE_PATH;
 }
 
-export function initDb() {
-  const dbPath = resolveDbPath();
-  resolvedDbPath = dbPath;
-  const dir = path.dirname(dbPath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+const DDL = `
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  employee_no TEXT NOT NULL,
+  role TEXT NOT NULL,
+  password TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS goldkeys (
+  user_id TEXT PRIMARY KEY,
+  quota_total INTEGER NOT NULL,
+  used_count INTEGER NOT NULL,
+  remaining_count INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS requests (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  leave_date TEXT NOT NULL,
+  leave_type TEXT NOT NULL,
+  status TEXT NOT NULL,
+  requested_at TEXT NOT NULL,
+  memo TEXT
+);
+
+CREATE TABLE IF NOT EXISTS notes (
+  id TEXT PRIMARY KEY,
+  leave_request_id TEXT NOT NULL,
+  content TEXT NOT NULL,
+  agreed_order INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS cancellations (
+  id TEXT PRIMARY KEY,
+  leave_request_id TEXT NOT NULL,
+  cancelled_by TEXT NOT NULL,
+  cancel_reason TEXT NOT NULL,
+  cancelled_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS selections (
+  id TEXT PRIMARY KEY,
+  leave_request_id TEXT NOT NULL,
+  selected_by TEXT NOT NULL,
+  selected_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS logs (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  before_quota INTEGER NOT NULL,
+  after_quota INTEGER NOT NULL,
+  changed_by TEXT NOT NULL,
+  changed_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS holidays (
+  holiday_date TEXT PRIMARY KEY,
+  holiday_name TEXT NOT NULL,
+  is_holiday INTEGER NOT NULL,
+  synced_at TEXT NOT NULL
+);
+`;
+
+export async function initDb() {
+  if (isUsingRemoteDb()) {
+    const url = process.env.TURSO_DATABASE_URL || process.env.LIBSQL_DATABASE_URL;
+    const authToken = process.env.TURSO_AUTH_TOKEN || process.env.LIBSQL_AUTH_TOKEN;
+    client = createClient({ url, authToken });
+  } else {
+    const dbPath = resolveLocalDbPath();
+    resolvedDbPath = dbPath;
+    const dir = path.dirname(dbPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const fileUrl = path.isAbsolute(dbPath) ? `file:${dbPath}` : `file:${path.resolve(dbPath)}`;
+    client = createClient({ url: fileUrl });
   }
 
   if (isLikelyEphemeralDeployRisk()) {
     console.warn(
-      "[db] RENDER + SQLITE_PATH 없음 → 재배포/슬립 시 프로젝트 폴더의 SQLite가 새로 만들어져 휴가 신청 내역이 사라질 수 있습니다. Persistent Disk를 붙이고 Environment에 SQLITE_PATH=/data/eoroff.sqlite 처럼 디스크 경로를 지정하세요."
+      "[db] RENDER + 로컬 파일 + SQLITE_PATH 없음 → 재배포 시 SQLite가 초기화될 수 있습니다. 무료로 유지하려면 Turso(libSQL)를 쓰고 TURSO_DATABASE_URL·TURSO_AUTH_TOKEN을 설정하세요."
     );
   } else {
-    console.log(`[db] SQLite: ${dbPath}`);
+    console.log(
+      `[db] ${isUsingRemoteDb() ? "libSQL 원격 (Turso 등)" : "SQLite 파일"}: ${getResolvedDbPath()}`
+    );
   }
 
-  db = new Database(dbPath);
-  db.pragma("journal_mode = WAL");
+  if (!isUsingRemoteDb()) {
+    await client.execute("PRAGMA journal_mode = WAL");
+  }
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      employee_no TEXT NOT NULL,
-      role TEXT NOT NULL,
-      password TEXT NOT NULL
-    );
+  await client.executeMultiple(DDL.trim());
 
-    CREATE TABLE IF NOT EXISTS goldkeys (
-      user_id TEXT PRIMARY KEY,
-      quota_total INTEGER NOT NULL,
-      used_count INTEGER NOT NULL,
-      remaining_count INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS requests (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      leave_date TEXT NOT NULL,
-      leave_type TEXT NOT NULL,
-      status TEXT NOT NULL,
-      requested_at TEXT NOT NULL,
-      memo TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS notes (
-      id TEXT PRIMARY KEY,
-      leave_request_id TEXT NOT NULL,
-      content TEXT NOT NULL,
-      agreed_order INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS cancellations (
-      id TEXT PRIMARY KEY,
-      leave_request_id TEXT NOT NULL,
-      cancelled_by TEXT NOT NULL,
-      cancel_reason TEXT NOT NULL,
-      cancelled_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS selections (
-      id TEXT PRIMARY KEY,
-      leave_request_id TEXT NOT NULL,
-      selected_by TEXT NOT NULL,
-      selected_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS logs (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      before_quota INTEGER NOT NULL,
-      after_quota INTEGER NOT NULL,
-      changed_by TEXT NOT NULL,
-      changed_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS holidays (
-      holiday_date TEXT PRIMARY KEY,
-      holiday_name TEXT NOT NULL,
-      is_holiday INTEGER NOT NULL,
-      synced_at TEXT NOT NULL
-    );
-  `);
-
-  seedDefaultsIfEmpty();
-  ensureGoldkeyDefaults();
-  return db;
+  await seedDefaultsIfEmpty();
+  await ensureGoldkeyDefaults();
+  return client;
 }
 
-function seedDefaultsIfEmpty() {
-  const count = db.prepare("SELECT COUNT(*) AS c FROM users").get().c;
-  if (count > 0) return;
+async function seedDefaultsIfEmpty() {
+  const row = await queryOne("SELECT COUNT(*) AS c FROM users");
+  if (Number(row?.c || 0) > 0) return;
 
   const names = [
     "오민아",
@@ -133,34 +167,56 @@ function seedDefaultsIfEmpty() {
   ];
   const admins = ["관리자", "진기숙"];
 
-  const insertUser = db.prepare(
-    "INSERT INTO users (id, name, employee_no, role, password) VALUES (?, ?, ?, ?, ?)"
-  );
-  names.forEach((name, idx) => {
-    insertUser.run(`u_nurse_${idx + 1}`, name, `N${String(idx + 1).padStart(4, "0")}`, "NURSE", "1234");
-  });
-  admins.forEach((name, idx) => {
-    insertUser.run(`u_admin_${idx + 1}`, name, `A${String(idx + 1).padStart(4, "0")}`, "ADMIN", "1234");
-  });
+  for (let idx = 0; idx < names.length; idx++) {
+    const name = names[idx];
+    await execute(
+      "INSERT INTO users (id, name, employee_no, role, password) VALUES (?, ?, ?, ?, ?)",
+      `u_nurse_${idx + 1}`,
+      name,
+      `N${String(idx + 1).padStart(4, "0")}`,
+      "NURSE",
+      "1234"
+    );
+  }
+  for (let idx = 0; idx < admins.length; idx++) {
+    const name = admins[idx];
+    await execute(
+      "INSERT INTO users (id, name, employee_no, role, password) VALUES (?, ?, ?, ?, ?)",
+      `u_admin_${idx + 1}`,
+      name,
+      `A${String(idx + 1).padStart(4, "0")}`,
+      "ADMIN",
+      "1234"
+    );
+  }
 
-  const insertGoldkey = db.prepare(
-    "INSERT INTO goldkeys (user_id, quota_total, used_count, remaining_count) VALUES (?, ?, ?, ?)"
-  );
-  names.forEach((_, idx) => {
-    insertGoldkey.run(`u_nurse_${idx + 1}`, 10, 0, 10);
-  });
+  for (let idx = 0; idx < names.length; idx++) {
+    await execute(
+      "INSERT INTO goldkeys (user_id, quota_total, used_count, remaining_count) VALUES (?, ?, ?, ?)",
+      `u_nurse_${idx + 1}`,
+      10,
+      0,
+      10
+    );
+  }
 }
 
-function ensureGoldkeyDefaults() {
-  const nurses = queryAll("SELECT id FROM users WHERE role = 'NURSE'");
-  const insertGoldkey = db.prepare(
-    "INSERT INTO goldkeys (user_id, quota_total, used_count, remaining_count) VALUES (?, ?, ?, ?)"
-  );
+async function ensureGoldkeyDefaults() {
+  const nurses = await queryAll("SELECT id FROM users WHERE role = 'NURSE'");
 
   for (const nurse of nurses) {
-    const row = queryOne("SELECT quota_total, used_count, remaining_count FROM goldkeys WHERE user_id = ?", nurse.id);
+    const row = await queryOne(
+      "SELECT quota_total, used_count, remaining_count FROM goldkeys WHERE user_id = ?",
+      nurse.id
+    );
     if (!row) {
-      insertGoldkey.run(nurse.id, 10, 0, 10);
+      await execute(
+        "INSERT INTO goldkeys (user_id, quota_total, used_count, remaining_count) VALUES (?, ?, ?, ?)",
+        nurse.id,
+        10,
+        0,
+        10
+      );
       continue;
     }
 
@@ -168,7 +224,7 @@ function ensureGoldkeyDefaults() {
     const quota = Number(row.quota_total || 0);
     if (quota !== 10) {
       const remaining = Math.max(0, 10 - used);
-      execute(
+      await execute(
         "UPDATE goldkeys SET quota_total = 10, remaining_count = ? WHERE user_id = ?",
         remaining,
         nurse.id
@@ -177,19 +233,44 @@ function ensureGoldkeyDefaults() {
   }
 }
 
-export function queryAll(sql, ...params) {
-  return db.prepare(sql).all(...params);
+export async function queryAll(sql, ...params) {
+  const r = await client.execute({ sql, args: params });
+  return r.rows;
 }
 
-export function queryOne(sql, ...params) {
-  return db.prepare(sql).get(...params);
+export async function queryOne(sql, ...params) {
+  const rows = await queryAll(sql, ...params);
+  return rows[0];
 }
 
-export function execute(sql, ...params) {
-  return db.prepare(sql).run(...params);
+export async function execute(sql, ...params) {
+  const r = await client.execute({ sql, args: params });
+  return {
+    changes: Number(r.rowsAffected ?? 0),
+    lastInsertRowid: r.lastInsertRowid,
+  };
 }
 
-/** SQLite 트랜잭션 (better-sqlite3: 예외 시 자동 롤백) */
-export function runTransaction(fn) {
-  db.transaction(fn)();
+/**
+ * libSQL 트랜잭션 (로컬·Turso 공통: write → execute → commit / 오류 시 rollback)
+ * @param {(tx: { execute: typeof execute }) => Promise<void>} fn
+ */
+export async function runTransaction(fn) {
+  const tx = await client.transaction("write");
+  try {
+    const wrap = {
+      execute: async (sql, ...args) => {
+        const r = await tx.execute({ sql, args });
+        return {
+          changes: Number(r.rowsAffected ?? 0),
+          lastInsertRowid: r.lastInsertRowid,
+        };
+      },
+    };
+    await fn(wrap);
+    await tx.commit();
+  } catch (e) {
+    await tx.rollback().catch(() => {});
+    throw e;
+  }
 }

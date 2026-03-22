@@ -5,4 +5,7 @@ dist/
 !.env.example
 !.env.development.example
 *.sqlite
+*.sqlite-wal
+*.sqlite-shm
+backend/test-libsql*.db
 .DS_Store
