@@ -119,19 +119,11 @@ app.post("/api/requests", (req, res) => {
 
 app.post("/api/requests/:id/cancel", (req, res) => {
   try {
-    const row = queryOne(
-      "SELECT user_id, leave_type, status FROM requests WHERE id = ?",
-      req.params.id
-    );
+    const row = queryOne("SELECT id FROM requests WHERE id = ?", req.params.id);
     if (!row) return res.status(404).json({ error: "요청을 찾을 수 없습니다." });
 
     runTransaction(() => {
-      if (row.status === "APPLIED" && row.leave_type === "GOLDKEY") {
-        execute(
-          "UPDATE goldkeys SET used_count = CASE WHEN used_count > 0 THEN used_count - 1 ELSE 0 END, remaining_count = min(quota_total, remaining_count + 1) WHERE user_id = ?",
-          row.user_id
-        );
-      }
+      /* 골드키: 취소해도 잔여/사용 카운트는 되돌리지 않음(신청·사용은 누적) */
       execute("UPDATE requests SET status = 'CANCELLED' WHERE id = ?", req.params.id);
       execute(
         "INSERT INTO cancellations (id, leave_request_id, cancelled_by, cancel_reason, cancelled_at) VALUES (?, ?, ?, ?, ?)",
