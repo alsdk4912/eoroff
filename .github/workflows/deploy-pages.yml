@@ -26,7 +26,8 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-      - run: npm ci
+      # npm ci 는 lock 파일과 package.json 이 1:1일 때만 성공 → 맞지 않으면 여기서 실패함
+      - run: npm install
       - name: Build (base = /eoroff/ 자동)
         run: npm run build
         env:
