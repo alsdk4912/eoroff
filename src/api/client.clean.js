@@ -28,10 +28,14 @@ async function requestJson(path, options = {}) {
   if (API_ROOT === null) {
     throw new TypeError("Failed to fetch");
   }
+  const { headers: extraHeaders, ...rest } = options;
   const res = await fetch(`${API_ROOT}${path}`, {
     cache: "no-store",
-    headers: { "Content-Type": "application/json" },
-    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(extraHeaders && typeof extraHeaders === "object" ? extraHeaders : {}),
+    },
+    ...rest,
   });
 
   if (!res.ok) {

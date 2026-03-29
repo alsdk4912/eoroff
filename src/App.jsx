@@ -1460,7 +1460,9 @@ function SettingsPage({
       <h2>휴가·골드키 데이터 초기화 (관리자)</h2>
       <p className="help" style={{ marginBottom: 10 }}>
         신청된 휴가 전부, 협의 메모·선정·취소 기록, 조정 로그를 지우고 간호사 골드키를 이름별 기본 총량·미사용으로 되돌립니다. 공휴일 캐시는 그대로입니다.
-        {serverMode ? " (현재: 서버 DB 반영)" : " (현재: 이 브라우저 로컬만 반영 · GitHub Pages 단독 사용 시)"}
+        {serverMode
+          ? " DB 모드에서는 화면 데이터가 Turso 등 원격 DB에서 오므로, 여기서 버튼이 실패하거나 반영이 없으면 저장소의 워크플로「Reset Turso leave data」를 실행하거나, Render에 DATA_RESET_SECRET 설정 후 API 문서대로 curl로 초기화하세요."
+          : " (현재: 이 브라우저 로컬만 반영 · GitHub Pages 단독 사용 시)"}
       </p>
       <div className="row">
         <button type="button" onClick={() => void onResetLeaveData()}>

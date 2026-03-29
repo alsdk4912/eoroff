@@ -113,6 +113,30 @@ app.post("/api/admin/reset-leave-data", async (req, res) => {
   }
 });
 
+/**
+ * DB 모드 일괄 초기화(관리자 로그인 불필요).
+ * Render 등에 DATA_RESET_SECRET(8자 이상) 설정 후:
+ * curl -sS -X POST "$API/api/admin/reset-leave-data-by-secret" -H "Authorization: Bearer $DATA_RESET_SECRET"
+ */
+app.post("/api/admin/reset-leave-data-by-secret", async (req, res) => {
+  const secret = String(process.env.DATA_RESET_SECRET ?? "").trim();
+  if (!secret || secret.length < 8) {
+    return res.status(503).json({ error: "DATA_RESET_SECRET이 서버에 설정되지 않았습니다." });
+  }
+  const auth = String(req.headers.authorization ?? "");
+  const token = auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : "";
+  if (token !== secret) {
+    return res.status(403).json({ error: "인증에 실패했습니다." });
+  }
+  try {
+    await resetLeaveDataToDefaults();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /api/admin/reset-leave-data-by-secret", err);
+    res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
 const ALLOWED_LEAVE_TYPES = new Set(["GOLDKEY", "GENERAL_PRIORITY", "GENERAL_NORMAL", "HALF_DAY"]);
 const ALLOWED_LEAVE_NATURE = new Set(["PERSONAL", "PAID_TRAINING", "REQUIRED_TRAINING"]);
 

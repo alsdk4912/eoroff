@@ -1,0 +1,30 @@
+# Turso(libSQL)에 직접 연결해 휴가 신청 전부 삭제 + 골드키 기본값 복구
+# (GitHub Pages·DB 모드는 이 DB를 쓰므로, 로컬스토리지가 아니라 여기를 비워야 화면이 깨끗해짐)
+#
+# 사용: 저장소 Settings → Secrets → Actions 에 다음 추가 후, Actions 탭에서 이 워크플로만 수동 실행
+#   TURSO_DATABASE_URL  (Render/Turso 대시보드와 동일)
+#   TURSO_AUTH_TOKEN    (또는 LIBSQL_* 를 쓰는 경우 db.clean.js가 읽는 이름으로 맞출 것)
+#
+name: Reset Turso leave data
+
+on:
+  workflow_dispatch:
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install
+        run: npm ci
+
+      - name: Reset leave requests and goldkeys (Turso)
+        run: npm run db:reset-leave
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
