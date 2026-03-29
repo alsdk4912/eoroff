@@ -19,6 +19,7 @@ import {
   validateRequest,
 } from "./utils/rules";
 import { api } from "./api/client";
+import { defaultGoldkeyQuotaForName } from "./data/goldkeyQuotas.js";
 
 /** DB·표시용 날짜 문자열 정규화 (UTC/시간대 깨짐 방지 — `T` 포함 ISO는 slice만 하면 -1일 됨) */
 function normalizeLeaveDateStr(s) {
@@ -116,7 +117,8 @@ function App() {
   const [notes, setNotes] = useLocalStorage("or.notes", initialPriorityNotes);
   const [cancellations, setCancellations] = useLocalStorage("or.cancellations", initialCancellations);
   const [selections, setSelections] = useLocalStorage("or.selections", initialSelections);
-  const [goldkeys, setGoldkeys] = useLocalStorage("or.goldkeys", initialGoldkeys);
+  /** v2: 간호사별 총량 반영 — 예전 or.goldkeys(전원 10) 캐시 무효화 */
+  const [goldkeys, setGoldkeys] = useLocalStorage("or.goldkeys.v2", initialGoldkeys);
   const [adjustmentLogs, setAdjustmentLogs] = useLocalStorage("or.adjustmentLogs", initialAdjustmentLogs);
   const [holidays, setHolidays] = useLocalStorage("or.holidays", seedHolidays);
 
@@ -154,7 +156,14 @@ function App() {
     setNotes(data.notes.map((n) => ({ id: n.id, leaveRequestId: n.leave_request_id, content: n.content, agreedOrder: n.agreed_order })));
     setCancellations(data.cancellations.map((c) => ({ id: c.id, leaveRequestId: c.leave_request_id, cancelledBy: c.cancelled_by, cancelReason: c.cancel_reason, cancelledAt: c.cancelled_at })));
     setSelections(data.selections.map((s) => ({ id: s.id, leaveRequestId: s.leave_request_id, selectedBy: s.selected_by, selectedAt: s.selected_at })));
-    setGoldkeys(data.goldkeys.map((g) => ({ userId: g.user_id, quotaTotal: g.quota_total, usedCount: g.used_count, remainingCount: g.remaining_count })));
+    setGoldkeys(
+      data.goldkeys.map((g) => ({
+        userId: g.user_id ?? g.userId,
+        quotaTotal: Number(g.quota_total ?? g.quotaTotal ?? 0),
+        usedCount: Number(g.used_count ?? g.usedCount ?? 0),
+        remainingCount: Number(g.remaining_count ?? g.remainingCount ?? 0),
+      }))
+    );
     setAdjustmentLogs(data.logs.map((l) => ({ id: l.id, userId: l.user_id, beforeQuota: l.before_quota, afterQuota: l.after_quota, changedBy: l.changed_by, changedAt: l.changed_at })));
     setHolidays(data.holidays.map((h) => ({ holidayDate: h.holiday_date, holidayName: h.holiday_name, isHoliday: Boolean(h.is_holiday) })));
   }
@@ -570,7 +579,19 @@ function App() {
           }
         />
         <Route path="/my" element={<MyRequestsPage myRequests={myRequests} cancelRequest={cancelRequest} />} />
-        <Route path="/dashboard" element={<DashboardPage dashboard={dashboard} goldkeys={goldkeys} requests={requests} cancellations={cancellations} users={users} />} />
+        <Route
+          path="/dashboard"
+          element={
+            <DashboardPage
+              dashboard={dashboard}
+              goldkeys={goldkeys}
+              requests={requests}
+              cancellations={cancellations}
+              users={users}
+              serverMode={serverMode}
+            />
+          }
+        />
         <Route
           path="/calendar"
           element={
@@ -599,7 +620,26 @@ function App() {
           }
         />
         <Route path="/account" element={<AccountPage onChangePassword={handleChangePassword} message={accountMessage} />} />
-        <Route path="/admin" element={isAdmin ? <AdminPage appliedRequests={appliedRequests} allRequests={requests} users={users} selectRequest={selectRequest} rejectRequest={rejectRequest} addPriorityNote={addPriorityNote} notes={notes} goldkeys={goldkeys} /> : <Navigate to="/calendar" />} />
+        <Route
+          path="/admin"
+          element={
+            isAdmin ? (
+              <AdminPage
+                appliedRequests={appliedRequests}
+                allRequests={requests}
+                users={users}
+                selectRequest={selectRequest}
+                rejectRequest={rejectRequest}
+                addPriorityNote={addPriorityNote}
+                notes={notes}
+                goldkeys={goldkeys}
+                serverMode={serverMode}
+              />
+            ) : (
+              <Navigate to="/calendar" />
+            )
+          }
+        />
         <Route path="/settings" element={isAdmin ? <SettingsPage apiKey={apiKey} setApiKey={setApiKey} syncYear={syncYear} setSyncYear={setSyncYear} syncMonth={syncMonth} setSyncMonth={setSyncMonth} syncHolidays={syncHolidays} holidays={holidays} apiMessage={apiMessage} backupMessage={backupMessage} restoreSqlText={restoreSqlText} setRestoreSqlText={setRestoreSqlText} onBackup={handleBackupSql} onRestore={handleRestoreSql} managedUsers={managedUsers} onResetPassword={handleResetPassword} accountMessage={accountMessage} /> : <Navigate to="/calendar" />} />
         <Route path="*" element={<Navigate to="/calendar" />} />
       </Routes>
@@ -765,7 +805,17 @@ function countGoldkeyApplyUse(requests, userId) {
   return requests.filter((r) => r.userId === userId && r.leaveType === "GOLDKEY").length;
 }
 
-function DashboardPage({ dashboard, goldkeys, requests, cancellations, users }) {
+/** 종합현황·관리자: 서버 연결 시 API 총량 우선, 오프라인·누락 시 이름별 정책(간호사별 10~15) */
+function goldkeyQuotaTotalForDisplay(user, g, serverMode) {
+  const policy = defaultGoldkeyQuotaForName(user?.name);
+  if (!serverMode) return policy;
+  const raw = g?.quotaTotal ?? g?.quota_total;
+  const n = raw != null && raw !== "" ? Number(raw) : NaN;
+  if (Number.isFinite(n) && n > 0) return n;
+  return policy;
+}
+
+function DashboardPage({ dashboard, goldkeys, requests, cancellations, users, serverMode }) {
   return (
     <>
       <section className="card">
@@ -784,20 +834,18 @@ function DashboardPage({ dashboard, goldkeys, requests, cancellations, users }) 
               </tr>
             </thead>
             <tbody>
-              {goldkeys
-                .slice()
-                .sort((a, b) =>
-                  (users.find((u) => u.id === a.userId)?.name || "").localeCompare(
-                    users.find((u) => u.id === b.userId)?.name || ""
-                  )
-                )
-                .map((g) => {
-                  const applyUse = countGoldkeyApplyUse(requests, g.userId);
-                  const remaining = Math.max(0, (g.quotaTotal ?? 0) - applyUse);
+              {users
+                .filter((u) => u.role === "NURSE")
+                .sort((a, b) => a.name.localeCompare(b.name, "ko"))
+                .map((u) => {
+                  const g = goldkeys.find((x) => x.userId === u.id);
+                  const quotaTotal = goldkeyQuotaTotalForDisplay(u, g, serverMode);
+                  const applyUse = countGoldkeyApplyUse(requests, u.id);
+                  const remaining = Math.max(0, quotaTotal - applyUse);
                   return (
-                    <tr key={g.userId}>
-                      <td>{users.find((u) => u.id === g.userId)?.name ?? g.userId}</td>
-                      <td>{g.quotaTotal}</td>
+                    <tr key={u.id}>
+                      <td>{u.name}</td>
+                      <td>{quotaTotal}</td>
                       <td>{applyUse}</td>
                       <td>{remaining}</td>
                     </tr>
@@ -1169,7 +1217,7 @@ function CalendarPage({
   );
 }
 
-function AdminPage({ appliedRequests, allRequests, users, selectRequest, rejectRequest, addPriorityNote, notes, goldkeys }) {
+function AdminPage({ appliedRequests, allRequests, users, selectRequest, rejectRequest, addPriorityNote, notes, goldkeys, serverMode }) {
   const [nameSearch, setNameSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("ALL");
   const rows = appliedRequests.filter((r) => {
@@ -1251,18 +1299,23 @@ function AdminPage({ appliedRequests, allRequests, users, selectRequest, rejectR
               </tr>
             </thead>
             <tbody>
-              {goldkeys.map((g) => {
-                const applyUse = countGoldkeyApplyUse(allRequests, g.userId);
-                const remaining = Math.max(0, (g.quotaTotal ?? 0) - applyUse);
-                return (
-                  <tr key={g.userId}>
-                    <td>{users.find((u) => u.id === g.userId)?.name}</td>
-                    <td>{g.quotaTotal}</td>
-                    <td>{applyUse}</td>
-                    <td>{remaining}</td>
-                  </tr>
-                );
-              })}
+              {users
+                .filter((u) => u.role === "NURSE")
+                .sort((a, b) => a.name.localeCompare(b.name, "ko"))
+                .map((u) => {
+                  const g = goldkeys.find((x) => x.userId === u.id);
+                  const quotaTotal = goldkeyQuotaTotalForDisplay(u, g, serverMode);
+                  const applyUse = countGoldkeyApplyUse(allRequests, u.id);
+                  const remaining = Math.max(0, quotaTotal - applyUse);
+                  return (
+                    <tr key={u.id}>
+                      <td>{u.name}</td>
+                      <td>{quotaTotal}</td>
+                      <td>{applyUse}</td>
+                      <td>{remaining}</td>
+                    </tr>
+                  );
+                })}
             </tbody>
           </table>
         </div>
