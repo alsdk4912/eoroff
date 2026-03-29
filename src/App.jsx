@@ -926,26 +926,40 @@ function CalendarPage({
   const nurseUsers = users.filter((u) => u.role === "NURSE");
   const workingUsers = nurseUsers.filter((u) => !approvedIds.has(u.id));
 
-  /** 같은 휴가일·같은 유형에서 신청(제출)일이 모두 같으면 협의·순번 입력, 다르면 신청순 자동·수정 불가 */
-  const negotiationMetaByLeaveType = useMemo(() => {
+  /**
+   * 같은 휴가일·같은 유형 기준으로, 신청(제출)일이 같은 사람끼리만 묶음.
+   * 그 묶음에 2명 이상이면 협의(당일 동시 신청) — 제출일이 서로 다르면 그중 혼자인 날은 신청순 자동.
+   * (한 유형에 제출일이 여러 날 섞여 있어도, 같은 날에 같이 신청한 사람은 협의로 표시)
+   */
+  const negotiationMetaByRequestId = useMemo(() => {
     const map = new Map();
     if (!selectedYmd) return map;
     const active = dayRequests.filter((r) => r.leaveDate === selectedYmd && r.status !== "CANCELLED");
-    const types = [...new Set(active.map((r) => r.leaveType))];
-    for (const lt of types) {
-      const group = active.filter((r) => r.leaveType === lt);
-      if (group.length < 2) {
-        map.set(lt, { mode: "single", autoRankById: new Map() });
+    const byType = new Map();
+    for (const r of active) {
+      if (!byType.has(r.leaveType)) byType.set(r.leaveType, []);
+      byType.get(r.leaveType).push(r);
+    }
+    for (const [, list] of byType) {
+      if (list.length === 1) {
+        map.set(list[0].id, { mode: "single" });
         continue;
       }
-      const submitDays = new Set(group.map((r) => toLocalYMD(new Date(r.requestedAt))));
-      if (submitDays.size === 1) {
-        map.set(lt, { mode: "negotiate", autoRankById: new Map() });
-      } else {
-        const sorted = [...group].sort((a, b) => a.requestedAt.localeCompare(b.requestedAt));
-        const autoRankById = new Map();
-        sorted.forEach((r, i) => autoRankById.set(r.id, i + 1));
-        map.set(lt, { mode: "auto", autoRankById });
+      const sortedAll = [...list].sort((a, b) => a.requestedAt.localeCompare(b.requestedAt));
+      for (const r of list) {
+        const myDay = toLocalYMD(new Date(r.requestedAt));
+        const sameSubmitDayPeers = list.filter((x) => toLocalYMD(new Date(x.requestedAt)) === myDay);
+        const autoRankGlobal = sortedAll.findIndex((x) => x.id === r.id) + 1;
+        if (sameSubmitDayPeers.length >= 2) {
+          map.set(r.id, { mode: "negotiate" });
+        } else {
+          map.set(r.id, { mode: "auto", autoRank: autoRankGlobal });
+        }
+      }
+    }
+    for (const r of dayRequests) {
+      if (r.leaveDate === selectedYmd && r.status === "CANCELLED") {
+        map.set(r.id, { mode: "cancelled" });
       }
     }
     return map;
@@ -1038,17 +1052,17 @@ function CalendarPage({
                 ) : (
                   <>
                     <p className="help" style={{ marginBottom: 10 }}>
-                      같은 <strong>휴가일</strong>·같은 <strong>유형</strong>으로 여러 명일 때: 모두 <strong>같은 날에 신청(제출)</strong>한 경우만 「협의」로 순번을 직접 적을 수 있습니다.{" "}
-                      <strong>서로 다른 날에 신청</strong>한 경우에는 신청 순서대로 번호가 붙으며 수정할 수 없습니다.
+                      같은 <strong>휴가일</strong>·같은 <strong>유형</strong>에서, <strong>신청(제출)일이 같은 사람끼리</strong> 2명 이상이면 「협의」로 순번을 적습니다. 같은 날에 나 혼자만 신청한 경우(제출일이 다른 사람과 겹치지 않음)는 「신청순」으로 자동 번호만 붙습니다.
                     </p>
                     <ul className="calendar-applicant-list">
                       {dayRequests.map((r) => {
                         const nm = users.find((u) => u.id === r.userId)?.name ?? r.userId;
-                        const meta = negotiationMetaByLeaveType.get(r.leaveType) ?? { mode: "single", autoRankById: new Map() };
+                        const meta = negotiationMetaByRequestId.get(r.id) ?? { mode: "single" };
                         const ord = r.negotiationOrder ?? r.negotiation_order;
-                        const autoRank = meta.autoRankById.get(r.id);
                         const isNegotiate = meta.mode === "negotiate";
                         const isAuto = meta.mode === "auto";
+                        const isCancelledRow = meta.mode === "cancelled";
+                        const autoRank = meta.mode === "auto" ? meta.autoRank : null;
                         const showModePill = isNegotiate || isAuto;
                         let prefix = "";
                         if (isAuto && autoRank != null) prefix = `${autoRank}. `;
@@ -1066,7 +1080,7 @@ function CalendarPage({
                                 </span>
                               ) : isAuto ? (
                                 <span className="negotiation-order-readonly negotiation-order-readonly--muted">—</span>
-                              ) : isNegotiate && r.status === "CANCELLED" ? (
+                              ) : isCancelledRow || r.status === "CANCELLED" ? (
                                 <span className="negotiation-order-readonly negotiation-order-readonly--muted">—</span>
                               ) : (
                                 <span className="negotiation-order-placeholder" aria-hidden />
