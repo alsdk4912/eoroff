@@ -312,12 +312,20 @@ export async function resetLeaveDataToDefaults() {
     await tx.execute("DELETE FROM requests");
     for (const n of nurses) {
       const q = defaultGoldkeyQuotaForName(n.name);
-      await tx.execute(
+      const up = await tx.execute(
         "UPDATE goldkeys SET quota_total = ?, used_count = 0, remaining_count = ? WHERE user_id = ?",
         q,
         q,
         n.id
       );
+      if (!Number(up.changes || 0)) {
+        await tx.execute(
+          "INSERT INTO goldkeys (user_id, quota_total, used_count, remaining_count) VALUES (?, ?, 0, ?)",
+          n.id,
+          q,
+          q
+        );
+      }
     }
   });
 }

@@ -13,6 +13,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "node backend/server.clean.js",
+    "db:reset-leave": "node scripts/reset-leave-data.mjs",
     "render:install": "npm install --omit=dev"
   },
   "dependencies": {

@@ -21,13 +21,36 @@ import {
 import { api } from "./api/client";
 import { defaultGoldkeyQuotaForName } from "./data/goldkeyQuotas.js";
 
-/** 오프라인 저장소 버전 — 휴가·골드키 일괄 초기화 시 키 올려 예전 캐시 무효화 */
-const LS_REQUESTS = "or.requests.v2";
-const LS_NOTES = "or.notes.v2";
-const LS_CANCELLATIONS = "or.cancellations.v2";
-const LS_SELECTIONS = "or.selections.v2";
-const LS_GOLDKEYS = "or.goldkeys.v3";
-const LS_ADJUSTMENT_LOGS = "or.adjustmentLogs.v2";
+/** 오프라인 저장소 버전 — 배포 시 키 올리면 예전 휴가·골드키 캐시 무시(빈 신청·기본 골드키로 로드) */
+const LS_REQUESTS = "or.requests.v3";
+const LS_NOTES = "or.notes.v3";
+const LS_CANCELLATIONS = "or.cancellations.v3";
+const LS_SELECTIONS = "or.selections.v3";
+const LS_GOLDKEYS = "or.goldkeys.v4";
+const LS_ADJUSTMENT_LOGS = "or.adjustmentLogs.v3";
+
+/** 이전 버전 키는 남아 있으면 혼동만 되므로 제거(현재 키는 유지) */
+function dropStaleOfflineLeaveKeys() {
+  try {
+    [
+      "or.requests",
+      "or.requests.v2",
+      "or.notes",
+      "or.notes.v2",
+      "or.cancellations",
+      "or.cancellations.v2",
+      "or.selections",
+      "or.selections.v2",
+      "or.goldkeys",
+      "or.goldkeys.v2",
+      "or.goldkeys.v3",
+      "or.adjustmentLogs",
+      "or.adjustmentLogs.v2",
+    ].forEach((k) => localStorage.removeItem(k));
+  } catch {
+    /* ignore */
+  }
+}
 
 /** DB·표시용 날짜 문자열 정규화 (UTC/시간대 깨짐 방지 — `T` 포함 ISO는 slice만 하면 -1일 됨) */
 function normalizeLeaveDateStr(s) {
@@ -128,6 +151,10 @@ function App() {
   const [goldkeys, setGoldkeys] = useLocalStorage(LS_GOLDKEYS, initialGoldkeys);
   const [adjustmentLogs, setAdjustmentLogs] = useLocalStorage(LS_ADJUSTMENT_LOGS, initialAdjustmentLogs);
   const [holidays, setHolidays] = useLocalStorage("or.holidays", seedHolidays);
+
+  useEffect(() => {
+    dropStaleOfflineLeaveKeys();
+  }, []);
 
   const [leaveType, setLeaveType] = useState("GOLDKEY");
   const [leaveNature, setLeaveNature] = useState("PERSONAL");
