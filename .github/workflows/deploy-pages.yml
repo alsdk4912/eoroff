@@ -31,34 +31,8 @@ jobs:
 
       - run: npm install
 
-      # Pages·Render·Turso는 같은 DB. 배포 직후 DB를 비워야 github.io에서도 신청이 0으로 보임.
-      # (1) Turso 직접: TURSO_DATABASE_URL + TURSO_AUTH_TOKEN
-      # (2) 없으면 Render API: VITE_API_BASE_URL + DATA_RESET_SECRET(Render에 동일 토큰 설정)
-      # 매 배포마다 초기화가 부담되면 Variables → SKIP_TURSO_RESET_ON_DEPLOY=true
-      - name: 원격 DB 초기화 (배포 시 공용 DB 비우기)
-        if: ${{ vars.SKIP_TURSO_RESET_ON_DEPLOY != 'true' }}
-        continue-on-error: true
-        run: |
-          if [ -n "${TURSO_DATABASE_URL}" ] && [ -n "${TURSO_AUTH_TOKEN}" ]; then
-            echo "Turso(libSQL) 직접 초기화"
-            npm run db:reset-leave
-            exit 0
-          fi
-          if [ -n "${DATA_RESET_SECRET}" ] && [ -n "${VITE_API_BASE_URL}" ]; then
-            API="${VITE_API_BASE_URL%/}"
-            echo "Render API로 초기화: ${API}/api/admin/reset-leave-data-by-secret"
-            curl -fsS --max-time 120 -X POST "${API}/api/admin/reset-leave-data-by-secret" \
-              -H "Authorization: Bearer ${DATA_RESET_SECRET}" \
-              -H "Content-Type: application/json"
-            exit 0
-          fi
-          echo "::notice title=DB 초기화::Turso 시크릿 또는 DATA_RESET_SECRET+VITE_API_BASE_URL 없음 — 건너뜀. github.io는 기존 DB 데이터를 그대로 보여줍니다."
-          exit 0
-        env:
-          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
-          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
-          DATA_RESET_SECRET: ${{ secrets.DATA_RESET_SECRET }}
-          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+      # 신청 데이터는 Turso(DB)에 보관됩니다. Pages 배포만으로 DB를 비우지 않습니다.
+      # 전체 초기화가 필요할 때만 Actions →「Reset Turso leave data」또는 관리자 설정을 사용하세요.
 
       - name: Build (VITE_BASE=/저장소이름/)
         run: npm run build

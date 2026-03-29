@@ -18,7 +18,7 @@ services:
       #   sync: false
       # - key: TURSO_AUTH_TOKEN
       #   sync: false
-      # GitHub Pages 배포 시 DB 비우기(Actions의 DATA_RESET_SECRET과 동일 값, 8자 이상)
+      # 선택: 수동 DB 초기화 API용(배포와 무관). Render·GitHub에 동일 값 설정
       # - key: DATA_RESET_SECRET
       #   sync: false
       # Turso 없이 Disk 쓸 때만:
