@@ -262,6 +262,12 @@ button:hover {
   border-color: #4ade80;
 }
 
+.type-half_day {
+  background: #faf5ff;
+  color: #581c87;
+  border-color: #c084fc;
+}
+
 .divider {
   margin: 16px 0;
   border: 0;
@@ -592,6 +598,12 @@ button:hover {
   border-color: #4ade80;
 }
 
+.type-half_day {
+  background: #faf5ff;
+  color: #581c87;
+  border-color: #c084fc;
+}
+
 .divider {
   margin: 16px 0;
   border: 0;
@@ -902,6 +914,12 @@ button:hover {
   background: #ecfdf5;
   color: #14532d;
   border-color: #4ade80;
+}
+
+.type-half_day {
+  background: #faf5ff;
+  color: #581c87;
+  border-color: #c084fc;
 }
 
 .divider {
@@ -1231,6 +1249,12 @@ textarea.sql-textarea {
   border-color: #4ade80;
 }
 
+.type-half_day {
+  background: #faf5ff;
+  color: #581c87;
+  border-color: #c084fc;
+}
+
 .divider {
   margin: 16px 0;
   border: 0;
@@ -1487,6 +1511,11 @@ button {
   color: #14532d;
 }
 
+.type-half_day {
+  background: #ede9fe;
+  color: #581c87;
+}
+
 .divider {
   margin: 16px 0;
   border: 0;
@@ -1565,6 +1594,13 @@ button {
   border-color: #22c55e !important;
 }
 
+.selected-item.type-half_day,
+.leave-type-pill.selected-item.type-half_day {
+  background: #e9d5ff !important;
+  color: #581c87 !important;
+  border-color: #a855f7 !important;
+}
+
 /* 같은 날짜에 선정자가 있을 때, 선정자 제외 신청자 전부 회색 */
 .selected-item.request-dimmed-by-approval {
   background: #e2e8f0 !important;
@@ -1613,6 +1649,14 @@ tr.request-cancelled-row td button {
 }
 
 .grid .ymd-label {
+  grid-column: 1 / -1;
+  font-size: 13px;
+  font-weight: 700;
+  color: #475569;
+  margin: 0;
+}
+
+.grid .field-label {
   grid-column: 1 / -1;
   font-size: 13px;
   font-weight: 700;

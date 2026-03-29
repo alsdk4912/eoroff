@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS requests (
   user_id TEXT NOT NULL,
   leave_date TEXT NOT NULL,
   leave_type TEXT NOT NULL,
+  leave_nature TEXT NOT NULL DEFAULT 'PERSONAL',
   status TEXT NOT NULL,
   requested_at TEXT NOT NULL,
   memo TEXT
@@ -138,9 +139,20 @@ export async function initDb() {
 
   await client.executeMultiple(DDL.trim());
 
+  await ensureRequestsLeaveNatureColumn();
+
   await seedDefaultsIfEmpty();
   await ensureGoldkeyDefaults();
   return client;
+}
+
+/** 기존 DB에 leave_nature 컬럼 추가 (Turso·로컬 공통) */
+async function ensureRequestsLeaveNatureColumn() {
+  const cols = await queryAll("PRAGMA table_info(requests)");
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("leave_nature")) {
+    await execute("ALTER TABLE requests ADD COLUMN leave_nature TEXT NOT NULL DEFAULT 'PERSONAL'");
+  }
 }
 
 async function seedDefaultsIfEmpty() {

@@ -99,6 +99,9 @@ app.post("/api/admin/users/:id/reset-password", async (req, res) => {
   res.json({ ok: true });
 });
 
+const ALLOWED_LEAVE_TYPES = new Set(["GOLDKEY", "GENERAL_PRIORITY", "GENERAL_NORMAL", "HALF_DAY"]);
+const ALLOWED_LEAVE_NATURE = new Set(["PERSONAL", "PAID_TRAINING", "REQUIRED_TRAINING"]);
+
 app.post("/api/requests", async (req, res) => {
   try {
     const {
@@ -109,7 +112,17 @@ app.post("/api/requests", async (req, res) => {
       status,
       requestedAt,
       memo = "",
+      leaveNature: leaveNatureRaw,
+      leave_nature,
     } = req.body ?? {};
+
+    const leaveNature = String(leaveNatureRaw ?? leave_nature ?? "PERSONAL").trim();
+    if (!ALLOWED_LEAVE_TYPES.has(leaveType)) {
+      return res.status(400).json({ error: "지원하지 않는 휴가 종류입니다." });
+    }
+    if (!ALLOWED_LEAVE_NATURE.has(leaveNature)) {
+      return res.status(400).json({ error: "휴가 성격을 선택하세요." });
+    }
 
     if (leaveType === "GOLDKEY") {
       const g = await queryOne("SELECT remaining_count FROM goldkeys WHERE user_id = ?", userId);
@@ -131,11 +144,12 @@ app.post("/api/requests", async (req, res) => {
 
     await runTransaction(async (tx) => {
       await tx.execute(
-        "INSERT INTO requests (id, user_id, leave_date, leave_type, status, requested_at, memo) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO requests (id, user_id, leave_date, leave_type, leave_nature, status, requested_at, memo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         id,
         userId,
         leaveDate,
         leaveType,
+        leaveNature,
         status,
         requestedAt,
         memo

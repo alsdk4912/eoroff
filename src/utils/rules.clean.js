@@ -2,7 +2,16 @@ const LEAVE_TYPE_LABEL = {
   GOLDKEY: "골드키",
   GENERAL_PRIORITY: "일반휴가-우선순위",
   GENERAL_NORMAL: "일반휴가-후순위",
+  HALF_DAY: "반차",
 };
+
+const LEAVE_NATURE_LABEL = {
+  PERSONAL: "개인휴가",
+  PAID_TRAINING: "보수교육공가",
+  REQUIRED_TRAINING: "필수교육",
+};
+
+export const ALLOWED_LEAVE_NATURE = new Set(Object.keys(LEAVE_NATURE_LABEL));
 
 const STATUS_LABEL = {
   APPLIED: "신청",
@@ -29,6 +38,11 @@ export function leaveTypeLabel(type) {
   return LEAVE_TYPE_LABEL[type] ?? type;
 }
 
+export function leaveNatureLabel(nature) {
+  const key = String(nature || "PERSONAL").trim();
+  return LEAVE_NATURE_LABEL[key] ?? key;
+}
+
 export function statusLabel(status) {
   return STATUS_LABEL[status] ?? status;
 }
@@ -36,7 +50,36 @@ export function statusLabel(status) {
 export function leaveTypeOrder(type) {
   if (type === "GOLDKEY") return 1;
   if (type === "GENERAL_PRIORITY") return 2;
-  return 3;
+  if (type === "GENERAL_NORMAL") return 3;
+  if (type === "HALF_DAY") return 4;
+  return 99;
+}
+
+/**
+ * 관리자 신청 목록 등: 골드키는 휴가일이 다르면 신청시각 순, 같은 날이면 이름(가나다) 순(당사자 협의).
+ * 그 외 유형은 휴가일 → 신청시각.
+ */
+export function compareAppliedRequests(a, b, users) {
+  const nameOf = (uid) => users.find((u) => u.id === uid)?.name ?? uid;
+  const t = leaveTypeOrder(a.leaveType) - leaveTypeOrder(b.leaveType);
+  if (t !== 0) return t;
+  if (a.leaveType === "GOLDKEY" && b.leaveType === "GOLDKEY") {
+    if (a.leaveDate !== b.leaveDate) return a.requestedAt.localeCompare(b.requestedAt);
+    return nameOf(a.userId).localeCompare(nameOf(b.userId), "ko");
+  }
+  if (a.leaveDate !== b.leaveDate) return a.leaveDate.localeCompare(b.leaveDate);
+  return a.requestedAt.localeCompare(b.requestedAt);
+}
+
+/** 달력·같은 휴가일 목록: 골드키끼리는 이름 순, 나머지는 유형 순 후 신청시각 */
+export function compareSameLeaveDateRequests(a, b, users) {
+  const nameOf = (uid) => users.find((u) => u.id === uid)?.name ?? uid;
+  const ord = leaveTypeOrder(a.leaveType) - leaveTypeOrder(b.leaveType);
+  if (ord !== 0) return ord;
+  if (a.leaveType === "GOLDKEY" && b.leaveType === "GOLDKEY") {
+    return nameOf(a.userId).localeCompare(nameOf(b.userId), "ko");
+  }
+  return a.requestedAt.localeCompare(b.requestedAt);
 }
 
 function holidaySetFromCache(holidaysCache) {
@@ -111,8 +154,19 @@ export function hasBlockingGoldkeyOnDate(requests, userId, leaveDateYmd) {
   });
 }
 
-export function validateRequest({ leaveType, leaveDate, now, remainingGoldkey, holidaysCache, userId, requests }) {
-  if (!leaveType || !leaveDate) return "휴가유형과 날짜를 입력하세요.";
+export function validateRequest({
+  leaveType,
+  leaveDate,
+  leaveNature,
+  now,
+  remainingGoldkey,
+  holidaysCache,
+  userId,
+  requests,
+}) {
+  if (!leaveType || !leaveDate) return "휴가 종류와 날짜를 입력하세요.";
+  const nature = String(leaveNature ?? "").trim();
+  if (!nature || !ALLOWED_LEAVE_NATURE.has(nature)) return "휴가 성격을 선택하세요.";
 
   const target = parseYmdAsLocalDate(leaveDate);
   if (Number.isNaN(target.getTime())) return "날짜 형식이 올바르지 않습니다.";
@@ -131,9 +185,9 @@ export function validateRequest({ leaveType, leaveDate, now, remainingGoldkey, h
     return "";
   }
 
-  // GENERAL: 해당월(잔여일자) + 다음달 모두 신청 가능
+  // 일반·반차: 해당월(잔여일자) + 다음달 모두 신청 가능
   if (targetMonth !== currentMonth && targetMonth !== plus1) {
-    return "일반휴가는 현재달(잔여일자) 또는 다음달만 신청 가능합니다.";
+    return "일반휴가·반차는 현재달(잔여일자) 또는 다음달만 신청 가능합니다.";
   }
 
   // 잔여일자만 허용: 신청 시각(now) 기준으로 과거 날짜는 차단
@@ -155,6 +209,11 @@ export function validateRequest({ leaveType, leaveDate, now, remainingGoldkey, h
 
   if (leaveType === "GENERAL_NORMAL") {
     if (now < secondBusiness) return "일반-후순위는 영업일 2일 09시 이후부터 신청 가능합니다.";
+    return "";
+  }
+
+  if (leaveType === "HALF_DAY") {
+    if (now < secondBusiness) return "반차는 영업일 2일 09시 이후부터 신청 가능합니다.";
     return "";
   }
 
