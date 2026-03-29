@@ -81,7 +81,37 @@ function parseYmdAsLocalDate(ymd) {
   return new Date(y, mo - 1, d);
 }
 
-export function validateRequest({ leaveType, leaveDate, now, remainingGoldkey, holidaysCache }) {
+/** 신청 목록 행에서 YYYY-MM-DD 추출 (API snake_case·ISO 혼용 대비) */
+function ymdFromRequestRow(r) {
+  const raw = String(r?.leaveDate ?? r?.leave_date ?? "").trim().replace(/\//g, "-");
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw.slice(0, 10))) return raw.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}T/.test(raw) || /Z|[+-]\d{2}:?\d{2}$/.test(raw)) {
+    const d = new Date(raw);
+    if (!Number.isNaN(d.getTime())) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    }
+  }
+  return "";
+}
+
+/** 취소·미선정 제외: 진행 중인 골드키가 해당 날짜에 이미 있으면 true */
+export function hasBlockingGoldkeyOnDate(requests, userId, leaveDateYmd) {
+  const ymd = String(leaveDateYmd ?? "").trim().slice(0, 10);
+  if (!ymd || !userId) return false;
+  return (requests ?? []).some((r) => {
+    if (r.leaveType !== "GOLDKEY") return false;
+    if (r.userId !== userId) return false;
+    if (ymdFromRequestRow(r) !== ymd) return false;
+    const st = r.status;
+    if (st === "CANCELLED" || st === "REJECTED") return false;
+    return true;
+  });
+}
+
+export function validateRequest({ leaveType, leaveDate, now, remainingGoldkey, holidaysCache, userId, requests }) {
   if (!leaveType || !leaveDate) return "휴가유형과 날짜를 입력하세요.";
 
   const target = parseYmdAsLocalDate(leaveDate);
@@ -95,6 +125,9 @@ export function validateRequest({ leaveType, leaveDate, now, remainingGoldkey, h
   if (leaveType === "GOLDKEY") {
     if (targetMonth < plus2) return "골드키는 현재월+2달부터 신청 가능합니다.";
     if ((remainingGoldkey ?? 0) <= 0) return "잔여 골드키가 없습니다.";
+    if (hasBlockingGoldkeyOnDate(requests, userId, leaveDate)) {
+      return "해당 날짜에 이미 골드키 신청이 있습니다.";
+    }
     return "";
   }
 

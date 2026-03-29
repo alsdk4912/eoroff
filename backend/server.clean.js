@@ -116,6 +116,17 @@ app.post("/api/requests", async (req, res) => {
       if (!g || Number(g.remaining_count) <= 0) {
         return res.status(400).json({ error: "잔여 골드키가 없습니다." });
       }
+      const dup = await queryOne(
+        `SELECT id FROM requests
+         WHERE user_id = ? AND leave_date = ? AND leave_type = 'GOLDKEY'
+           AND status NOT IN ('CANCELLED', 'REJECTED')
+         LIMIT 1`,
+        userId,
+        leaveDate
+      );
+      if (dup) {
+        return res.status(400).json({ error: "해당 날짜에 이미 골드키 신청이 있습니다." });
+      }
     }
 
     await runTransaction(async (tx) => {

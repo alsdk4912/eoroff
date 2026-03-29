@@ -305,6 +305,8 @@ function App() {
       now: new Date(),
       remainingGoldkey: myGoldkey?.remainingCount ?? 0,
       holidaysCache: holidays,
+      userId: auth.userId,
+      requests,
     });
     if (error) return setMessage(error);
     const payload = {
