@@ -172,28 +172,31 @@ app.post("/api/requests", async (req, res) => {
   }
 });
 
-/** 같은 날·같은 유형 다인 협의 후 순번(1~999), 비우면 NULL */
-app.patch("/api/requests/:id/negotiation-order", async (req, res) => {
+/** 같은 날·같은 유형 다인 협의 후 순번(1~999), 비우면 NULL — POST·PATCH 둘 다 지원(Render·프록시에서 PATCH 미전달 대비) */
+async function handleNegotiationOrder(req, res) {
   try {
-    const row = await queryOne("SELECT id FROM requests WHERE id = ?", req.params.id);
+    const requestId = decodeURIComponent(String(req.params.id ?? ""));
+    const row = await queryOne("SELECT id FROM requests WHERE id = ?", requestId);
     if (!row) return res.status(404).json({ error: "요청을 찾을 수 없습니다." });
 
     const raw = req.body?.negotiationOrder ?? req.body?.negotiation_order;
     if (raw === null || raw === undefined || raw === "") {
-      await execute("UPDATE requests SET negotiation_order = NULL WHERE id = ?", req.params.id);
+      await execute("UPDATE requests SET negotiation_order = NULL WHERE id = ?", requestId);
       return res.json({ ok: true, negotiationOrder: null });
     }
     const n = Number(raw);
     if (!Number.isInteger(n) || n < 1 || n > 999) {
       return res.status(400).json({ error: "협의 순번은 1~999 정수이거나 비워야 합니다." });
     }
-    await execute("UPDATE requests SET negotiation_order = ? WHERE id = ?", n, req.params.id);
+    await execute("UPDATE requests SET negotiation_order = ? WHERE id = ?", n, requestId);
     return res.json({ ok: true, negotiationOrder: n });
   } catch (err) {
-    console.error("PATCH /api/requests/:id/negotiation-order", err);
+    console.error("negotiation-order", err);
     res.status(500).json({ error: String(err?.message || err) });
   }
-});
+}
+app.patch("/api/requests/:id/negotiation-order", handleNegotiationOrder);
+app.post("/api/requests/:id/negotiation-order", handleNegotiationOrder);
 
 app.post("/api/requests/:id/cancel", async (req, res) => {
   try {

@@ -74,17 +74,16 @@ function compareNegotiationOrder(a, b) {
 
 /**
  * 관리자 신청 목록: 같은 휴가일·같은 유형에서 협의 순번이 있으면 우선.
- * 골드키는 휴가일이 다르면 신청시각 순, 같은 날이면 순번→이름.
+ * 골드키: 휴가일이 다르면 신청시각 순, 같은 휴가일이면 순번→신청시각(먼저 신청한 사람이 앞).
  */
 export function compareAppliedRequests(a, b, users) {
-  const nameOf = (uid) => users.find((u) => u.id === uid)?.name ?? uid;
   const t = leaveTypeOrder(a.leaveType) - leaveTypeOrder(b.leaveType);
   if (t !== 0) return t;
   if (a.leaveType === "GOLDKEY" && b.leaveType === "GOLDKEY") {
     if (a.leaveDate !== b.leaveDate) return a.requestedAt.localeCompare(b.requestedAt);
     const nc = compareNegotiationOrder(a, b);
     if (nc !== 0) return nc;
-    return nameOf(a.userId).localeCompare(nameOf(b.userId), "ko");
+    return a.requestedAt.localeCompare(b.requestedAt);
   }
   if (a.leaveDate !== b.leaveDate) return a.leaveDate.localeCompare(b.leaveDate);
   const nc = compareNegotiationOrder(a, b);
@@ -92,15 +91,14 @@ export function compareAppliedRequests(a, b, users) {
   return a.requestedAt.localeCompare(b.requestedAt);
 }
 
-/** 달력·같은 휴가일: 유형별로 협의 순번 → (골드키는 이름) → 신청시각 */
-export function compareSameLeaveDateRequests(a, b, users) {
-  const nameOf = (uid) => users.find((u) => u.id === uid)?.name ?? uid;
+/** 달력·같은 휴가일: 유형별로 협의 순번 → 골드키는 신청시각 → 기타도 신청시각 */
+export function compareSameLeaveDateRequests(a, b, _users) {
   const ord = leaveTypeOrder(a.leaveType) - leaveTypeOrder(b.leaveType);
   if (ord !== 0) return ord;
   const nc = compareNegotiationOrder(a, b);
   if (nc !== 0) return nc;
   if (a.leaveType === "GOLDKEY" && b.leaveType === "GOLDKEY") {
-    return nameOf(a.userId).localeCompare(nameOf(b.userId), "ko");
+    return a.requestedAt.localeCompare(b.requestedAt);
   }
   return a.requestedAt.localeCompare(b.requestedAt);
 }

@@ -1119,7 +1119,7 @@ function AdminPage({ appliedRequests, allRequests, users, selectRequest, rejectR
       <section className="card">
         <h2>관리자 신청자 관리</h2>
         <p className="help" style={{ marginBottom: 10 }}>
-          골드키: 휴가일이 서로 다르면 신청 시각 순, 같은 휴가일이면 이름(가나다) 순. 달력에서 협의 순번을 넣으면 그 순서가 우선합니다.
+          골드키: 휴가일이 서로 다르면 신청 시각 순, 같은 휴가일이면 먼저 신청한 사람이 앞(협의 순번을 넣으면 그 순서가 우선).
         </p>
         <div className="row wrap">
           <input placeholder="간호사 이름 검색" value={nameSearch} onChange={(e) => setNameSearch(e.target.value)} />

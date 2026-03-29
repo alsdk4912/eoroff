@@ -53,8 +53,12 @@ export const api = {
   bootstrap: () => requestJson("/bootstrap"),
   createRequest: (payload) =>
     requestJson("/requests", { method: "POST", body: JSON.stringify(payload) }),
+  /** POST: 일부 호스팅에서 PATCH가 404로 떨어지는 경우 대비(cancel 등과 동일 메서드 패턴) */
   patchNegotiationOrder: (id, payload) =>
-    requestJson(`/requests/${id}/negotiation-order`, { method: "PATCH", body: JSON.stringify(payload) }),
+    requestJson(`/requests/${encodeURIComponent(id)}/negotiation-order`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   cancelRequest: (id, payload) =>
     requestJson(`/requests/${id}/cancel`, { method: "POST", body: JSON.stringify(payload) }),
   selectRequest: (id, payload) =>
