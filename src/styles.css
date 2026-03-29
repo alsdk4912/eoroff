@@ -1763,9 +1763,61 @@ tr.request-cancelled-row td button {
 
 .calendar-applicant-item--row {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: flex-start;
   flex-wrap: wrap;
+}
+
+.negotiation-order-cell {
+  flex-shrink: 0;
+  min-width: 3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.negotiation-order-placeholder {
+  display: inline-block;
+  width: 3rem;
+  height: 2rem;
+}
+
+.negotiation-order-readonly {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.75rem;
+  height: 2rem;
+  padding: 0 6px;
+  font-weight: 800;
+  font-size: 14px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.negotiation-order-readonly--muted {
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.negotiation-mode-pill {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+  align-self: center;
+}
+
+.negotiation-mode-pill--auto {
+  background: #e0f2fe;
+  color: #075985;
+  border-color: #7dd3fc;
 }
 
 .calendar-applicant-item--row .calendar-applicant-name {

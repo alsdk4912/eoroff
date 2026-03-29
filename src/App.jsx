@@ -926,6 +926,31 @@ function CalendarPage({
   const nurseUsers = users.filter((u) => u.role === "NURSE");
   const workingUsers = nurseUsers.filter((u) => !approvedIds.has(u.id));
 
+  /** 같은 휴가일·같은 유형에서 신청(제출)일이 모두 같으면 협의·순번 입력, 다르면 신청순 자동·수정 불가 */
+  const negotiationMetaByLeaveType = useMemo(() => {
+    const map = new Map();
+    if (!selectedYmd) return map;
+    const active = dayRequests.filter((r) => r.leaveDate === selectedYmd && r.status !== "CANCELLED");
+    const types = [...new Set(active.map((r) => r.leaveType))];
+    for (const lt of types) {
+      const group = active.filter((r) => r.leaveType === lt);
+      if (group.length < 2) {
+        map.set(lt, { mode: "single", autoRankById: new Map() });
+        continue;
+      }
+      const submitDays = new Set(group.map((r) => toLocalYMD(new Date(r.requestedAt))));
+      if (submitDays.size === 1) {
+        map.set(lt, { mode: "negotiate", autoRankById: new Map() });
+      } else {
+        const sorted = [...group].sort((a, b) => a.requestedAt.localeCompare(b.requestedAt));
+        const autoRankById = new Map();
+        sorted.forEach((r, i) => autoRankById.set(r.id, i + 1));
+        map.set(lt, { mode: "auto", autoRankById });
+      }
+    }
+    return map;
+  }, [selectedYmd, dayRequests]);
+
   return (
     <section className="card">
       <h2>휴가 달력(월간)</h2>
@@ -1013,20 +1038,45 @@ function CalendarPage({
                 ) : (
                   <>
                     <p className="help" style={{ marginBottom: 10 }}>
-                      같은 날·같은 유형(골드키, 일반 우선·후순위 등)으로 여러 명일 때, 협의 후 아래에 순번(1,2,3…)을 적을 수 있습니다. 입력 후 칸 밖을 누르면 저장됩니다.
+                      같은 <strong>휴가일</strong>·같은 <strong>유형</strong>으로 여러 명일 때: 모두 <strong>같은 날에 신청(제출)</strong>한 경우만 「협의」로 순번을 직접 적을 수 있습니다.{" "}
+                      <strong>서로 다른 날에 신청</strong>한 경우에는 신청 순서대로 번호가 붙으며 수정할 수 없습니다.
                     </p>
                     <ul className="calendar-applicant-list">
                       {dayRequests.map((r) => {
                         const nm = users.find((u) => u.id === r.userId)?.name ?? r.userId;
+                        const meta = negotiationMetaByLeaveType.get(r.leaveType) ?? { mode: "single", autoRankById: new Map() };
                         const ord = r.negotiationOrder ?? r.negotiation_order;
-                        const prefix = ord != null && ord !== "" ? `${ord}. ` : "";
+                        const autoRank = meta.autoRankById.get(r.id);
+                        const isNegotiate = meta.mode === "negotiate";
+                        const isAuto = meta.mode === "auto";
+                        const showModePill = isNegotiate || isAuto;
+                        let prefix = "";
+                        if (isAuto && autoRank != null) prefix = `${autoRank}. `;
+                        else if (isNegotiate && ord != null && ord !== "") prefix = `${ord}. `;
+                        else if (meta.mode === "single" && ord != null && ord !== "") prefix = `${ord}. `;
+
                         return (
                           <li key={r.id} className="calendar-applicant-item calendar-applicant-item--row">
-                            <NegotiationOrderInput
-                              request={r}
-                              disabled={r.status === "CANCELLED"}
-                              onCommit={saveNegotiationOrder}
-                            />
+                            <div className="negotiation-order-cell">
+                              {isNegotiate && r.status !== "CANCELLED" ? (
+                                <NegotiationOrderInput request={r} disabled={false} onCommit={saveNegotiationOrder} />
+                              ) : isAuto && r.status !== "CANCELLED" && autoRank != null ? (
+                                <span className="negotiation-order-readonly" title="신청 순서(수정 불가)">
+                                  {autoRank}
+                                </span>
+                              ) : isAuto ? (
+                                <span className="negotiation-order-readonly negotiation-order-readonly--muted">—</span>
+                              ) : isNegotiate && r.status === "CANCELLED" ? (
+                                <span className="negotiation-order-readonly negotiation-order-readonly--muted">—</span>
+                              ) : (
+                                <span className="negotiation-order-placeholder" aria-hidden />
+                              )}
+                            </div>
+                            {showModePill ? (
+                              <span className={`negotiation-mode-pill ${isAuto ? "negotiation-mode-pill--auto" : ""}`}>
+                                {isNegotiate ? "협의" : "신청순"}
+                              </span>
+                            ) : null}
                             <span className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status)}`}>
                               {prefix}
                               {nm} · {typeFullLabel(r.leaveType)} · {leaveNatureLabel(r.leaveNature)} · {statusLabel(r.status)}
