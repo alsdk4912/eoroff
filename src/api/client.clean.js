@@ -53,6 +53,8 @@ export const api = {
   bootstrap: () => requestJson("/bootstrap"),
   createRequest: (payload) =>
     requestJson("/requests", { method: "POST", body: JSON.stringify(payload) }),
+  patchNegotiationOrder: (id, payload) =>
+    requestJson(`/requests/${id}/negotiation-order`, { method: "PATCH", body: JSON.stringify(payload) }),
   cancelRequest: (id, payload) =>
     requestJson(`/requests/${id}/cancel`, { method: "POST", body: JSON.stringify(payload) }),
   selectRequest: (id, payload) =>

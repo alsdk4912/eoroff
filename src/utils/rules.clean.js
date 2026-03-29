@@ -55,9 +55,26 @@ export function leaveTypeOrder(type) {
   return 99;
 }
 
+function negotiationOrderValue(r) {
+  const v = r?.negotiationOrder ?? r?.negotiation_order;
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** 협의 후 입력한 순번이 있으면 그 순서로 먼저 정렬 (없는 항목은 뒤) */
+function compareNegotiationOrder(a, b) {
+  const ao = negotiationOrderValue(a);
+  const bo = negotiationOrderValue(b);
+  if (ao != null && bo != null && ao !== bo) return ao - bo;
+  if (ao != null && bo == null) return -1;
+  if (ao == null && bo != null) return 1;
+  return 0;
+}
+
 /**
- * 관리자 신청 목록 등: 골드키는 휴가일이 다르면 신청시각 순, 같은 날이면 이름(가나다) 순(당사자 협의).
- * 그 외 유형은 휴가일 → 신청시각.
+ * 관리자 신청 목록: 같은 휴가일·같은 유형에서 협의 순번이 있으면 우선.
+ * 골드키는 휴가일이 다르면 신청시각 순, 같은 날이면 순번→이름.
  */
 export function compareAppliedRequests(a, b, users) {
   const nameOf = (uid) => users.find((u) => u.id === uid)?.name ?? uid;
@@ -65,17 +82,23 @@ export function compareAppliedRequests(a, b, users) {
   if (t !== 0) return t;
   if (a.leaveType === "GOLDKEY" && b.leaveType === "GOLDKEY") {
     if (a.leaveDate !== b.leaveDate) return a.requestedAt.localeCompare(b.requestedAt);
+    const nc = compareNegotiationOrder(a, b);
+    if (nc !== 0) return nc;
     return nameOf(a.userId).localeCompare(nameOf(b.userId), "ko");
   }
   if (a.leaveDate !== b.leaveDate) return a.leaveDate.localeCompare(b.leaveDate);
+  const nc = compareNegotiationOrder(a, b);
+  if (nc !== 0) return nc;
   return a.requestedAt.localeCompare(b.requestedAt);
 }
 
-/** 달력·같은 휴가일 목록: 골드키끼리는 이름 순, 나머지는 유형 순 후 신청시각 */
+/** 달력·같은 휴가일: 유형별로 협의 순번 → (골드키는 이름) → 신청시각 */
 export function compareSameLeaveDateRequests(a, b, users) {
   const nameOf = (uid) => users.find((u) => u.id === uid)?.name ?? uid;
   const ord = leaveTypeOrder(a.leaveType) - leaveTypeOrder(b.leaveType);
   if (ord !== 0) return ord;
+  const nc = compareNegotiationOrder(a, b);
+  if (nc !== 0) return nc;
   if (a.leaveType === "GOLDKEY" && b.leaveType === "GOLDKEY") {
     return nameOf(a.userId).localeCompare(nameOf(b.userId), "ko");
   }

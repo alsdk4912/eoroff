@@ -1761,6 +1761,26 @@ tr.request-cancelled-row td button {
   margin: 0;
 }
 
+.calendar-applicant-item--row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.calendar-applicant-item--row .calendar-applicant-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.negotiation-order-input {
+  width: 3rem;
+  flex-shrink: 0;
+  text-align: center;
+  font-weight: 800;
+  padding: 6px 4px;
+}
+
 .calendar-applicant-name {
   display: inline-block;
   font-size: 13px;

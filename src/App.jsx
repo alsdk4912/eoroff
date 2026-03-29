@@ -212,6 +212,33 @@ function App() {
     }
   }
 
+  async function saveNegotiationOrder(requestId, rawString) {
+    const trimmed = String(rawString ?? "").trim();
+    const negotiationOrder = trimmed === "" ? null : Number(trimmed);
+    if (negotiationOrder !== null && (!Number.isInteger(negotiationOrder) || negotiationOrder < 1 || negotiationOrder > 999)) {
+      window.alert?.("협의 순번은 1~999 사이 정수이거나 비워야 합니다.");
+      return;
+    }
+    if (serverMode) {
+      try {
+        await api.patchNegotiationOrder(requestId, { negotiationOrder });
+        await bootstrap();
+      } catch (e) {
+        window.alert?.(`저장 실패: ${e?.message || e}`);
+      }
+    } else {
+      setRequests((prev) => {
+        const next = prev.map((r) => (r.id === requestId ? { ...r, negotiationOrder } : r));
+        try {
+          localStorage.setItem("or.requests", JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
+    }
+  }
+
   function normalizeLoginName(s) {
     return String(s ?? "").replace(/\s/g, "");
   }
@@ -567,6 +594,7 @@ function App() {
               myGoldkey={myGoldkey}
               message={message}
               isAdmin={isAdmin}
+              saveNegotiationOrder={saveNegotiationOrder}
             />
           }
         />
@@ -841,6 +869,29 @@ function AccountPage({ onChangePassword, message }) {
   );
 }
 
+/** 달력 신청 현황: 협의 후 순번 입력 (blur 시 저장) */
+function NegotiationOrderInput({ request, onCommit, disabled }) {
+  const v = request.negotiationOrder ?? request.negotiation_order;
+  const [val, setVal] = useState(v != null ? String(v) : "");
+  useEffect(() => {
+    setVal(v != null ? String(v) : "");
+  }, [request.id, v]);
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      className="negotiation-order-input"
+      disabled={disabled}
+      value={val}
+      onChange={(e) => setVal(e.target.value.replace(/\D/g, "").slice(0, 3))}
+      onBlur={() => onCommit(request.id, val)}
+      aria-label="협의 순번"
+      placeholder="순번"
+      title="협의 후 순번(1~999). 비우면 미정입니다."
+    />
+  );
+}
+
 function CalendarPage({
   calendarMonth,
   setCalendarMonth,
@@ -861,6 +912,7 @@ function CalendarPage({
   myGoldkey,
   message,
   isAdmin,
+  saveNegotiationOrder,
 }) {
   const [detailTab, setDetailTab] = useState("list");
 
@@ -959,16 +1011,31 @@ function CalendarPage({
                 {dayRequests.length === 0 ? (
                   <p className="help">이 날짜에 등록된 신청이 없습니다.</p>
                 ) : (
-                  <ul className="calendar-applicant-list">
-                    {dayRequests.map((r) => (
-                      <li key={r.id} className="calendar-applicant-item">
-                        <span className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status)}`}>
-                          {users.find((u) => u.id === r.userId)?.name ?? r.userId} · {typeFullLabel(r.leaveType)} ·{" "}
-                          {leaveNatureLabel(r.leaveNature)} · {statusLabel(r.status)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
+                  <>
+                    <p className="help" style={{ marginBottom: 10 }}>
+                      같은 날·같은 유형(골드키, 일반 우선·후순위 등)으로 여러 명일 때, 협의 후 아래에 순번(1,2,3…)을 적을 수 있습니다. 입력 후 칸 밖을 누르면 저장됩니다.
+                    </p>
+                    <ul className="calendar-applicant-list">
+                      {dayRequests.map((r) => {
+                        const nm = users.find((u) => u.id === r.userId)?.name ?? r.userId;
+                        const ord = r.negotiationOrder ?? r.negotiation_order;
+                        const prefix = ord != null && ord !== "" ? `${ord}. ` : "";
+                        return (
+                          <li key={r.id} className="calendar-applicant-item calendar-applicant-item--row">
+                            <NegotiationOrderInput
+                              request={r}
+                              disabled={r.status === "CANCELLED"}
+                              onCommit={saveNegotiationOrder}
+                            />
+                            <span className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status)}`}>
+                              {prefix}
+                              {nm} · {typeFullLabel(r.leaveType)} · {leaveNatureLabel(r.leaveNature)} · {statusLabel(r.status)}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </>
                 )}
               </div>
             ) : (
@@ -1052,7 +1119,7 @@ function AdminPage({ appliedRequests, allRequests, users, selectRequest, rejectR
       <section className="card">
         <h2>관리자 신청자 관리</h2>
         <p className="help" style={{ marginBottom: 10 }}>
-          골드키: 휴가일이 서로 다르면 신청 시각 순, 같은 휴가일이면 이름(가나다) 순으로 표시합니다(동일일자 우선순위는 당사자 협의).
+          골드키: 휴가일이 서로 다르면 신청 시각 순, 같은 휴가일이면 이름(가나다) 순. 달력에서 협의 순번을 넣으면 그 순서가 우선합니다.
         </p>
         <div className="row wrap">
           <input placeholder="간호사 이름 검색" value={nameSearch} onChange={(e) => setNameSearch(e.target.value)} />
@@ -1072,6 +1139,7 @@ function AdminPage({ appliedRequests, allRequests, users, selectRequest, rejectR
                 <th>휴가일</th>
                 <th>유형</th>
                 <th>성격</th>
+                <th>협의순</th>
                 <th>신청시각</th>
                 <th>액션</th>
               </tr>
@@ -1085,6 +1153,7 @@ function AdminPage({ appliedRequests, allRequests, users, selectRequest, rejectR
                     <span className={`leave-type-pill ${buildLeaveChipClass(r.leaveType, r.status)}`}>{leaveTypeLabel(r.leaveType)}</span>
                   </td>
                   <td>{leaveNatureLabel(r.leaveNature)}</td>
+                  <td>{r.negotiationOrder != null ? r.negotiationOrder : "—"}</td>
                   <td>{new Date(r.requestedAt).toLocaleString("ko-KR")}</td>
                   <td className="row wrap">
                     <button type="button" onClick={() => void selectRequest(r.id)}>
@@ -1176,6 +1245,12 @@ function SettingsPage({ apiKey, setApiKey, syncYear, setSyncYear, syncMonth, set
   );
 }
 
+function parseNegotiationOrder(v) {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 function mapRequestRow(r) {
   const ld = r.leave_date ?? r.leaveDate;
   const lt = String(r.leave_type ?? r.leaveType ?? "").trim();
@@ -1186,6 +1261,7 @@ function mapRequestRow(r) {
     leaveDate: normalizeLeaveDateStr(ld),
     leaveType: lt,
     leaveNature: ln || "PERSONAL",
+    negotiationOrder: parseNegotiationOrder(r.negotiation_order ?? r.negotiationOrder),
     status: String(r.status ?? "").trim(),
     requestedAt: r.requested_at ?? r.requestedAt,
     memo: r.memo ?? "",

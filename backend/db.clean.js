@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS requests (
   leave_date TEXT NOT NULL,
   leave_type TEXT NOT NULL,
   leave_nature TEXT NOT NULL DEFAULT 'PERSONAL',
+  negotiation_order INTEGER,
   status TEXT NOT NULL,
   requested_at TEXT NOT NULL,
   memo TEXT
@@ -140,6 +141,7 @@ export async function initDb() {
   await client.executeMultiple(DDL.trim());
 
   await ensureRequestsLeaveNatureColumn();
+  await ensureRequestsNegotiationOrderColumn();
 
   await seedDefaultsIfEmpty();
   await ensureGoldkeyDefaults();
@@ -152,6 +154,14 @@ async function ensureRequestsLeaveNatureColumn() {
   const names = new Set(cols.map((c) => c.name));
   if (!names.has("leave_nature")) {
     await execute("ALTER TABLE requests ADD COLUMN leave_nature TEXT NOT NULL DEFAULT 'PERSONAL'");
+  }
+}
+
+async function ensureRequestsNegotiationOrderColumn() {
+  const cols = await queryAll("PRAGMA table_info(requests)");
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("negotiation_order")) {
+    await execute("ALTER TABLE requests ADD COLUMN negotiation_order INTEGER");
   }
 }
 
