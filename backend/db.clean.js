@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { createClient } from "@libsql/client";
+import { defaultGoldkeyQuotaForName } from "../src/data/goldkeyQuotas.js";
 
 let client;
 /** initDb 이후 로컬일 때만 절대경로 (헬스·로그용) */
@@ -213,20 +214,22 @@ async function seedDefaultsIfEmpty() {
   }
 
   for (let idx = 0; idx < names.length; idx++) {
+    const q = defaultGoldkeyQuotaForName(names[idx]);
     await execute(
       "INSERT INTO goldkeys (user_id, quota_total, used_count, remaining_count) VALUES (?, ?, ?, ?)",
       `u_nurse_${idx + 1}`,
-      10,
+      q,
       0,
-      10
+      q
     );
   }
 }
 
 async function ensureGoldkeyDefaults() {
-  const nurses = await queryAll("SELECT id FROM users WHERE role = 'NURSE'");
+  const nurses = await queryAll("SELECT id, name FROM users WHERE role = 'NURSE'");
 
   for (const nurse of nurses) {
+    const target = defaultGoldkeyQuotaForName(nurse.name);
     const row = await queryOne(
       "SELECT quota_total, used_count, remaining_count FROM goldkeys WHERE user_id = ?",
       nurse.id
@@ -235,19 +238,20 @@ async function ensureGoldkeyDefaults() {
       await execute(
         "INSERT INTO goldkeys (user_id, quota_total, used_count, remaining_count) VALUES (?, ?, ?, ?)",
         nurse.id,
-        10,
+        target,
         0,
-        10
+        target
       );
       continue;
     }
 
     const used = Number(row.used_count || 0);
     const quota = Number(row.quota_total || 0);
-    if (quota !== 10) {
-      const remaining = Math.max(0, 10 - used);
+    if (quota !== target) {
+      const remaining = Math.max(0, target - used);
       await execute(
-        "UPDATE goldkeys SET quota_total = 10, remaining_count = ? WHERE user_id = ?",
+        "UPDATE goldkeys SET quota_total = ?, remaining_count = ? WHERE user_id = ?",
+        target,
         remaining,
         nurse.id
       );
