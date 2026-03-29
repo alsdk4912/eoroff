@@ -8,6 +8,7 @@ import {
   isUsingRemoteDb,
   queryAll,
   queryOne,
+  resetLeaveDataToDefaults,
   runTransaction,
 } from "./db.clean.js";
 
@@ -97,6 +98,19 @@ app.post("/api/admin/users/:id/reset-password", async (req, res) => {
   if (!admin) return res.status(403).json({ error: "관리자 권한이 필요합니다." });
   await execute("UPDATE users SET password = ? WHERE id = ?", nextPassword || "1234", req.params.id);
   res.json({ ok: true });
+});
+
+app.post("/api/admin/reset-leave-data", async (req, res) => {
+  const { adminUserId } = req.body ?? {};
+  const admin = await queryOne("SELECT id FROM users WHERE id = ? AND role = 'ADMIN'", adminUserId);
+  if (!admin) return res.status(403).json({ error: "관리자 권한이 필요합니다." });
+  try {
+    await resetLeaveDataToDefaults();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /api/admin/reset-leave-data", err);
+    res.status(500).json({ error: String(err?.message || err) });
+  }
 });
 
 const ALLOWED_LEAVE_TYPES = new Set(["GOLDKEY", "GENERAL_PRIORITY", "GENERAL_NORMAL", "HALF_DAY"]);

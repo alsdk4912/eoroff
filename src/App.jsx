@@ -21,6 +21,14 @@ import {
 import { api } from "./api/client";
 import { defaultGoldkeyQuotaForName } from "./data/goldkeyQuotas.js";
 
+/** 오프라인 저장소 버전 — 휴가·골드키 일괄 초기화 시 키 올려 예전 캐시 무효화 */
+const LS_REQUESTS = "or.requests.v2";
+const LS_NOTES = "or.notes.v2";
+const LS_CANCELLATIONS = "or.cancellations.v2";
+const LS_SELECTIONS = "or.selections.v2";
+const LS_GOLDKEYS = "or.goldkeys.v3";
+const LS_ADJUSTMENT_LOGS = "or.adjustmentLogs.v2";
+
 /** DB·표시용 날짜 문자열 정규화 (UTC/시간대 깨짐 방지 — `T` 포함 ISO는 slice만 하면 -1일 됨) */
 function normalizeLeaveDateStr(s) {
   const raw = String(s ?? "").trim().replace(/\//g, "-");
@@ -113,13 +121,12 @@ function YmdSplitInput({ value, onChange, disabled }) {
 function App() {
   const [auth, setAuth] = useLocalStorage("or.auth", null);
   const [users, setUsers] = useState(seedUsers);
-  const [requests, setRequests] = useLocalStorage("or.requests", initialRequests);
-  const [notes, setNotes] = useLocalStorage("or.notes", initialPriorityNotes);
-  const [cancellations, setCancellations] = useLocalStorage("or.cancellations", initialCancellations);
-  const [selections, setSelections] = useLocalStorage("or.selections", initialSelections);
-  /** v2: 간호사별 총량 반영 — 예전 or.goldkeys(전원 10) 캐시 무효화 */
-  const [goldkeys, setGoldkeys] = useLocalStorage("or.goldkeys.v2", initialGoldkeys);
-  const [adjustmentLogs, setAdjustmentLogs] = useLocalStorage("or.adjustmentLogs", initialAdjustmentLogs);
+  const [requests, setRequests] = useLocalStorage(LS_REQUESTS, initialRequests);
+  const [notes, setNotes] = useLocalStorage(LS_NOTES, initialPriorityNotes);
+  const [cancellations, setCancellations] = useLocalStorage(LS_CANCELLATIONS, initialCancellations);
+  const [selections, setSelections] = useLocalStorage(LS_SELECTIONS, initialSelections);
+  const [goldkeys, setGoldkeys] = useLocalStorage(LS_GOLDKEYS, initialGoldkeys);
+  const [adjustmentLogs, setAdjustmentLogs] = useLocalStorage(LS_ADJUSTMENT_LOGS, initialAdjustmentLogs);
   const [holidays, setHolidays] = useLocalStorage("or.holidays", seedHolidays);
 
   const [leaveType, setLeaveType] = useState("GOLDKEY");
@@ -130,6 +137,7 @@ function App() {
   const [apiMessage, setApiMessage] = useState("");
   const [backupMessage, setBackupMessage] = useState("");
   const [accountMessage, setAccountMessage] = useState("");
+  const [resetDataMessage, setResetDataMessage] = useState("");
   const [restoreSqlText, setRestoreSqlText] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [serverMode, setServerMode] = useState(false);
@@ -221,6 +229,34 @@ function App() {
     }
   }
 
+  async function handleResetLeaveData() {
+    if (
+      !window.confirm(
+        "모든 휴가 신청·협의 메모·선정·취소 기록을 삭제하고, 간호사 골드키를 이름별 기본 총량·잔여로 되돌립니다. 계속할까요?"
+      )
+    ) {
+      return;
+    }
+    setResetDataMessage("");
+    if (serverMode) {
+      try {
+        await api.resetLeaveData({ adminUserId: auth.userId });
+        await bootstrap();
+        setResetDataMessage("서버 데이터를 초기화했습니다.");
+      } catch (e) {
+        setResetDataMessage(`초기화 실패: ${e?.message || e}`);
+      }
+      return;
+    }
+    setRequests([...initialRequests]);
+    setNotes([...initialPriorityNotes]);
+    setCancellations([...initialCancellations]);
+    setSelections([...initialSelections]);
+    setGoldkeys(initialGoldkeys.map((g) => ({ ...g })));
+    setAdjustmentLogs([...initialAdjustmentLogs]);
+    setResetDataMessage("브라우저에 저장된 휴가·골드키 데이터를 기본값으로 되돌렸습니다.");
+  }
+
   async function saveNegotiationOrder(requestId, rawString) {
     const trimmed = String(rawString ?? "").trim();
     const negotiationOrder = trimmed === "" ? null : Number(trimmed);
@@ -239,7 +275,7 @@ function App() {
       setRequests((prev) => {
         const next = prev.map((r) => (r.id === requestId ? { ...r, negotiationOrder } : r));
         try {
-          localStorage.setItem("or.requests", JSON.stringify(next));
+          localStorage.setItem(LS_REQUESTS, JSON.stringify(next));
         } catch {
           /* ignore */
         }
@@ -376,7 +412,7 @@ function App() {
       setRequests((prev) => {
         const next = [...prev, payload];
         try {
-          localStorage.setItem("or.requests", JSON.stringify(next));
+          localStorage.setItem(LS_REQUESTS, JSON.stringify(next));
         } catch {
           /* ignore */
         }
@@ -390,7 +426,7 @@ function App() {
               : g
           );
           try {
-            localStorage.setItem("or.goldkeys", JSON.stringify(next));
+            localStorage.setItem(LS_GOLDKEYS, JSON.stringify(next));
           } catch {
             /* ignore */
           }
@@ -421,7 +457,7 @@ function App() {
       const next = prev.map((r) => (r.id === requestId ? { ...r, status: "CANCELLED", cancelLocked: true } : r));
       if (!serverMode) {
         try {
-          localStorage.setItem("or.requests", JSON.stringify(next));
+          localStorage.setItem(LS_REQUESTS, JSON.stringify(next));
         } catch {
           /* ignore */
         }
@@ -439,7 +475,7 @@ function App() {
         setRequests(prevSnapshot);
         setCancellations(prevCancellations);
         try {
-          localStorage.setItem("or.requests", JSON.stringify(prevSnapshot));
+          localStorage.setItem(LS_REQUESTS, JSON.stringify(prevSnapshot));
         } catch {
           /* ignore */
         }
@@ -640,7 +676,37 @@ function App() {
             )
           }
         />
-        <Route path="/settings" element={isAdmin ? <SettingsPage apiKey={apiKey} setApiKey={setApiKey} syncYear={syncYear} setSyncYear={setSyncYear} syncMonth={syncMonth} setSyncMonth={setSyncMonth} syncHolidays={syncHolidays} holidays={holidays} apiMessage={apiMessage} backupMessage={backupMessage} restoreSqlText={restoreSqlText} setRestoreSqlText={setRestoreSqlText} onBackup={handleBackupSql} onRestore={handleRestoreSql} managedUsers={managedUsers} onResetPassword={handleResetPassword} accountMessage={accountMessage} /> : <Navigate to="/calendar" />} />
+        <Route
+          path="/settings"
+          element={
+            isAdmin ? (
+              <SettingsPage
+                apiKey={apiKey}
+                setApiKey={setApiKey}
+                syncYear={syncYear}
+                setSyncYear={setSyncYear}
+                syncMonth={syncMonth}
+                setSyncMonth={setSyncMonth}
+                syncHolidays={syncHolidays}
+                holidays={holidays}
+                apiMessage={apiMessage}
+                backupMessage={backupMessage}
+                restoreSqlText={restoreSqlText}
+                setRestoreSqlText={setRestoreSqlText}
+                onBackup={handleBackupSql}
+                onRestore={handleRestoreSql}
+                managedUsers={managedUsers}
+                onResetPassword={handleResetPassword}
+                accountMessage={accountMessage}
+                serverMode={serverMode}
+                onResetLeaveData={handleResetLeaveData}
+                resetDataMessage={resetDataMessage}
+              />
+            ) : (
+              <Navigate to="/calendar" />
+            )
+          }
+        />
         <Route path="*" element={<Navigate to="/calendar" />} />
       </Routes>
     </div>
@@ -1324,7 +1390,28 @@ function AdminPage({ appliedRequests, allRequests, users, selectRequest, rejectR
   );
 }
 
-function SettingsPage({ apiKey, setApiKey, syncYear, setSyncYear, syncMonth, setSyncMonth, syncHolidays, holidays, apiMessage, backupMessage, restoreSqlText, setRestoreSqlText, onBackup, onRestore, managedUsers, onResetPassword, accountMessage }) {
+function SettingsPage({
+  apiKey,
+  setApiKey,
+  syncYear,
+  setSyncYear,
+  syncMonth,
+  setSyncMonth,
+  syncHolidays,
+  holidays,
+  apiMessage,
+  backupMessage,
+  restoreSqlText,
+  setRestoreSqlText,
+  onBackup,
+  onRestore,
+  managedUsers,
+  onResetPassword,
+  accountMessage,
+  serverMode,
+  onResetLeaveData,
+  resetDataMessage,
+}) {
   return (
     <section className="card">
       <h2>공휴일 API 동기화</h2>
@@ -1342,6 +1429,18 @@ function SettingsPage({ apiKey, setApiKey, syncYear, setSyncYear, syncMonth, set
       <textarea className="sql-textarea" placeholder="복구할 SQL을 여기에 붙여넣고 복구 실행" value={restoreSqlText} onChange={(e) => setRestoreSqlText(e.target.value)} />
       <div className="row"><button onClick={onRestore}>복구 실행</button></div>
       {backupMessage ? <p className="msg">{backupMessage}</p> : null}
+      <hr className="divider" />
+      <h2>휴가·골드키 데이터 초기화 (관리자)</h2>
+      <p className="help" style={{ marginBottom: 10 }}>
+        신청된 휴가 전부, 협의 메모·선정·취소 기록, 조정 로그를 지우고 간호사 골드키를 이름별 기본 총량·미사용으로 되돌립니다. 공휴일 캐시는 그대로입니다.
+        {serverMode ? " (현재: 서버 DB 반영)" : " (현재: 이 브라우저 로컬만 반영 · GitHub Pages 단독 사용 시)"}
+      </p>
+      <div className="row">
+        <button type="button" onClick={() => void onResetLeaveData()}>
+          휴가·골드키 초기화 실행
+        </button>
+      </div>
+      {resetDataMessage ? <p className="msg">{resetDataMessage}</p> : null}
       <hr className="divider" />
       <h2>사용자 비밀번호 초기화 (관리자)</h2>
       <div className="table-wrap">
