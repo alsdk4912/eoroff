@@ -161,6 +161,28 @@ function ymdFromRequestRow(r) {
   return "";
 }
 
+/**
+ * 하반기(같은 해 7~12월) 골드키를 매년 4/1~4/10(로컬 달력)에 제출한 신청.
+ * 이 구간 신청분은 달력에서 「신청순」 자동 번호 없이 전부 「협의」로만 순번을 적습니다.
+ */
+export function isSecondHalfGoldkeyAprilConsultationRequest(request) {
+  if (!request || request.leaveType !== "GOLDKEY") return false;
+  const leaveYmd = ymdFromRequestRow(request);
+  if (!leaveYmd) return false;
+  const leave = parseYmdAsLocalDate(leaveYmd);
+  if (Number.isNaN(leave.getTime())) return false;
+  const lm = leave.getMonth() + 1;
+  if (lm < 7 || lm > 12) return false;
+  const rawReq = request.requestedAt ?? request.requested_at;
+  if (!rawReq) return false;
+  const reqAt = new Date(rawReq);
+  if (Number.isNaN(reqAt.getTime())) return false;
+  if (leave.getFullYear() !== reqAt.getFullYear()) return false;
+  const rm = reqAt.getMonth() + 1;
+  const rd = reqAt.getDate();
+  return rm === 4 && rd >= 1 && rd <= 10;
+}
+
 /** 취소·미선정 제외: 진행 중인 골드키가 해당 날짜에 이미 있으면 true */
 export function hasBlockingGoldkeyOnDate(requests, userId, leaveDateYmd) {
   const ymd = String(leaveDateYmd ?? "").trim().slice(0, 10);

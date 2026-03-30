@@ -15,6 +15,7 @@ import {
 import {
   compareAppliedRequests,
   compareSameLeaveDateRequests,
+  isSecondHalfGoldkeyAprilConsultationRequest,
   leaveNatureLabel,
   leaveTypeLabel,
   statusLabel,
@@ -980,11 +981,8 @@ function MyRequestsPage({ myRequests, cancelRequest }) {
   );
 }
 
-/** 표시용 신청·사용: DB goldkeys.usedCount 우선, 누락 시 요청건수 fallback */
-function goldkeyApplyUseForDisplay(requests, userId, g) {
-  const raw = g?.usedCount ?? g?.used_count;
-  const n = raw != null && raw !== "" ? Number(raw) : NaN;
-  if (Number.isFinite(n) && n >= 0) return n;
+/** 골드키 신청·사용 = 골드키로 제출한 건수(취소·반려 포함). 취소해도 횟수는 줄지 않음(한 번 신청한 슬롯은 회수 안 함). */
+function countGoldkeyApplyUse(requests, userId) {
   return requests.filter((r) => r.userId === userId && r.leaveType === "GOLDKEY").length;
 }
 
@@ -1023,7 +1021,7 @@ function DashboardPage({ dashboard, goldkeys, requests, cancellations, users, se
                 .map((u) => {
                   const g = goldkeys.find((x) => x.userId === u.id);
                   const quotaTotal = goldkeyQuotaTotalForDisplay(u, g, serverMode);
-                  const applyUse = goldkeyApplyUseForDisplay(requests, u.id, g);
+                  const applyUse = countGoldkeyApplyUse(requests, u.id);
                   const remaining = Math.max(0, quotaTotal - applyUse);
                   return (
                     <tr key={u.id}>
@@ -1314,8 +1312,8 @@ function CalendarPage({
 
   /**
    * 같은 휴가일·같은 유형 기준으로, 신청(제출)일이 같은 사람끼리만 묶음.
-   * 그 묶음에 2명 이상이면 협의(당일 동시 신청) — 제출일이 서로 다르면 그중 혼자인 날은 신청순 자동.
-   * (한 유형에 제출일이 여러 날 섞여 있어도, 같은 날에 같이 신청한 사람은 협의로 표시)
+   * 하반기 골드키(같은 해 7~12월)를 4/1~4/10에 제출한 건은 항상 협의(자동 신청순 없음).
+   * 그 외: 묶음에 2명 이상이면 협의, 제출일이 겹치지 않으면 신청순 자동.
    */
   const negotiationMetaByRequestId = useMemo(() => {
     const map = new Map();
@@ -1328,11 +1326,20 @@ function CalendarPage({
     }
     for (const [, list] of byType) {
       if (list.length === 1) {
-        map.set(list[0].id, { mode: "single" });
+        const only = list[0];
+        if (only.leaveType === "GOLDKEY" && isSecondHalfGoldkeyAprilConsultationRequest(only)) {
+          map.set(only.id, { mode: "negotiate" });
+        } else {
+          map.set(only.id, { mode: "single" });
+        }
         continue;
       }
       const sortedAll = [...list].sort((a, b) => a.requestedAt.localeCompare(b.requestedAt));
       for (const r of list) {
+        if (r.leaveType === "GOLDKEY" && isSecondHalfGoldkeyAprilConsultationRequest(r)) {
+          map.set(r.id, { mode: "negotiate" });
+          continue;
+        }
         const myDay = toLocalYMD(new Date(r.requestedAt));
         const sameSubmitDayPeers = list.filter((x) => toLocalYMD(new Date(x.requestedAt)) === myDay);
         const autoRankGlobal = sortedAll.findIndex((x) => x.id === r.id) + 1;
@@ -1507,7 +1514,7 @@ function CalendarPage({
                       ) : (
                         <>
                           <p className="help" style={{ marginBottom: 10 }}>
-                            같은 <strong>휴가일</strong>·같은 <strong>유형</strong>에서, <strong>신청(제출)일이 같은 사람끼리</strong> 2명 이상이면 「협의」로 순번을 적습니다. 같은 날에 나 혼자만 신청한 경우(제출일이 다른 사람과 겹치지 않음)는 「신청순」으로 자동 번호만 붙습니다.
+                            <strong>하반기 골드키</strong>(같은 해 7~12월 휴가일)는 매년 <strong>4월 1일~10일</strong>에 접수된 신청은 모두 「협의」만 사용합니다(자동 「신청순」 없음). 그 외에는 같은 <strong>휴가일</strong>·같은 <strong>유형</strong>에서 제출일이 같은 사람이 2명 이상이면 「협의」, 나 혼자만 해당이면 「신청순」이 붙습니다.
                           </p>
                           <ul className="calendar-applicant-list">
                             {dayRequests.map((r) => {
@@ -1640,7 +1647,7 @@ function AdminPage({ appliedRequests, allRequests, users, selectRequest, rejectR
       <section className="card">
         <h2>관리자 신청자 관리</h2>
         <p className="help" style={{ marginBottom: 10 }}>
-          골드키: 휴가일이 서로 다르면 신청 시각 순, 같은 휴가일이면 먼저 신청한 사람이 앞(협의 순번을 넣으면 그 순서가 우선).
+          골드키: 휴가일이 서로 다르면 신청 시각 순, 같은 휴가일이면 협의 순번이 있으면 그 순서가 우선·없으면 신청 시각 순. 다만 같은 해 7~12월 휴가일 골드키를 4/1~4/10에 접수한 건은 달력에서 모두 협의로만 순번을 정합니다.
         </p>
         <div className="row wrap">
           <input placeholder="간호사 이름 검색" value={nameSearch} onChange={(e) => setNameSearch(e.target.value)} />
@@ -1695,7 +1702,7 @@ function AdminPage({ appliedRequests, allRequests, users, selectRequest, rejectR
       <section className="card">
         <h2>골드키 관리(조회 전용)</h2>
         <p className="help" style={{ marginBottom: 8 }}>
-          신청·사용 = 골드키 사용수(보정값 반영). 잔여 = 총할당 − 신청·사용.
+          신청·사용 = 골드키 누적 제출 건수(취소해도 차감 안 함). 잔여 = 총할당 − 신청·사용.
         </p>
         <div className="table-wrap">
           <table>
@@ -1714,7 +1721,7 @@ function AdminPage({ appliedRequests, allRequests, users, selectRequest, rejectR
                 .map((u) => {
                   const g = goldkeys.find((x) => x.userId === u.id);
                   const quotaTotal = goldkeyQuotaTotalForDisplay(u, g, serverMode);
-                  const applyUse = goldkeyApplyUseForDisplay(allRequests, u.id, g);
+                  const applyUse = countGoldkeyApplyUse(allRequests, u.id);
                   const remaining = Math.max(0, quotaTotal - applyUse);
                   return (
                     <tr key={u.id}>
