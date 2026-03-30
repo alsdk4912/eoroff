@@ -87,6 +87,8 @@ export const api = {
     requestJson("/admin/holiday-duties", { method: "POST", body: JSON.stringify(payload) }),
   createLadderResult: (payload) =>
     requestJson("/ladder-results", { method: "POST", body: JSON.stringify(payload) }),
+  bulkSetGoldkeyUsage: (payload) =>
+    requestJson("/admin/goldkeys/usage-bulk", { method: "POST", body: JSON.stringify(payload) }),
   downloadBackupSql: async () => {
     if (API_ROOT === null) throw new TypeError("Failed to fetch");
     const res = await fetch(`${API_ROOT}/admin/backup-sql`, { cache: "no-store" });

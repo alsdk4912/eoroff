@@ -980,8 +980,11 @@ function MyRequestsPage({ myRequests, cancelRequest }) {
   );
 }
 
-/** 골드키 신청·사용 = 골드키로 제출한 건수(취소·반려 포함). 취소해도 횟수는 줄지 않음(한 번 신청한 슬롯은 회수 안 함). */
-function countGoldkeyApplyUse(requests, userId) {
+/** 표시용 신청·사용: DB goldkeys.usedCount 우선, 누락 시 요청건수 fallback */
+function goldkeyApplyUseForDisplay(requests, userId, g) {
+  const raw = g?.usedCount ?? g?.used_count;
+  const n = raw != null && raw !== "" ? Number(raw) : NaN;
+  if (Number.isFinite(n) && n >= 0) return n;
   return requests.filter((r) => r.userId === userId && r.leaveType === "GOLDKEY").length;
 }
 
@@ -1020,7 +1023,7 @@ function DashboardPage({ dashboard, goldkeys, requests, cancellations, users, se
                 .map((u) => {
                   const g = goldkeys.find((x) => x.userId === u.id);
                   const quotaTotal = goldkeyQuotaTotalForDisplay(u, g, serverMode);
-                  const applyUse = countGoldkeyApplyUse(requests, u.id);
+                  const applyUse = goldkeyApplyUseForDisplay(requests, u.id, g);
                   const remaining = Math.max(0, quotaTotal - applyUse);
                   return (
                     <tr key={u.id}>
@@ -1692,7 +1695,7 @@ function AdminPage({ appliedRequests, allRequests, users, selectRequest, rejectR
       <section className="card">
         <h2>골드키 관리(조회 전용)</h2>
         <p className="help" style={{ marginBottom: 8 }}>
-          신청·사용 = 골드키 누적 제출 건수(취소해도 차감 안 함). 잔여 = 총할당 − 신청·사용.
+          신청·사용 = 골드키 사용수(보정값 반영). 잔여 = 총할당 − 신청·사용.
         </p>
         <div className="table-wrap">
           <table>
@@ -1711,7 +1714,7 @@ function AdminPage({ appliedRequests, allRequests, users, selectRequest, rejectR
                 .map((u) => {
                   const g = goldkeys.find((x) => x.userId === u.id);
                   const quotaTotal = goldkeyQuotaTotalForDisplay(u, g, serverMode);
-                  const applyUse = countGoldkeyApplyUse(allRequests, u.id);
+                  const applyUse = goldkeyApplyUseForDisplay(allRequests, u.id, g);
                   const remaining = Math.max(0, quotaTotal - applyUse);
                   return (
                     <tr key={u.id}>

@@ -431,6 +431,41 @@ app.patch("/api/goldkeys/:userId", async (req, res) => {
   res.json({ ok: true });
 });
 
+/** 관리자/간호사: 골드키 사용수(used_count) 수동 보정 */
+app.post("/api/admin/goldkeys/usage-bulk", async (req, res) => {
+  try {
+    const { actorUserId, usages } = req.body ?? {};
+    const actor = await queryOne(
+      "SELECT id FROM users WHERE id = ? AND role IN ('ADMIN', 'NURSE')",
+      actorUserId
+    );
+    if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
+
+    const rows = Array.isArray(usages) ? usages : [];
+    let count = 0;
+    for (const it of rows) {
+      const userId = String(it?.userId ?? "").trim();
+      const used = Number(it?.usedCount);
+      if (!userId || !Number.isInteger(used) || used < 0) continue;
+      const g = await queryOne("SELECT quota_total FROM goldkeys WHERE user_id = ?", userId);
+      if (!g) continue;
+      const quota = Number(g.quota_total || 0);
+      const remaining = Math.max(0, quota - used);
+      await execute(
+        "UPDATE goldkeys SET used_count = ?, remaining_count = ? WHERE user_id = ?",
+        used,
+        remaining,
+        userId
+      );
+      count += 1;
+    }
+    return res.json({ ok: true, count });
+  } catch (err) {
+    console.error("POST /api/admin/goldkeys/usage-bulk", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
 app.post("/api/holidays/sync", async (req, res) => {
   try {
     const year = Number(req.body?.year || new Date().getFullYear());
