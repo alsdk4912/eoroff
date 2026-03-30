@@ -1466,114 +1466,122 @@ function CalendarPage({
                   {(!duty1UserId || !duty2UserId) && <p className="help">당직자 2명을 선택한 뒤 저장해 주세요.</p>}
                 </section>
               ) : null}
-            <div className="calendar-detail-tabs" role="tablist">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={detailTab === "list"}
-                className={detailTab === "list" ? "calendar-tab calendar-tab--active" : "calendar-tab"}
-                onClick={() => setDetailTab("list")}
-              >
-                신청 현황
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={detailTab === "apply"}
-                className={detailTab === "apply" ? "calendar-tab calendar-tab--active" : "calendar-tab"}
-                onClick={() => {
-                  setDetailTab("apply");
-                  if (selectedYmd) setLeaveDate(selectedYmd);
-                }}
-              >
-                휴가 신청
-              </button>
-            </div>
-            {detailTab === "list" ? (
-              <div className="calendar-detail-body" role="tabpanel">
-                {dayRequests.length === 0 ? (
-                  <p className="help">이 날짜에 등록된 신청이 없습니다.</p>
-                ) : (
-                  <>
-                    <p className="help" style={{ marginBottom: 10 }}>
-                      같은 <strong>휴가일</strong>·같은 <strong>유형</strong>에서, <strong>신청(제출)일이 같은 사람끼리</strong> 2명 이상이면 「협의」로 순번을 적습니다. 같은 날에 나 혼자만 신청한 경우(제출일이 다른 사람과 겹치지 않음)는 「신청순」으로 자동 번호만 붙습니다.
-                    </p>
-                    <ul className="calendar-applicant-list">
-                      {dayRequests.map((r) => {
-                        const nm = users.find((u) => u.id === r.userId)?.name ?? r.userId;
-                        const meta = negotiationMetaByRequestId.get(r.id) ?? { mode: "single" };
-                        const ord = r.negotiationOrder ?? r.negotiation_order;
-                        const isNegotiate = meta.mode === "negotiate";
-                        const isAuto = meta.mode === "auto";
-                        const isCancelledRow = meta.mode === "cancelled";
-                        const autoRank = meta.mode === "auto" ? meta.autoRank : null;
-                        const showModePill = isNegotiate || isAuto;
-                        let prefix = "";
-                        if (isAuto && autoRank != null) prefix = `${autoRank}. `;
-                        else if (isNegotiate && ord != null && ord !== "") prefix = `${ord}. `;
-                        else if (meta.mode === "single" && ord != null && ord !== "") prefix = `${ord}. `;
-
-                        return (
-                          <li key={r.id} className="calendar-applicant-item calendar-applicant-item--row">
-                            <div className="negotiation-order-cell">
-                              {isNegotiate && r.status !== "CANCELLED" ? (
-                                <NegotiationOrderInput request={r} disabled={false} onCommit={saveNegotiationOrder} />
-                              ) : isAuto && r.status !== "CANCELLED" && autoRank != null ? (
-                                <span className="negotiation-order-readonly" title="신청 순서(수정 불가)">
-                                  {autoRank}
-                                </span>
-                              ) : isAuto ? (
-                                <span className="negotiation-order-readonly negotiation-order-readonly--muted">—</span>
-                              ) : isCancelledRow || r.status === "CANCELLED" ? (
-                                <span className="negotiation-order-readonly negotiation-order-readonly--muted">—</span>
-                              ) : (
-                                <span className="negotiation-order-placeholder" aria-hidden />
-                              )}
-                            </div>
-                            {showModePill ? (
-                              <span className={`negotiation-mode-pill ${isAuto ? "negotiation-mode-pill--auto" : ""}`}>
-                                {isNegotiate ? "협의" : "신청순"}
-                              </span>
-                            ) : null}
-                            <span className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status)}`}>
-                              {prefix}
-                              {nm} · {typeFullLabel(r.leaveType)} · {leaveNatureLabel(r.leaveNature)} · {statusLabel(r.status)}
-                            </span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </>
-                )}
-              </div>
-            ) : (
-              <div className="calendar-detail-body calendar-detail-body--apply" role="tabpanel">
-                <p className="help">선택한 날짜: {selectedYmd} (아래에서 연·월·일을 바꿀 수 있습니다)</p>
-                <form className="grid calendar-apply-form" onSubmit={submitRequest}>
-                  <label className="field-label">휴가 종류</label>
-                  <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)} aria-label="휴가 종류">
-                    <option value="GOLDKEY">골드키</option>
-                    <option value="GENERAL_PRIORITY">일반휴가-우선순위</option>
-                    <option value="GENERAL_NORMAL">일반휴가-후순위</option>
-                    <option value="HALF_DAY">반차</option>
-                  </select>
-                  <label className="field-label">휴가 성격</label>
-                  <select value={leaveNature} onChange={(e) => setLeaveNature(e.target.value)} aria-label="휴가 성격">
-                    <option value="PERSONAL">개인휴가</option>
-                    <option value="PAID_TRAINING">보수교육공가</option>
-                    <option value="REQUIRED_TRAINING">필수교육</option>
-                  </select>
-                  <div className="calendar-apply-ymd">
-                    <span className="help">휴가일</span>
-                    <YmdSplitInput value={leaveDate} onChange={setLeaveDate} />
+              {selectedCell?.isOffDay ? (
+                <p className="help" style={{ marginTop: 10 }}>
+                  이 날짜는 휴일(공휴일/주말)로 휴가 신청을 받지 않습니다.
+                </p>
+              ) : (
+                <>
+                  <div className="calendar-detail-tabs" role="tablist">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={detailTab === "list"}
+                      className={detailTab === "list" ? "calendar-tab calendar-tab--active" : "calendar-tab"}
+                      onClick={() => setDetailTab("list")}
+                    >
+                      신청 현황
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={detailTab === "apply"}
+                      className={detailTab === "apply" ? "calendar-tab calendar-tab--active" : "calendar-tab"}
+                      onClick={() => {
+                        setDetailTab("apply");
+                        if (selectedYmd) setLeaveDate(selectedYmd);
+                      }}
+                    >
+                      휴가 신청
+                    </button>
                   </div>
-                  <input type="text" placeholder="신청 메모" value={memo} onChange={(e) => setMemo(e.target.value)} />
-                  <button type="submit">신청</button>
-                </form>
-                <p className="help">내 골드키 잔여: {myGoldkey?.remainingCount ?? 0} / {myGoldkey?.quotaTotal ?? 0}</p>
-                {message ? <p className="msg">{message}</p> : null}
-              </div>
-            )}
+                  {detailTab === "list" ? (
+                    <div className="calendar-detail-body" role="tabpanel">
+                      {dayRequests.length === 0 ? (
+                        <p className="help">이 날짜에 등록된 신청이 없습니다.</p>
+                      ) : (
+                        <>
+                          <p className="help" style={{ marginBottom: 10 }}>
+                            같은 <strong>휴가일</strong>·같은 <strong>유형</strong>에서, <strong>신청(제출)일이 같은 사람끼리</strong> 2명 이상이면 「협의」로 순번을 적습니다. 같은 날에 나 혼자만 신청한 경우(제출일이 다른 사람과 겹치지 않음)는 「신청순」으로 자동 번호만 붙습니다.
+                          </p>
+                          <ul className="calendar-applicant-list">
+                            {dayRequests.map((r) => {
+                              const nm = users.find((u) => u.id === r.userId)?.name ?? r.userId;
+                              const meta = negotiationMetaByRequestId.get(r.id) ?? { mode: "single" };
+                              const ord = r.negotiationOrder ?? r.negotiation_order;
+                              const isNegotiate = meta.mode === "negotiate";
+                              const isAuto = meta.mode === "auto";
+                              const isCancelledRow = meta.mode === "cancelled";
+                              const autoRank = meta.mode === "auto" ? meta.autoRank : null;
+                              const showModePill = isNegotiate || isAuto;
+                              let prefix = "";
+                              if (isAuto && autoRank != null) prefix = `${autoRank}. `;
+                              else if (isNegotiate && ord != null && ord !== "") prefix = `${ord}. `;
+                              else if (meta.mode === "single" && ord != null && ord !== "") prefix = `${ord}. `;
+
+                              return (
+                                <li key={r.id} className="calendar-applicant-item calendar-applicant-item--row">
+                                  <div className="negotiation-order-cell">
+                                    {isNegotiate && r.status !== "CANCELLED" ? (
+                                      <NegotiationOrderInput request={r} disabled={false} onCommit={saveNegotiationOrder} />
+                                    ) : isAuto && r.status !== "CANCELLED" && autoRank != null ? (
+                                      <span className="negotiation-order-readonly" title="신청 순서(수정 불가)">
+                                        {autoRank}
+                                      </span>
+                                    ) : isAuto ? (
+                                      <span className="negotiation-order-readonly negotiation-order-readonly--muted">—</span>
+                                    ) : isCancelledRow || r.status === "CANCELLED" ? (
+                                      <span className="negotiation-order-readonly negotiation-order-readonly--muted">—</span>
+                                    ) : (
+                                      <span className="negotiation-order-placeholder" aria-hidden />
+                                    )}
+                                  </div>
+                                  {showModePill ? (
+                                    <span className={`negotiation-mode-pill ${isAuto ? "negotiation-mode-pill--auto" : ""}`}>
+                                      {isNegotiate ? "협의" : "신청순"}
+                                    </span>
+                                  ) : null}
+                                  <span className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status)}`}>
+                                    {prefix}
+                                    {nm} · {typeFullLabel(r.leaveType)} · {leaveNatureLabel(r.leaveNature)} · {statusLabel(r.status)}
+                                  </span>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="calendar-detail-body calendar-detail-body--apply" role="tabpanel">
+                      <p className="help">선택한 날짜: {selectedYmd} (아래에서 연·월·일을 바꿀 수 있습니다)</p>
+                      <form className="grid calendar-apply-form" onSubmit={submitRequest}>
+                        <label className="field-label">휴가 종류</label>
+                        <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)} aria-label="휴가 종류">
+                          <option value="GOLDKEY">골드키</option>
+                          <option value="GENERAL_PRIORITY">일반휴가-우선순위</option>
+                          <option value="GENERAL_NORMAL">일반휴가-후순위</option>
+                          <option value="HALF_DAY">반차</option>
+                        </select>
+                        <label className="field-label">휴가 성격</label>
+                        <select value={leaveNature} onChange={(e) => setLeaveNature(e.target.value)} aria-label="휴가 성격">
+                          <option value="PERSONAL">개인휴가</option>
+                          <option value="PAID_TRAINING">보수교육공가</option>
+                          <option value="REQUIRED_TRAINING">필수교육</option>
+                        </select>
+                        <div className="calendar-apply-ymd">
+                          <span className="help">휴가일</span>
+                          <YmdSplitInput value={leaveDate} onChange={setLeaveDate} />
+                        </div>
+                        <input type="text" placeholder="신청 메모" value={memo} onChange={(e) => setMemo(e.target.value)} />
+                        <button type="submit">신청</button>
+                      </form>
+                      <p className="help">내 골드키 잔여: {myGoldkey?.remainingCount ?? 0} / {myGoldkey?.quotaTotal ?? 0}</p>
+                      {message ? <p className="msg">{message}</p> : null}
+                    </div>
+                  )}
+                </>
+              )}
           </>
         )}
       </div>
