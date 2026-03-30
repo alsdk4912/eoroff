@@ -107,6 +107,14 @@ CREATE TABLE IF NOT EXISTS holidays (
   is_holiday INTEGER NOT NULL,
   synced_at TEXT NOT NULL
 );
+
+-- 공휴일 당직자(간호사 2명) 기록
+-- key: holiday_date (YYYY-MM-DD)
+CREATE TABLE IF NOT EXISTS holiday_duties (
+  holiday_date TEXT PRIMARY KEY,
+  nurse1_user_id TEXT,
+  nurse2_user_id TEXT
+);
 `;
 
 export async function initDb() {

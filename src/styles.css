@@ -222,6 +222,10 @@ button:hover {
   margin-bottom: 6px;
 }
 
+.calendar-date--holiday {
+  color: #dc2626;
+}
+
 .badge {
   display: inline-block;
   border: 1px solid #bae6fd;
@@ -1876,6 +1880,36 @@ tr.request-cancelled-row td button {
 .admin-day-grid ul {
   margin: 0;
   padding-left: 16px;
+}
+
+.holiday-duty-panel {
+  margin: 14px 0 6px;
+  border: 1px solid #fee2e2;
+  border-radius: 12px;
+  padding: 12px;
+  background: #fff7ed;
+}
+
+.holiday-duty-title {
+  margin: 0 0 10px;
+  font-size: 15px;
+  color: #b45309;
+}
+
+.holiday-duty-grid {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.holiday-duty-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.holiday-duty-action {
+  flex-shrink: 0;
 }
 
 @media (max-width: 768px) {

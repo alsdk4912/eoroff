@@ -55,3 +55,4 @@ export const initialCancellations = [];
 export const initialSelections = [];
 export const initialAdjustmentLogs = [];
 export const holidaysCache = [];
+export const initialHolidayDuties = {};

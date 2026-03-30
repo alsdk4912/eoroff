@@ -8,6 +8,7 @@ import {
   initialPriorityNotes,
   initialRequests,
   initialSelections,
+  initialHolidayDuties,
   users as seedUsers,
 } from "./data/sampleData";
 import {
@@ -28,6 +29,7 @@ const LS_CANCELLATIONS = "or.cancellations.v3";
 const LS_SELECTIONS = "or.selections.v3";
 const LS_GOLDKEYS = "or.goldkeys.v4";
 const LS_ADJUSTMENT_LOGS = "or.adjustmentLogs.v3";
+const LS_HOLIDAY_DUTIES = "or.holidayDuties.v1";
 
 /** 이전 버전 키는 남아 있으면 혼동만 되므로 제거(현재 키는 유지) */
 function dropStaleOfflineLeaveKeys() {
@@ -151,6 +153,7 @@ function App() {
   const [goldkeys, setGoldkeys] = useLocalStorage(LS_GOLDKEYS, initialGoldkeys);
   const [adjustmentLogs, setAdjustmentLogs] = useLocalStorage(LS_ADJUSTMENT_LOGS, initialAdjustmentLogs);
   const [holidays, setHolidays] = useLocalStorage("or.holidays", seedHolidays);
+  const [holidayDuties, setHolidayDuties] = useLocalStorage(LS_HOLIDAY_DUTIES, initialHolidayDuties);
 
   useEffect(() => {
     dropStaleOfflineLeaveKeys();
@@ -201,6 +204,18 @@ function App() {
     );
     setAdjustmentLogs(data.logs.map((l) => ({ id: l.id, userId: l.user_id, beforeQuota: l.before_quota, afterQuota: l.after_quota, changedBy: l.changed_by, changedAt: l.changed_at })));
     setHolidays(data.holidays.map((h) => ({ holidayDate: h.holiday_date, holidayName: h.holiday_name, isHoliday: Boolean(h.is_holiday) })));
+
+    const dutyRows = Array.isArray(data.holidayDuties) ? data.holidayDuties : [];
+    const dutyByDate = dutyRows.reduce((acc, d) => {
+      const hd = d.holiday_date ?? d.holidayDate;
+      if (!hd) return acc;
+      acc[hd] = {
+        nurse1UserId: d.nurse1_user_id ?? d.nurse1UserId ?? "",
+        nurse2UserId: d.nurse2_user_id ?? d.nurse2UserId ?? "",
+      };
+      return acc;
+    }, {});
+    setHolidayDuties(dutyByDate);
   }
 
   useEffect(() => {
@@ -282,6 +297,33 @@ function App() {
     setGoldkeys(initialGoldkeys.map((g) => ({ ...g })));
     setAdjustmentLogs([...initialAdjustmentLogs]);
     setResetDataMessage("브라우저에 저장된 휴가·골드키 데이터를 기본값으로 되돌렸습니다.");
+  }
+
+  async function saveHolidayDuty(holidayDate, nurse1UserId, nurse2UserId) {
+    const hd = String(holidayDate ?? "").trim();
+    if (!hd) return;
+    if (!nurse1UserId || !nurse2UserId) return;
+
+    if (serverMode) {
+      try {
+        await api.upsertHolidayDuty({
+          adminUserId: auth.userId,
+          holidayDate: hd,
+          nurse1UserId,
+          nurse2UserId,
+        });
+        await bootstrap();
+      } catch (e) {
+        window.alert?.(`당직자 저장 실패: ${e?.message || e}`);
+      }
+      return;
+    }
+
+    // 오프라인: 브라우저 로컬에만 저장
+    setHolidayDuties((prev) => ({
+      ...(prev ?? {}),
+      [hd]: { nurse1UserId, nurse2UserId },
+    }));
   }
 
   async function saveNegotiationOrder(requestId, rawString) {
@@ -381,8 +423,8 @@ function App() {
   );
   const calendarData = useMemo(() => {
     const [year, month] = calendarMonth.split("-").map(Number);
-    return buildMonthMatrix(year, month, requests, users);
-  }, [calendarMonth, requests, users]);
+    return buildMonthMatrix(year, month, requests, users, holidays);
+  }, [calendarMonth, requests, users, holidays]);
 
   const calendarDayRequests = useMemo(() => {
     if (!calendarSelectedYmd) return [];
@@ -679,6 +721,8 @@ function App() {
               message={message}
               isAdmin={isAdmin}
               saveNegotiationOrder={saveNegotiationOrder}
+              holidayDuties={holidayDuties}
+              saveHolidayDuty={saveHolidayDuty}
             />
           }
         />
@@ -1054,6 +1098,8 @@ function CalendarPage({
   message,
   isAdmin,
   saveNegotiationOrder,
+  holidayDuties,
+  saveHolidayDuty,
 }) {
   const [detailTab, setDetailTab] = useState("list");
 
@@ -1066,6 +1112,21 @@ function CalendarPage({
   const approvedIds = new Set((selectedCell?.approvedApplicants ?? []).map((item) => item.userId));
   const nurseUsers = users.filter((u) => u.role === "NURSE");
   const workingUsers = nurseUsers.filter((u) => !approvedIds.has(u.id));
+
+  const selectedHolidayDuty = selectedYmd ? holidayDuties?.[selectedYmd] : null;
+  const [duty1UserId, setDuty1UserId] = useState(selectedHolidayDuty?.nurse1UserId ?? "");
+  const [duty2UserId, setDuty2UserId] = useState(selectedHolidayDuty?.nurse2UserId ?? "");
+
+  useEffect(() => {
+    if (!selectedYmd || !selectedCell?.isHoliday) {
+      setDuty1UserId("");
+      setDuty2UserId("");
+      return;
+    }
+    const d = holidayDuties?.[selectedYmd];
+    setDuty1UserId(d?.nurse1UserId ?? "");
+    setDuty2UserId(d?.nurse2UserId ?? "");
+  }, [selectedYmd, selectedCell?.isHoliday, holidayDuties]);
 
   /**
    * 같은 휴가일·같은 유형 기준으로, 신청(제출)일이 같은 사람끼리만 묶음.
@@ -1148,7 +1209,7 @@ function CalendarPage({
                 }
               }}
             >
-              <div className="calendar-date">{cell.day}</div>
+              <div className={`calendar-date${cell.isHoliday ? " calendar-date--holiday" : ""}`}>{cell.day}</div>
               {cell.requestCount > 0 ? (
                 <div className="badge badge--count-only">신청 {cell.requestCount}명</div>
               ) : null}
@@ -1163,6 +1224,52 @@ function CalendarPage({
         ) : (
           <>
             <h3 className="calendar-detail-title">{selectedYmd} 상세</h3>
+              {isAdmin && selectedCell?.isHoliday ? (
+                <section className="holiday-duty-panel">
+                  <h4 className="holiday-duty-title">공휴일 당직자 기록</h4>
+                  <div className="row wrap holiday-duty-grid">
+                    <div className="holiday-duty-field">
+                      <label className="field-label">당직자 1</label>
+                      <select value={duty1UserId} onChange={(e) => setDuty1UserId(e.target.value)}>
+                        <option value="">선택</option>
+                        {nurseUsers
+                          .slice()
+                          .sort((a, b) => a.name.localeCompare(b.name, "ko"))
+                          .map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.name}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                    <div className="holiday-duty-field">
+                      <label className="field-label">당직자 2</label>
+                      <select value={duty2UserId} onChange={(e) => setDuty2UserId(e.target.value)}>
+                        <option value="">선택</option>
+                        {nurseUsers
+                          .slice()
+                          .sort((a, b) => a.name.localeCompare(b.name, "ko"))
+                          .map((u) => (
+                            <option key={u.id} value={u.id} disabled={u.id === duty1UserId}>
+                              {u.name}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                    <div className="holiday-duty-action">
+                      <button
+                        type="button"
+                        onClick={() => void saveHolidayDuty(selectedYmd, duty1UserId, duty2UserId)}
+                        disabled={!duty1UserId || !duty2UserId}
+                        aria-label="공휴일 당직자 저장"
+                      >
+                        저장
+                      </button>
+                    </div>
+                  </div>
+                  {(!duty1UserId || !duty2UserId) && <p className="help">당직자 2명을 선택한 뒤 저장해 주세요.</p>}
+                </section>
+              ) : null}
             <div className="calendar-detail-tabs" role="tablist">
               <button
                 type="button"
@@ -1530,20 +1637,32 @@ function useLocalStorage(key, initialValue) {
   return [value, setValue];
 }
 
-function buildMonthMatrix(year, month, allRequests, users) {
+function buildMonthMatrix(year, month, allRequests, users, holidaysCache) {
   const first = new Date(year, month - 1, 1);
   const start = new Date(first);
   start.setDate(first.getDate() - first.getDay());
   const cells = [];
+
+  const holidayByDate = new Map();
+  if (Array.isArray(holidaysCache)) {
+    for (const h of holidaysCache) {
+      if (h?.isHoliday && h.holidayDate) holidayByDate.set(h.holidayDate, h.holidayName ?? "");
+    }
+  }
+
   for (let i = 0; i < 42; i += 1) {
     const d = new Date(start);
     d.setDate(start.getDate() + i);
     const iso = toLocalYMD(d);
+    const isHoliday = holidayByDate.has(iso);
+    const holidayName = holidayByDate.get(iso) ?? "";
     const dayReqs = allRequests.filter((r) => r.leaveDate === iso);
     cells.push({
       date: iso,
       day: d.getDate(),
       inMonth: d.getMonth() === month - 1,
+      isHoliday,
+      holidayName,
       requestCount: dayReqs.length,
       applicants: dayReqs
         .filter((r) => r.status !== "CANCELLED")

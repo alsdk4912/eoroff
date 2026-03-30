@@ -83,6 +83,8 @@ export const api = {
     }),
   resetLeaveData: (payload) =>
     requestJson("/admin/reset-leave-data", { method: "POST", body: JSON.stringify(payload) }),
+  upsertHolidayDuty: (payload) =>
+    requestJson("/admin/holiday-duties", { method: "POST", body: JSON.stringify(payload) }),
   downloadBackupSql: async () => {
     if (API_ROOT === null) throw new TypeError("Failed to fetch");
     const res = await fetch(`${API_ROOT}/admin/backup-sql`, { cache: "no-store" });
