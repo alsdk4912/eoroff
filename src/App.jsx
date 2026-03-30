@@ -185,6 +185,7 @@ function App() {
 
   const currentUser = users.find((u) => u.id === auth?.userId);
   const isAdmin = currentUser?.role === "ADMIN";
+  const canEditHolidayDuty = currentUser?.role === "NURSE" || currentUser?.role === "ADMIN";
   const myGoldkey = goldkeys.find((g) => g.userId === auth?.userId);
   const isLoggedIn = Boolean(auth?.userId);
 
@@ -307,7 +308,7 @@ function App() {
     if (serverMode) {
       try {
         await api.upsertHolidayDuty({
-          adminUserId: auth.userId,
+          actorUserId: auth.userId,
           holidayDate: hd,
           nurse1UserId,
           nurse2UserId,
@@ -720,6 +721,7 @@ function App() {
               myGoldkey={myGoldkey}
               message={message}
               isAdmin={isAdmin}
+              canEditHolidayDuty={canEditHolidayDuty}
               saveNegotiationOrder={saveNegotiationOrder}
               holidayDuties={holidayDuties}
               saveHolidayDuty={saveHolidayDuty}
@@ -1097,6 +1099,7 @@ function CalendarPage({
   myGoldkey,
   message,
   isAdmin,
+  canEditHolidayDuty,
   saveNegotiationOrder,
   holidayDuties,
   saveHolidayDuty,
@@ -1118,7 +1121,7 @@ function CalendarPage({
   const [duty2UserId, setDuty2UserId] = useState(selectedHolidayDuty?.nurse2UserId ?? "");
 
   useEffect(() => {
-    if (!selectedYmd || !selectedCell?.isHoliday) {
+    if (!selectedYmd || !selectedCell?.isOffDay) {
       setDuty1UserId("");
       setDuty2UserId("");
       return;
@@ -1126,7 +1129,7 @@ function CalendarPage({
     const d = holidayDuties?.[selectedYmd];
     setDuty1UserId(d?.nurse1UserId ?? "");
     setDuty2UserId(d?.nurse2UserId ?? "");
-  }, [selectedYmd, selectedCell?.isHoliday, holidayDuties]);
+  }, [selectedYmd, selectedCell?.isOffDay, holidayDuties]);
 
   /**
    * 같은 휴가일·같은 유형 기준으로, 신청(제출)일이 같은 사람끼리만 묶음.
@@ -1209,7 +1212,7 @@ function CalendarPage({
                 }
               }}
             >
-              <div className={`calendar-date${cell.isHoliday ? " calendar-date--holiday" : ""}`}>{cell.day}</div>
+              <div className={`calendar-date${cell.isOffDay ? " calendar-date--holiday" : ""}`}>{cell.day}</div>
               {cell.requestCount > 0 ? (
                 <div className="badge badge--count-only">신청 {cell.requestCount}명</div>
               ) : null}
@@ -1224,9 +1227,9 @@ function CalendarPage({
         ) : (
           <>
             <h3 className="calendar-detail-title">{selectedYmd} 상세</h3>
-              {isAdmin && selectedCell?.isHoliday ? (
+              {canEditHolidayDuty && selectedCell?.isOffDay ? (
                 <section className="holiday-duty-panel">
-                  <h4 className="holiday-duty-title">공휴일 당직자 기록</h4>
+                  <h4 className="holiday-duty-title">휴일 당직자 기록 (공휴일·주말)</h4>
                   <div className="row wrap holiday-duty-grid">
                     <div className="holiday-duty-field">
                       <label className="field-label">당직자 1</label>
@@ -1654,14 +1657,19 @@ function buildMonthMatrix(year, month, allRequests, users, holidaysCache) {
     const d = new Date(start);
     d.setDate(start.getDate() + i);
     const iso = toLocalYMD(d);
+    const dayOfWeek = d.getDay();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
     const isHoliday = holidayByDate.has(iso);
+    const isOffDay = isHoliday || isWeekend;
     const holidayName = holidayByDate.get(iso) ?? "";
     const dayReqs = allRequests.filter((r) => r.leaveDate === iso);
     cells.push({
       date: iso,
       day: d.getDate(),
       inMonth: d.getMonth() === month - 1,
+      isWeekend,
       isHoliday,
+      isOffDay,
       holidayName,
       requestCount: dayReqs.length,
       applicants: dayReqs

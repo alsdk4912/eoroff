@@ -141,10 +141,13 @@ app.post("/api/admin/reset-leave-data-by-secret", async (req, res) => {
 /** 공휴일 당직자(간호사 2명) 저장/수정 */
 app.post("/api/admin/holiday-duties", async (req, res) => {
   try {
-    const { adminUserId, holidayDate, nurse1UserId, nurse2UserId } = req.body ?? {};
+    const { actorUserId, holidayDate, nurse1UserId, nurse2UserId } = req.body ?? {};
 
-    const admin = await queryOne("SELECT id FROM users WHERE id = ? AND role = 'ADMIN'", adminUserId);
-    if (!admin) return res.status(403).json({ error: "관리자 권한이 필요합니다." });
+    const actor = await queryOne(
+      "SELECT id, role FROM users WHERE id = ? AND role IN ('ADMIN', 'NURSE')",
+      actorUserId
+    );
+    if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
 
     const hd = String(holidayDate ?? "").trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(hd)) return res.status(400).json({ error: "holidayDate 형식이 올바르지 않습니다." });
@@ -161,9 +164,11 @@ app.post("/api/admin/holiday-duties", async (req, res) => {
     );
     if (nurses.length !== 2) return res.status(400).json({ error: "선택한 당직자 값이 유효하지 않습니다." });
 
-    // 해당 날짜가 공휴일로 등록되어 있어야 기록할 수 있습니다.
+    // 공휴일 또는 주말(토/일) 날짜에만 기록 가능
+    const day = new Date(`${hd}T00:00:00`).getDay();
+    const isWeekend = day === 0 || day === 6;
     const holidayRow = await queryOne("SELECT holiday_date FROM holidays WHERE holiday_date = ? AND is_holiday = 1", hd);
-    if (!holidayRow) return res.status(400).json({ error: "해당 날짜가 공휴일로 등록되어 있지 않습니다." });
+    if (!holidayRow && !isWeekend) return res.status(400).json({ error: "해당 날짜가 공휴일/주말이 아닙니다." });
 
     await execute(
       "INSERT INTO holiday_duties (holiday_date, nurse1_user_id, nurse2_user_id) VALUES (?, ?, ?) ON CONFLICT(holiday_date) DO UPDATE SET nurse1_user_id = excluded.nurse1_user_id, nurse2_user_id = excluded.nurse2_user_id",
