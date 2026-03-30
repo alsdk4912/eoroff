@@ -403,6 +403,38 @@ app.post("/api/holidays/sync", (_, res) => {
   res.json({ ok: true, count: 0 });
 });
 
+/** 공휴일/대체공휴일 수동 반영 (ADMIN/NURSE) */
+app.post("/api/admin/holidays/upsert", async (req, res) => {
+  try {
+    const { actorUserId, holidays } = req.body ?? {};
+    const actor = await queryOne(
+      "SELECT id FROM users WHERE id = ? AND role IN ('ADMIN', 'NURSE')",
+      actorUserId
+    );
+    if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
+
+    const list = Array.isArray(holidays) ? holidays : [];
+    let count = 0;
+    const nowIso = new Date().toISOString();
+    for (const h of list) {
+      const date = String(h?.holidayDate ?? "").trim();
+      const name = String(h?.holidayName ?? "공휴일").trim() || "공휴일";
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+      await execute(
+        "INSERT INTO holidays (holiday_date, holiday_name, is_holiday, synced_at) VALUES (?, ?, 1, ?) ON CONFLICT(holiday_date) DO UPDATE SET holiday_name = excluded.holiday_name, is_holiday = 1, synced_at = excluded.synced_at",
+        date,
+        name,
+        nowIso
+      );
+      count += 1;
+    }
+    return res.json({ ok: true, count });
+  } catch (err) {
+    console.error("POST /api/admin/holidays/upsert", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
 app.get("/api/admin/backup-sql", (_, res) => {
   res.setHeader("Content-Type", "application/sql; charset=utf-8");
   res.send("BEGIN;\nCOMMIT;\n");
