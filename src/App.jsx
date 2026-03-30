@@ -1367,12 +1367,24 @@ function CalendarPage({
         ))}
         {calendarData.map((cell, idx) => {
           const isSel = cell.inMonth && selectedYmd === cell.date;
+          const duty = holidayDuties?.[cell.date];
+          const hasDuty = Boolean(
+            cell.isOffDay &&
+              duty &&
+              String(duty.nurse1UserId ?? "").trim() &&
+              String(duty.nurse2UserId ?? "").trim()
+          );
+          const offDayStateClass = cell.isOffDay
+            ? hasDuty
+              ? " calendar-cell--offday-set"
+              : " calendar-cell--offday-unset"
+            : "";
           return (
             <div
               key={`${cell.date}-${idx}`}
               role={cell.inMonth ? "button" : undefined}
               tabIndex={cell.inMonth ? 0 : undefined}
-              className={`calendar-cell ${cell.inMonth ? "calendar-cell--clickable" : "muted"}${isSel ? " calendar-cell--selected" : ""}`}
+              className={`calendar-cell ${cell.inMonth ? "calendar-cell--clickable" : "muted"}${offDayStateClass}${isSel ? " calendar-cell--selected" : ""}`}
               onClick={() => {
                 if (!cell.inMonth) return;
                 setSelectedYmd(cell.date);
@@ -1390,6 +1402,11 @@ function CalendarPage({
               }}
             >
               <div className={`calendar-date${cell.isOffDay ? " calendar-date--holiday" : ""}`}>{cell.day}</div>
+              {cell.inMonth && cell.isOffDay ? (
+                <div className={`badge badge--offday ${hasDuty ? "badge--duty-set" : "badge--duty-unset"}`}>
+                  {hasDuty ? "확정" : "미정"}
+                </div>
+              ) : null}
               {cell.requestCount > 0 ? (
                 <div className="badge badge--count-only">{cell.requestCount}명</div>
               ) : null}
