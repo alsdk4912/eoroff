@@ -20,6 +20,38 @@ app.use(express.json());
 const PORT = Number(process.env.PORT) || 4015;
 const HOST = process.env.HOST || "0.0.0.0";
 
+async function upsertKoreanHolidaysFromPublicApi(year, monthOpt) {
+  const y = Number(year);
+  if (!Number.isInteger(y) || y < 2000 || y > 2100) throw new Error("year 범위가 올바르지 않습니다.");
+
+  const url = `https://date.nager.at/api/v3/PublicHolidays/${y}/KR`;
+  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error(`공휴일 API 오류: HTTP ${res.status}`);
+  const rows = await res.json();
+  if (!Array.isArray(rows)) return 0;
+
+  const m = monthOpt == null ? null : Number(monthOpt);
+  const nowIso = new Date().toISOString();
+  let count = 0;
+  for (const h of rows) {
+    const date = String(h?.date ?? "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    if (m != null) {
+      const mm = Number(date.slice(5, 7));
+      if (mm !== m) continue;
+    }
+    const name = String(h?.localName ?? h?.name ?? "공휴일").trim() || "공휴일";
+    await execute(
+      "INSERT INTO holidays (holiday_date, holiday_name, is_holiday, synced_at) VALUES (?, ?, 1, ?) ON CONFLICT(holiday_date) DO UPDATE SET holiday_name = excluded.holiday_name, is_holiday = 1, synced_at = excluded.synced_at",
+      date,
+      name,
+      nowIso
+    );
+    count += 1;
+  }
+  return count;
+}
+
 app.get("/api/health", (_, res) => {
   const ephemeral = isLikelyEphemeralDeployRisk();
   const remote = isUsingRemoteDb();
@@ -399,8 +431,17 @@ app.patch("/api/goldkeys/:userId", async (req, res) => {
   res.json({ ok: true });
 });
 
-app.post("/api/holidays/sync", (_, res) => {
-  res.json({ ok: true, count: 0 });
+app.post("/api/holidays/sync", async (req, res) => {
+  try {
+    const year = Number(req.body?.year || new Date().getFullYear());
+    const monthRaw = String(req.body?.month ?? "").trim();
+    const month = monthRaw ? Number(monthRaw) : null;
+    const count = await upsertKoreanHolidaysFromPublicApi(year, month);
+    res.json({ ok: true, count, source: "nager-public-holidays" });
+  } catch (err) {
+    console.error("POST /api/holidays/sync", err);
+    res.status(500).json({ error: String(err?.message || err) });
+  }
 });
 
 /** 공휴일/대체공휴일 수동 반영 (ADMIN/NURSE) */

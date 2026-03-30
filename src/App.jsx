@@ -623,9 +623,8 @@ function App() {
 
   async function syncHolidays() {
     try {
-      if (!apiKey.trim()) return setApiMessage("API 키를 입력하세요.");
       if (serverMode) {
-        const result = await api.syncHolidays({ serviceKey: apiKey.trim(), year: syncYear, month: syncMonth });
+        const result = await api.syncHolidays({ year: syncYear, month: syncMonth });
         return setApiMessage(`동기화 완료: ${result.count}건 반영`);
       }
       setApiMessage("서버 모드에서만 API 동기화가 가능합니다.");
@@ -1747,7 +1746,7 @@ function SettingsPage({
     <section className="card">
       <h2>공휴일 API 동기화</h2>
       <div className="grid-api">
-        <input type="password" placeholder="서비스키(Decoded)" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
+        <input type="password" placeholder="(옵션) 서비스키 - 현재는 미사용" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
         <input type="number" placeholder="연도" value={syncYear} onChange={(e) => setSyncYear(e.target.value)} />
         <input type="text" placeholder="월(01-12)" value={syncMonth} onChange={(e) => setSyncMonth(e.target.value.padStart(2, "0").slice(0, 2))} />
         <button onClick={syncHolidays}>동기화 실행</button>
