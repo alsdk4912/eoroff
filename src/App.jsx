@@ -1391,7 +1391,7 @@ function CalendarPage({
             >
               <div className={`calendar-date${cell.isOffDay ? " calendar-date--holiday" : ""}`}>{cell.day}</div>
               {cell.requestCount > 0 ? (
-                <div className="badge badge--count-only">신청 {cell.requestCount}명</div>
+                <div className="badge badge--count-only">{cell.requestCount}명</div>
               ) : null}
             </div>
           );
