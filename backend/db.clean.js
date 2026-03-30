@@ -115,6 +115,17 @@ CREATE TABLE IF NOT EXISTS holiday_duties (
   nurse1_user_id TEXT,
   nurse2_user_id TEXT
 );
+
+-- 협의 순번 사다리 결과
+CREATE TABLE IF NOT EXISTS ladder_results (
+  id TEXT PRIMARY KEY,
+  leave_date TEXT NOT NULL,
+  leave_type TEXT NOT NULL,
+  participants_json TEXT NOT NULL,
+  order_json TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 `;
 
 export async function initDb() {
@@ -317,6 +328,7 @@ export async function resetLeaveDataToDefaults() {
     await tx.execute("DELETE FROM cancellations");
     await tx.execute("DELETE FROM selections");
     await tx.execute("DELETE FROM logs");
+    await tx.execute("DELETE FROM ladder_results");
     await tx.execute("DELETE FROM requests");
     for (const n of nurses) {
       const q = defaultGoldkeyQuotaForName(n.name);

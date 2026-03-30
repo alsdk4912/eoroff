@@ -48,6 +48,7 @@ app.get("/api/bootstrap", async (_, res) => {
       cancellations: await queryAll("SELECT * FROM cancellations"),
       selections: await queryAll("SELECT * FROM selections"),
       logs: await queryAll("SELECT * FROM logs"),
+      ladderResults: await queryAll("SELECT * FROM ladder_results ORDER BY created_at DESC"),
       holidayDuties: await queryAll("SELECT * FROM holiday_duties"),
       holidays: await queryAll("SELECT * FROM holidays"),
     });
@@ -180,6 +181,51 @@ app.post("/api/admin/holiday-duties", async (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     console.error("POST /api/admin/holiday-duties", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
+app.post("/api/ladder-results", async (req, res) => {
+  try {
+    const {
+      id,
+      leaveDate,
+      leaveType,
+      participants,
+      order,
+      createdBy,
+      createdAt,
+    } = req.body ?? {};
+
+    const actor = await queryOne("SELECT id FROM users WHERE id = ?", createdBy);
+    if (!actor) return res.status(403).json({ error: "사용자 정보가 올바르지 않습니다." });
+
+    const ld = String(leaveDate ?? "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ld)) return res.status(400).json({ error: "leaveDate 형식이 올바르지 않습니다." });
+
+    const lt = String(leaveType ?? "").trim();
+    if (!lt) return res.status(400).json({ error: "leaveType이 필요합니다." });
+
+    const pArr = Array.isArray(participants) ? participants : [];
+    const oArr = Array.isArray(order) ? order : [];
+    if (pArr.length < 2 || oArr.length < 2) {
+      return res.status(400).json({ error: "참여자/결과는 2명 이상이어야 합니다." });
+    }
+
+    await execute(
+      "INSERT INTO ladder_results (id, leave_date, leave_type, participants_json, order_json, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      String(id ?? `lrg_${Date.now()}`),
+      ld,
+      lt,
+      JSON.stringify(pArr),
+      JSON.stringify(oArr),
+      String(createdBy),
+      String(createdAt ?? new Date().toISOString())
+    );
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /api/ladder-results", err);
     return res.status(500).json({ error: String(err?.message || err) });
   }
 });

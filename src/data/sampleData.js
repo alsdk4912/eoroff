@@ -56,3 +56,4 @@ export const initialSelections = [];
 export const initialAdjustmentLogs = [];
 export const holidaysCache = [];
 export const initialHolidayDuties = {};
+export const initialLadderResults = [];

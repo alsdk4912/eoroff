@@ -9,6 +9,7 @@ import {
   initialRequests,
   initialSelections,
   initialHolidayDuties,
+  initialLadderResults,
   users as seedUsers,
 } from "./data/sampleData";
 import {
@@ -30,6 +31,7 @@ const LS_SELECTIONS = "or.selections.v3";
 const LS_GOLDKEYS = "or.goldkeys.v4";
 const LS_ADJUSTMENT_LOGS = "or.adjustmentLogs.v3";
 const LS_HOLIDAY_DUTIES = "or.holidayDuties.v1";
+const LS_LADDER_RESULTS = "or.ladderResults.v1";
 
 /** 이전 버전 키는 남아 있으면 혼동만 되므로 제거(현재 키는 유지) */
 function dropStaleOfflineLeaveKeys() {
@@ -154,6 +156,7 @@ function App() {
   const [adjustmentLogs, setAdjustmentLogs] = useLocalStorage(LS_ADJUSTMENT_LOGS, initialAdjustmentLogs);
   const [holidays, setHolidays] = useLocalStorage("or.holidays", seedHolidays);
   const [holidayDuties, setHolidayDuties] = useLocalStorage(LS_HOLIDAY_DUTIES, initialHolidayDuties);
+  const [ladderResults, setLadderResults] = useLocalStorage(LS_LADDER_RESULTS, initialLadderResults);
 
   useEffect(() => {
     dropStaleOfflineLeaveKeys();
@@ -217,6 +220,19 @@ function App() {
       return acc;
     }, {});
     setHolidayDuties(dutyByDate);
+
+    const rows = Array.isArray(data.ladderResults) ? data.ladderResults : [];
+    setLadderResults(
+      rows.map((r) => ({
+        id: r.id,
+        leaveDate: r.leave_date ?? r.leaveDate,
+        leaveType: r.leave_type ?? r.leaveType,
+        participants: safeParseJsonArray(r.participants_json ?? r.participantsJson),
+        order: safeParseJsonArray(r.order_json ?? r.orderJson),
+        createdBy: r.created_by ?? r.createdBy,
+        createdAt: r.created_at ?? r.createdAt,
+      }))
+    );
   }
 
   useEffect(() => {
@@ -325,6 +341,19 @@ function App() {
       ...(prev ?? {}),
       [hd]: { nurse1UserId, nurse2UserId },
     }));
+  }
+
+  async function createLadderResult(payload) {
+    if (serverMode) {
+      try {
+        await api.createLadderResult(payload);
+        await bootstrap();
+      } catch (e) {
+        window.alert?.(`사다리 결과 저장 실패: ${e?.message || e}`);
+      }
+      return;
+    }
+    setLadderResults((prev) => [payload, ...(Array.isArray(prev) ? prev : [])]);
   }
 
   async function saveNegotiationOrder(requestId, rawString) {
@@ -660,6 +689,7 @@ function App() {
         <Link to="/request">신청</Link>
         <Link to="/my">내 신청내역</Link>
         <Link to="/dashboard">종합 현황</Link>
+        <Link to="/ladder">사다리 게임</Link>
         <Link to="/account">계정</Link>
         {isAdmin ? <Link to="/admin">관리자</Link> : null}
         {isAdmin ? <Link to="/settings">설정</Link> : null}
@@ -695,6 +725,17 @@ function App() {
               cancellations={cancellations}
               users={users}
               serverMode={serverMode}
+            />
+          }
+        />
+        <Route
+          path="/ladder"
+          element={
+            <LadderGamePage
+              users={users}
+              ladderResults={ladderResults}
+              createLadderResult={createLadderResult}
+              currentUserId={auth?.userId}
             />
           }
         />
@@ -1052,6 +1093,142 @@ function AccountPage({ onChangePassword, message }) {
       </form>
       {localMsg ? <p className="msg">{localMsg}</p> : null}
       {message ? <p className="help">{message}</p> : null}
+    </section>
+  );
+}
+
+function shuffleArray(items) {
+  const arr = [...items];
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function LadderGamePage({ users, ladderResults, createLadderResult, currentUserId }) {
+  const now = toLocalYMD(new Date());
+  const [leaveDate, setLeaveDate] = useState(now);
+  const [leaveType, setLeaveType] = useState("GENERAL_PRIORITY");
+  const [selectedUserIds, setSelectedUserIds] = useState([]);
+  const [previewOrder, setPreviewOrder] = useState([]);
+
+  const nurseUsers = useMemo(
+    () => users.filter((u) => u.role === "NURSE").sort((a, b) => a.name.localeCompare(b.name, "ko")),
+    [users]
+  );
+
+  const idToName = useMemo(() => new Map(users.map((u) => [u.id, u.name])), [users]);
+
+  function toggleUser(userId) {
+    setSelectedUserIds((prev) => (prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]));
+  }
+
+  function runLadder() {
+    if (selectedUserIds.length < 2) {
+      window.alert?.("사다리 게임은 참여자 2명 이상이 필요합니다.");
+      return;
+    }
+    const order = shuffleArray(selectedUserIds);
+    setPreviewOrder(order);
+  }
+
+  async function saveResult() {
+    if (previewOrder.length < 2) {
+      window.alert?.("먼저 사다리 실행을 눌러 순번을 생성하세요.");
+      return;
+    }
+    const payload = {
+      id: `lrg_${Date.now()}`,
+      leaveDate,
+      leaveType,
+      participants: selectedUserIds,
+      order: previewOrder,
+      createdBy: currentUserId,
+      createdAt: new Date().toISOString(),
+    };
+    await createLadderResult(payload);
+  }
+
+  return (
+    <section className="card">
+      <h2>사다리 게임</h2>
+      <p className="help">동일 날짜·동일 유형에서 다수 신청 시 순번을 정하고 저장하면 모두가 같은 결과를 볼 수 있습니다.</p>
+      <div className="row wrap" style={{ marginBottom: 10 }}>
+        <div>
+          <label className="field-label">휴가일</label>
+          <YmdSplitInput value={leaveDate} onChange={setLeaveDate} />
+        </div>
+        <div>
+          <label className="field-label">유형</label>
+          <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)}>
+            <option value="GENERAL_PRIORITY">일반휴가-우선순위</option>
+            <option value="GENERAL_NORMAL">일반휴가-후순위</option>
+            <option value="GOLDKEY">골드키</option>
+            <option value="HALF_DAY">반차</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="table-wrap" style={{ marginBottom: 10 }}>
+        <table>
+          <thead>
+            <tr>
+              <th>선택</th>
+              <th>간호사</th>
+            </tr>
+          </thead>
+          <tbody>
+            {nurseUsers.map((u) => (
+              <tr key={u.id}>
+                <td>
+                  <input type="checkbox" checked={selectedUserIds.includes(u.id)} onChange={() => toggleUser(u.id)} />
+                </td>
+                <td>{u.name}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="row wrap" style={{ marginBottom: 10 }}>
+        <button type="button" onClick={runLadder}>
+          사다리 실행
+        </button>
+        <button type="button" onClick={() => void saveResult()} disabled={previewOrder.length < 2}>
+          결과 저장
+        </button>
+      </div>
+
+      {previewOrder.length > 0 ? (
+        <p className="help">
+          미리보기 결과:{" "}
+          {previewOrder.map((id, idx) => `${idx + 1}순위 ${idToName.get(id) ?? id}`).join(" / ")}
+        </p>
+      ) : null}
+
+      <hr className="divider" />
+      <h3>저장된 결과</h3>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>제목</th>
+              <th>결과</th>
+              <th>저장시각</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(Array.isArray(ladderResults) ? ladderResults : []).map((r) => (
+              <tr key={r.id}>
+                <td>{`${r.leaveDate} ${leaveTypeLabel(r.leaveType)} 사다리 게임 결과`}</td>
+                <td>{(Array.isArray(r.order) ? r.order : []).map((id, idx) => `${idx + 1}순위 ${idToName.get(id) ?? id}`).join(" / ")}</td>
+                <td>{r.createdAt ? new Date(r.createdAt).toLocaleString("ko-KR") : "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
@@ -1604,6 +1781,17 @@ function parseNegotiationOrder(v) {
   if (v === null || v === undefined || v === "") return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+function safeParseJsonArray(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (raw == null || raw === "") return [];
+  try {
+    const parsed = JSON.parse(String(raw));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 function mapRequestRow(r) {
