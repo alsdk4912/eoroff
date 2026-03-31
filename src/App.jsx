@@ -792,6 +792,44 @@ function App() {
     setDayComments((prev) => [newRow, ...(Array.isArray(prev) ? prev : [])]);
   }
 
+  async function updateDayComment(commentId, content) {
+    const id = String(commentId ?? "").trim();
+    const txt = String(content ?? "").trim();
+    if (!id || !txt || !auth?.userId) return;
+    if (serverMode) {
+      try {
+        await api.updateDayComment(id, {
+          actorUserId: auth.userId,
+          content: txt,
+        });
+        await bootstrap();
+      } catch (e) {
+        window.alert?.(`댓글 수정 실패: ${e?.message || e}`);
+      }
+      return;
+    }
+    setDayComments((prev) =>
+      (Array.isArray(prev) ? prev : []).map((row) => (row.id === id && row.userId === auth.userId ? { ...row, content: txt } : row))
+    );
+  }
+
+  async function deleteDayComment(commentId) {
+    const id = String(commentId ?? "").trim();
+    if (!id || !auth?.userId) return;
+    if (serverMode) {
+      try {
+        await api.deleteDayComment(id, {
+          actorUserId: auth.userId,
+        });
+        await bootstrap();
+      } catch (e) {
+        window.alert?.(`댓글 삭제 실패: ${e?.message || e}`);
+      }
+      return;
+    }
+    setDayComments((prev) => (Array.isArray(prev) ? prev : []).filter((row) => !(row.id === id && row.userId === auth.userId)));
+  }
+
   async function syncHolidays() {
     try {
       if (serverMode) {
@@ -955,6 +993,8 @@ function App() {
               saveAdminDayMemo={saveAdminDayMemo}
               dayComments={dayComments}
               createDayComment={createDayComment}
+              updateDayComment={updateDayComment}
+              deleteDayComment={deleteDayComment}
             />
           }
         />
@@ -1533,6 +1573,8 @@ function CalendarPage({
   saveAdminDayMemo,
   dayComments,
   createDayComment,
+  updateDayComment,
+  deleteDayComment,
 }) {
   const [detailTab, setDetailTab] = useState("list");
   const touchStartRef = useRef(null);
@@ -1552,6 +1594,8 @@ function CalendarPage({
   const [anesthesiaDutyUserId, setAnesthesiaDutyUserId] = useState(selectedHolidayDuty?.anesthesiaUserId ?? "");
   const [adminMemoDraft, setAdminMemoDraft] = useState("");
   const [commentDraft, setCommentDraft] = useState("");
+  const [editingCommentId, setEditingCommentId] = useState("");
+  const [editingCommentDraft, setEditingCommentDraft] = useState("");
 
   useEffect(() => {
     if (!selectedYmd || !selectedCell?.isOffDay) {
@@ -1576,6 +1620,8 @@ function CalendarPage({
 
   useEffect(() => {
     setCommentDraft("");
+    setEditingCommentId("");
+    setEditingCommentDraft("");
   }, [selectedYmd]);
 
   const selectedDayComments = useMemo(() => {
@@ -1961,9 +2007,64 @@ function CalendarPage({
               <ul className="day-comment-list">
                 {selectedDayComments.map((row) => {
                   const authorName = users.find((u) => u.id === row.userId)?.name ?? row.userId;
+                  const canManageComment = currentUserId === row.userId || isAdmin;
+                  const isEditing = editingCommentId === row.id;
                   return (
                     <li key={row.id} className="day-comment-item">
-                      <span className="day-comment-author">{authorName}</span>: {row.content}
+                      {isEditing ? (
+                        <div className="day-comment-edit-wrap">
+                          <textarea rows={2} value={editingCommentDraft} onChange={(e) => setEditingCommentDraft(e.target.value)} />
+                          <div className="row wrap" style={{ marginTop: 6 }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!editingCommentDraft.trim()) return;
+                                void updateDayComment(row.id, editingCommentDraft);
+                                setEditingCommentId("");
+                                setEditingCommentDraft("");
+                              }}
+                              disabled={!editingCommentDraft.trim()}
+                            >
+                              저장
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingCommentId("");
+                                setEditingCommentDraft("");
+                              }}
+                            >
+                              취소
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <span className="day-comment-author">{authorName}</span>: {row.content}
+                          {canManageComment ? (
+                            <span className="row wrap day-comment-actions">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingCommentId(row.id);
+                                  setEditingCommentDraft(row.content);
+                                }}
+                              >
+                                수정
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!window.confirm("이 댓글을 삭제할까요?")) return;
+                                  void deleteDayComment(row.id);
+                                }}
+                              >
+                                삭제
+                              </button>
+                            </span>
+                          ) : null}
+                        </>
+                      )}
                     </li>
                   );
                 })}

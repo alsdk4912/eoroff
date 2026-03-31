@@ -91,6 +91,10 @@ export const api = {
     requestJson("/admin/day-memos", { method: "POST", body: JSON.stringify(payload) }),
   createDayComment: (payload) =>
     requestJson("/day-comments", { method: "POST", body: JSON.stringify(payload) }),
+  updateDayComment: (id, payload) =>
+    requestJson(`/day-comments/${encodeURIComponent(id)}/update`, { method: "POST", body: JSON.stringify(payload) }),
+  deleteDayComment: (id, payload) =>
+    requestJson(`/day-comments/${encodeURIComponent(id)}/delete`, { method: "POST", body: JSON.stringify(payload) }),
   bulkSetGoldkeyUsage: (payload) =>
     requestJson("/admin/goldkeys/usage-bulk", { method: "POST", body: JSON.stringify(payload) }),
   downloadBackupSql: async () => {

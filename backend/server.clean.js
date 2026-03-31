@@ -187,6 +187,53 @@ app.post("/api/day-comments", async (req, res) => {
   }
 });
 
+app.post("/api/day-comments/:id/update", async (req, res) => {
+  try {
+    const { actorUserId, content } = req.body ?? {};
+    const commentId = String(req.params.id ?? "").trim();
+    if (!commentId) return res.status(400).json({ error: "comment id가 필요합니다." });
+    const txt = String(content ?? "").trim();
+    if (!txt) return res.status(400).json({ error: "메모 내용을 입력하세요." });
+    if (txt.length > 500) return res.status(400).json({ error: "메모는 500자 이내로 입력하세요." });
+
+    const actor = await queryOne("SELECT id, role FROM users WHERE id = ?", actorUserId);
+    if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
+    const row = await queryOne("SELECT id, user_id FROM day_comments WHERE id = ?", commentId);
+    if (!row) return res.status(404).json({ error: "댓글을 찾을 수 없습니다." });
+
+    const canManage = actor.role === "ADMIN" || row.user_id === actorUserId;
+    if (!canManage) return res.status(403).json({ error: "작성자 또는 관리자만 수정할 수 있습니다." });
+
+    await execute("UPDATE day_comments SET content = ? WHERE id = ?", txt, commentId);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /api/day-comments/:id/update", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
+app.post("/api/day-comments/:id/delete", async (req, res) => {
+  try {
+    const { actorUserId } = req.body ?? {};
+    const commentId = String(req.params.id ?? "").trim();
+    if (!commentId) return res.status(400).json({ error: "comment id가 필요합니다." });
+
+    const actor = await queryOne("SELECT id, role FROM users WHERE id = ?", actorUserId);
+    if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
+    const row = await queryOne("SELECT id, user_id FROM day_comments WHERE id = ?", commentId);
+    if (!row) return res.status(404).json({ error: "댓글을 찾을 수 없습니다." });
+
+    const canManage = actor.role === "ADMIN" || row.user_id === actorUserId;
+    if (!canManage) return res.status(403).json({ error: "작성자 또는 관리자만 삭제할 수 있습니다." });
+
+    await execute("DELETE FROM day_comments WHERE id = ?", commentId);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /api/day-comments/:id/delete", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
 app.post("/api/admin/reset-leave-data", async (req, res) => {
   const { adminUserId } = req.body ?? {};
   const admin = await queryOne("SELECT id FROM users WHERE id = ? AND role = 'ADMIN'", adminUserId);
