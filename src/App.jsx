@@ -1893,44 +1893,6 @@ function AdminPage({ allRequests, users, notes, goldkeys, serverMode }) {
           </table>
         </div>
       </section>
-      <section className="card"><h2>일반휴가 협의 메모</h2><ul>{notes.map((n) => <li key={n.id}>요청ID {n.leaveRequestId} / 순번 {n.agreedOrder} / {n.content}</li>)}</ul></section>
-      <section className="card">
-        <h2>골드키 관리(조회 전용)</h2>
-        <p className="help" style={{ marginBottom: 8 }}>
-          신청·사용 = 골드키 누적 제출 건수(취소해도 차감 안 함). 잔여 = 총할당 − 신청·사용.
-        </p>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>간호사</th>
-                <th>총할당</th>
-                <th>신청·사용</th>
-                <th>잔여</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users
-                .filter((u) => u.role === "NURSE")
-                .sort((a, b) => a.name.localeCompare(b.name, "ko"))
-                .map((u) => {
-                  const g = goldkeys.find((x) => x.userId === u.id);
-                  const quotaTotal = goldkeyQuotaTotalForDisplay(u, g, serverMode);
-                  const applyUse = countGoldkeyApplyUse(allRequests, u.id);
-                  const remaining = Math.max(0, quotaTotal - applyUse);
-                  return (
-                    <tr key={u.id}>
-                      <td>{u.name}</td>
-                      <td>{quotaTotal}</td>
-                      <td>{applyUse}</td>
-                      <td>{remaining}</td>
-                    </tr>
-                  );
-                })}
-            </tbody>
-          </table>
-        </div>
-      </section>
     </>
   );
 }
