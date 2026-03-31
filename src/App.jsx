@@ -344,6 +344,54 @@ function App() {
     }));
   }
 
+  async function autoAssignUnsetHolidayDutiesByYear(year) {
+    const y = Number(year);
+    if (!Number.isInteger(y) || y < 2000 || y > 2100) {
+      window.alert?.("자동지정 연도가 올바르지 않습니다.");
+      return;
+    }
+    const plan = buildAutoHolidayDutyPlan({
+      year: y,
+      users,
+      holidays,
+      holidayDuties,
+    });
+    if (plan.length === 0) {
+      window.alert?.("자동지정할 미정 당직이 없습니다.");
+      return;
+    }
+
+    if (serverMode) {
+      try {
+        for (const row of plan) {
+          await api.upsertHolidayDuty({
+            actorUserId: auth.userId,
+            holidayDate: row.holidayDate,
+            nurse1UserId: row.nurse1UserId,
+            nurse2UserId: row.nurse2UserId,
+          });
+        }
+        await bootstrap();
+        window.alert?.(`미정 당직 ${plan.length}건 자동지정 완료`);
+      } catch (e) {
+        window.alert?.(`당직 자동지정 실패: ${e?.message || e}`);
+      }
+      return;
+    }
+
+    setHolidayDuties((prev) => {
+      const next = { ...(prev ?? {}) };
+      for (const row of plan) {
+        next[row.holidayDate] = {
+          nurse1UserId: row.nurse1UserId,
+          nurse2UserId: row.nurse2UserId,
+        };
+      }
+      return next;
+    });
+    window.alert?.(`미정 당직 ${plan.length}건 자동지정 완료`);
+  }
+
   async function createLadderResult(payload) {
     if (serverMode) {
       try {
@@ -767,6 +815,7 @@ function App() {
               saveNegotiationOrder={saveNegotiationOrder}
               holidayDuties={holidayDuties}
               saveHolidayDuty={saveHolidayDuty}
+              onAutoAssignHolidayDutyYear={autoAssignUnsetHolidayDutiesByYear}
             />
           }
         />
@@ -1282,6 +1331,7 @@ function CalendarPage({
   saveNegotiationOrder,
   holidayDuties,
   saveHolidayDuty,
+  onAutoAssignHolidayDutyYear,
 }) {
   const [detailTab, setDetailTab] = useState("list");
 
@@ -1369,6 +1419,18 @@ function CalendarPage({
       <div className="row">
         <label>월 선택 </label>
         <input type="month" value={calendarMonth} onChange={(e) => setCalendarMonth(e.target.value)} />
+        {canEditHolidayDuty ? (
+          <button
+            type="button"
+            onClick={() => {
+              const y = Number(String(calendarMonth || "").slice(0, 4));
+              if (!Number.isInteger(y)) return;
+              void onAutoAssignHolidayDutyYear(y);
+            }}
+          >
+            미정 당직 자동지정(연도)
+          </button>
+        ) : null}
       </div>
       <div className="calendar">
         {["일", "월", "화", "수", "목", "금", "토"].map((d) => (
@@ -1938,6 +2000,188 @@ function downloadTextFile(content, filename) {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+function toYmd(year, month1to12, day) {
+  return `${year}-${String(month1to12).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function parseLocalDateYmd(ymd) {
+  const s = String(ymd ?? "").trim();
+  const p = s.split("-");
+  if (p.length !== 3) return new Date(NaN);
+  const y = Number(p[0]);
+  const m = Number(p[1]);
+  const d = Number(p[2]);
+  if (!y || !m || !d) return new Date(NaN);
+  return new Date(y, m - 1, d);
+}
+
+function isDutyBlockedByRule(name, ymd) {
+  const nm = String(name ?? "").trim();
+  if (nm === "정수영") return true;
+  if (nm === "장지은") return ymd <= "2026-08-05";
+  if (nm === "이지선") return ymd <= "2026-09-06";
+  return false;
+}
+
+function buildBaseDutyOrder(nurseUsers) {
+  const sorted = [...nurseUsers].sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  const special = ["장성필", "장지은", "정수영", "최유경", "최종선", "최유리"];
+  const specialSet = new Set(special);
+  const picked = [];
+  const rest = [];
+  for (const u of sorted) {
+    if (specialSet.has(u.name)) picked.push(u);
+    else rest.push(u);
+  }
+  if (picked.length === 0) return sorted;
+  const pickedByName = new Map(picked.map((u) => [u.name, u]));
+  const orderedPicked = special.map((name) => pickedByName.get(name)).filter(Boolean);
+  const firstIdx = sorted.findIndex((u) => specialSet.has(u.name));
+  const insertAt = firstIdx < 0 ? rest.length : firstIdx;
+  return [...rest.slice(0, insertAt), ...orderedPicked, ...rest.slice(insertAt)];
+}
+
+function hasDutyPair(duty) {
+  return Boolean(duty && duty.nurse1UserId && duty.nurse2UserId && duty.nurse1UserId !== duty.nurse2UserId);
+}
+
+function pickSequentialDutyPair(baseOrder, ymd, pointer) {
+  if (!Array.isArray(baseOrder) || baseOrder.length < 2) return null;
+  const n = baseOrder.length;
+  const start = ((pointer % n) + n) % n;
+
+  let firstIdx = -1;
+  for (let i = 0; i < n; i += 1) {
+    const idx = (start + i) % n;
+    if (!isDutyBlockedByRule(baseOrder[idx].name, ymd)) {
+      firstIdx = idx;
+      break;
+    }
+  }
+  if (firstIdx < 0) return null;
+
+  let secondIdx = -1;
+  for (let i = 1; i < n; i += 1) {
+    const idx = (firstIdx + i) % n;
+    if (idx === firstIdx) continue;
+    if (!isDutyBlockedByRule(baseOrder[idx].name, ymd)) {
+      secondIdx = idx;
+      break;
+    }
+  }
+  if (secondIdx < 0) return null;
+
+  return {
+    nurse1UserId: baseOrder[firstIdx].id,
+    nurse2UserId: baseOrder[secondIdx].id,
+    nextPointer: (secondIdx + 1) % n,
+  };
+}
+
+function buildWeekendBlocks(year) {
+  const blocks = [];
+  const first = new Date(year, 0, 1);
+  const last = new Date(year, 11, 31);
+  for (let d = new Date(first); d <= last; d.setDate(d.getDate() + 1)) {
+    if (d.getDay() !== 6) continue;
+    const sat = toLocalYMD(d);
+    const sunDate = new Date(d);
+    sunDate.setDate(sunDate.getDate() + 1);
+    const dates = [sat];
+    if (sunDate.getFullYear() === year) dates.push(toLocalYMD(sunDate));
+    blocks.push({ key: sat, dates });
+  }
+  return blocks;
+}
+
+function buildAutoHolidayDutyPlan({ year, users, holidays, holidayDuties }) {
+  const nurseUsers = (users ?? []).filter((u) => u.role === "NURSE");
+  const baseOrder = buildBaseDutyOrder(nurseUsers);
+  if (baseOrder.length < 2) return [];
+
+  const dutyByDate = holidayDuties ?? {};
+  const plan = [];
+  const userById = new Map(nurseUsers.map((u) => [u.id, u]));
+
+  const weekendBlocks = buildWeekendBlocks(year);
+  let weekendPointer = 0;
+  for (const block of weekendBlocks) {
+    let existingPair = null;
+    for (const dt of block.dates) {
+      const d = dutyByDate[dt];
+      if (hasDutyPair(d)) {
+        existingPair = d;
+        break;
+      }
+    }
+    if (existingPair) {
+      const idx2 = baseOrder.findIndex((u) => u.id === existingPair.nurse2UserId);
+      if (idx2 >= 0) weekendPointer = (idx2 + 1) % baseOrder.length;
+      for (const dt of block.dates) {
+        if (!hasDutyPair(dutyByDate[dt])) {
+          plan.push({
+            holidayDate: dt,
+            nurse1UserId: existingPair.nurse1UserId,
+            nurse2UserId: existingPair.nurse2UserId,
+          });
+        }
+      }
+      continue;
+    }
+    const picked = pickSequentialDutyPair(baseOrder, block.key, weekendPointer);
+    if (!picked) continue;
+    weekendPointer = picked.nextPointer;
+    for (const dt of block.dates) {
+      if (!hasDutyPair(dutyByDate[dt])) {
+        plan.push({
+          holidayDate: dt,
+          nurse1UserId: picked.nurse1UserId,
+          nurse2UserId: picked.nurse2UserId,
+        });
+      }
+    }
+  }
+
+  const holidayDates = (holidays ?? [])
+    .filter((h) => h?.isHoliday && typeof h.holidayDate === "string")
+    .map((h) => h.holidayDate)
+    .filter((ymd) => String(ymd).startsWith(`${year}-`))
+    .filter((ymd) => {
+      const d = parseLocalDateYmd(ymd);
+      if (Number.isNaN(d.getTime())) return false;
+      const day = d.getDay();
+      return day !== 0 && day !== 6;
+    })
+    .sort();
+
+  let holidayPointer = 0;
+  for (const ymd of holidayDates) {
+    const existing = dutyByDate[ymd];
+    if (hasDutyPair(existing)) {
+      const idx2 = baseOrder.findIndex((u) => u.id === existing.nurse2UserId);
+      if (idx2 >= 0) holidayPointer = (idx2 + 1) % baseOrder.length;
+      continue;
+    }
+    const picked = pickSequentialDutyPair(baseOrder, ymd, holidayPointer);
+    if (!picked) continue;
+    holidayPointer = picked.nextPointer;
+    plan.push({
+      holidayDate: ymd,
+      nurse1UserId: picked.nurse1UserId,
+      nurse2UserId: picked.nurse2UserId,
+    });
+  }
+
+  const dedup = new Map();
+  for (const row of plan) {
+    const n1 = userById.get(row.nurse1UserId)?.name ?? "";
+    const n2 = userById.get(row.nurse2UserId)?.name ?? "";
+    if (isDutyBlockedByRule(n1, row.holidayDate) || isDutyBlockedByRule(n2, row.holidayDate)) continue;
+    dedup.set(row.holidayDate, row);
+  }
+  return [...dedup.values()].sort((a, b) => a.holidayDate.localeCompare(b.holidayDate));
 }
 
 export default App;
