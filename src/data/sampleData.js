@@ -23,13 +23,26 @@ const NURSE_NAMES = [
 ];
 
 const ADMIN_NAMES = ["관리자", "진기숙"];
+const EMPLOYEE_NO_BY_NAME = {
+  허정숙: "0511929",
+  김해림: "0530914",
+  이양희: "0512513",
+  최종선: "0552153",
+  장성필: "0559871",
+  양현아: "0534411",
+  오민아: "0550117",
+  이지선: "572657",
+  이지현: "0511968",
+  장지은: "0539515",
+  박현정: "0516973",
+};
 
 export const users = [
   ...NURSE_NAMES.map((name, idx) => ({
     id: `u_nurse_${idx + 1}`,
     name,
     role: "NURSE",
-    employeeNo: `N${String(idx + 1).padStart(4, "0")}`,
+    employeeNo: EMPLOYEE_NO_BY_NAME[name] || `N${String(idx + 1).padStart(4, "0")}`,
   })),
   ...ADMIN_NAMES.map((name, idx) => ({
     id: `u_admin_${idx + 1}`,

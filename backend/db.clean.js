@@ -3,6 +3,24 @@ import path from "path";
 import { createClient } from "@libsql/client";
 import { defaultGoldkeyQuotaForName } from "../src/data/goldkeyQuotas.js";
 
+const EMPLOYEE_NO_BY_NAME = {
+  허정숙: "0511929",
+  김해림: "0530914",
+  이양희: "0512513",
+  최종선: "0552153",
+  장성필: "0559871",
+  양현아: "0534411",
+  오민아: "0550117",
+  이지선: "572657",
+  이지현: "0511968",
+  장지은: "0539515",
+  박현정: "0516973",
+};
+
+function resolveEmployeeNo(name, fallback) {
+  return EMPLOYEE_NO_BY_NAME[name] || fallback;
+}
+
 let client;
 /** initDb 이후 로컬일 때만 절대경로 (헬스·로그용) */
 let resolvedDbPath = "";
@@ -184,6 +202,7 @@ export async function initDb() {
 
   await seedDefaultsIfEmpty();
   await ensureAnesthesiaUsers();
+  await ensureKnownEmployeeNos();
   await ensureGoldkeyDefaults();
   return client;
 }
@@ -244,7 +263,7 @@ async function seedDefaultsIfEmpty() {
       "INSERT INTO users (id, name, employee_no, role, password) VALUES (?, ?, ?, ?, ?)",
       `u_nurse_${idx + 1}`,
       name,
-      `N${String(idx + 1).padStart(4, "0")}`,
+      resolveEmployeeNo(name, `N${String(idx + 1).padStart(4, "0")}`),
       "NURSE",
       "1234"
     );
@@ -267,7 +286,7 @@ async function seedDefaultsIfEmpty() {
       "INSERT INTO users (id, name, employee_no, role, password) VALUES (?, ?, ?, ?, ?)",
       `u_anesthesia_${idx + 1}`,
       name,
-      `A${String(idx + 1).padStart(4, "0")}`,
+      resolveEmployeeNo(name, `A${String(idx + 1).padStart(4, "0")}`),
       "ANESTHESIA",
       "1234"
     );
@@ -329,10 +348,16 @@ async function ensureAnesthesiaUsers() {
       "INSERT INTO users (id, name, employee_no, role, password) VALUES (?, ?, ?, ?, ?)",
       `u_anesthesia_${idx + 1}`,
       name,
-      `A${String(idx + 1).padStart(4, "0")}`,
+      resolveEmployeeNo(name, `A${String(idx + 1).padStart(4, "0")}`),
       "ANESTHESIA",
       "1234"
     );
+  }
+}
+
+async function ensureKnownEmployeeNos() {
+  for (const [name, employeeNo] of Object.entries(EMPLOYEE_NO_BY_NAME)) {
+    await execute("UPDATE users SET employee_no = ? WHERE name = ?", employeeNo, name);
   }
 }
 
