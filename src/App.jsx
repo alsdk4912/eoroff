@@ -519,9 +519,11 @@ function App() {
       const msg = String(e?.message || "");
       const allowOfflineLogin =
         e?.name === "TypeError" ||
+        e?.name === "AbortError" ||
         msg.includes("Failed to fetch") ||
         msg.includes("Load failed") ||
         msg.includes("NetworkError") ||
+        msg.includes("요청 시간이 초과되었습니다") ||
         /^HTTP 404\b/.test(msg) ||
         /^HTTP 405\b/.test(msg);
 

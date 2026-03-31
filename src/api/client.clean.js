@@ -29,14 +29,28 @@ async function requestJson(path, options = {}) {
     throw new TypeError("Failed to fetch");
   }
   const { headers: extraHeaders, ...rest } = options;
-  const res = await fetch(`${API_ROOT}${path}`, {
-    cache: "no-store",
-    headers: {
-      "Content-Type": "application/json",
-      ...(extraHeaders && typeof extraHeaders === "object" ? extraHeaders : {}),
-    },
-    ...rest,
-  });
+  const ctrl = new AbortController();
+  const timeoutMs = 10000;
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  let res;
+  try {
+    res = await fetch(`${API_ROOT}${path}`, {
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+        ...(extraHeaders && typeof extraHeaders === "object" ? extraHeaders : {}),
+      },
+      signal: ctrl.signal,
+      ...rest,
+    });
+  } catch (e) {
+    if (e?.name === "AbortError") {
+      throw new Error("요청 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.");
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!res.ok) {
     let message = `HTTP ${res.status}`;
