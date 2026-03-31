@@ -75,6 +75,8 @@ export const api = {
     requestJson("/holidays/sync", { method: "POST", body: JSON.stringify(payload) }),
   changePassword: (payload) =>
     requestJson("/change-password", { method: "POST", body: JSON.stringify(payload) }),
+  resetPasswordByIdentity: (payload) =>
+    requestJson("/password-reset", { method: "POST", body: JSON.stringify(payload) }),
   listUsers: () => requestJson("/admin/users"),
   resetUserPassword: (targetUserId, payload) =>
     requestJson(`/admin/users/${targetUserId}/reset-password`, {

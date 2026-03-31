@@ -868,13 +868,17 @@ function App() {
     setAccountMessage("비밀번호가 변경되었습니다.");
   }
 
+  async function handleSelfPasswordReset(loginName, employeeNo, newPassword) {
+    await api.resetPasswordByIdentity({ loginName, employeeNo, newPassword });
+  }
+
   async function handleResetPassword(targetUserId) {
     await api.resetUserPassword(targetUserId, { adminUserId: auth.userId, nextPassword: "1234" });
     setAccountMessage("선택한 사용자의 비밀번호를 1234로 초기화했습니다.");
   }
 
   if (!isLoggedIn) {
-    return <LoginPage onLogin={handleLogin} />;
+    return <LoginPage onLogin={handleLogin} onResetPassword={handleSelfPasswordReset} />;
   }
 
   return (
@@ -1052,10 +1056,15 @@ function App() {
   );
 }
 
-function LoginPage({ onLogin }) {
+function LoginPage({ onLogin, onResetPassword }) {
   const [loginName, setLoginName] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [showReset, setShowReset] = useState(false);
+  const [resetName, setResetName] = useState("");
+  const [resetEmployeeNo, setResetEmployeeNo] = useState("");
+  const [resetNewPassword, setResetNewPassword] = useState("");
+  const [resetMsg, setResetMsg] = useState("");
   async function submit(e) {
     e.preventDefault();
     setError("");
@@ -1063,6 +1072,20 @@ function LoginPage({ onLogin }) {
       await onLogin(loginName, password);
     } catch (e2) {
       setError(e2.message);
+    }
+  }
+  async function submitReset(e) {
+    e.preventDefault();
+    setResetMsg("");
+    try {
+      await onResetPassword(resetName, resetEmployeeNo, resetNewPassword);
+      setResetMsg("비밀번호가 재설정되었습니다. 새 비밀번호로 로그인해 주세요.");
+      setShowReset(false);
+      setLoginName(resetName);
+      setPassword(resetNewPassword);
+      setResetNewPassword("");
+    } catch (e2) {
+      setResetMsg(e2.message || "비밀번호 재설정에 실패했습니다.");
     }
   }
   return (
@@ -1074,7 +1097,26 @@ function LoginPage({ onLogin }) {
           <input type="password" placeholder="비밀번호 (기본: 1234)" value={password} onChange={(e) => setPassword(e.target.value)} />
           <button type="submit">로그인</button>
         </form>
+        <div style={{ marginTop: 8 }}>
+          <button type="button" onClick={() => setShowReset((v) => !v)}>
+            {showReset ? "초기화 닫기" : "비밀번호 초기화"}
+          </button>
+        </div>
+        {showReset ? (
+          <form className="login-form" style={{ marginTop: 10 }} onSubmit={submitReset}>
+            <input placeholder="이름" value={resetName} onChange={(e) => setResetName(e.target.value)} />
+            <input placeholder="사번 (예: N0001)" value={resetEmployeeNo} onChange={(e) => setResetEmployeeNo(e.target.value)} />
+            <input
+              type="password"
+              placeholder="새 비밀번호 (4자 이상)"
+              value={resetNewPassword}
+              onChange={(e) => setResetNewPassword(e.target.value)}
+            />
+            <button type="submit">초기화 실행</button>
+          </form>
+        ) : null}
         {error ? <p className="msg">{error}</p> : null}
+        {resetMsg ? <p className="help">{resetMsg}</p> : null}
       </section>
     </div>
   );
