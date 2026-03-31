@@ -783,14 +783,24 @@ function App() {
       </header>
 
       <nav className="card nav">
-        <Link to="/calendar">달력</Link>
-        {currentUser?.role === "NURSE" ? <Link to="/request">신청</Link> : null}
-        {currentUser?.role === "NURSE" ? <Link to="/my">내 신청내역</Link> : null}
-        <Link to="/dashboard">종합 현황</Link>
-        <Link to="/ladder">사다리 게임</Link>
-        <Link to="/account">계정</Link>
-        {isAdmin ? <Link to="/admin">휴가선정내역</Link> : null}
-        {isAdmin ? <Link to="/settings">설정</Link> : null}
+        {isAdmin ? (
+          <>
+            <Link to="/calendar">달력</Link>
+            <Link to="/dashboard">종합 현황</Link>
+            <Link to="/admin">휴가선정내역</Link>
+            <Link to="/ladder">사다리 게임</Link>
+            <Link to="/account">계정</Link>
+          </>
+        ) : (
+          <>
+            <Link to="/calendar">달력</Link>
+            {currentUser?.role === "NURSE" ? <Link to="/request">신청</Link> : null}
+            {currentUser?.role === "NURSE" ? <Link to="/my">내 신청내역</Link> : null}
+            <Link to="/dashboard">종합 현황</Link>
+            <Link to="/ladder">사다리 게임</Link>
+            <Link to="/account">계정</Link>
+          </>
+        )}
       </nav>
 
       <Routes>
