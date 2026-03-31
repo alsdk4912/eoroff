@@ -1890,7 +1890,7 @@ function CalendarPage({
         )}
       </div>
 
-      {selectedYmd && selectedCell?.inMonth ? (
+      {selectedYmd && selectedCell?.inMonth && (isAdmin || !selectedCell?.isOffDay) ? (
         <section className="admin-day-panel">
           <h3>{selectedYmd} 휴가자</h3>
           <ul>
