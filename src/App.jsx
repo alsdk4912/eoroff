@@ -825,7 +825,6 @@ function App() {
         ) : (
           <>
             <Link to="/calendar">휴가 일정</Link>
-            {currentUser?.role === "NURSE" ? <Link to="/request">휴가 신청</Link> : null}
             {currentUser?.role === "NURSE" ? <Link to="/my">신청 내역</Link> : null}
             <Link to="/dashboard">종합 현황</Link>
             {currentUser?.role !== "ANESTHESIA" ? <Link to="/ladder">추첨 배정</Link> : null}
