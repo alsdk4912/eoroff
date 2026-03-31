@@ -127,6 +127,14 @@ CREATE TABLE IF NOT EXISTS ladder_results (
   created_by TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+
+-- 날짜별 관리자 메모
+CREATE TABLE IF NOT EXISTS admin_day_memos (
+  target_date TEXT PRIMARY KEY,
+  content TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `;
 
 export async function initDb() {

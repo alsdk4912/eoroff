@@ -224,6 +224,14 @@ function App() {
       return acc;
     }, {});
     setHolidayDuties(dutyByDate);
+    const memoRows = Array.isArray(data.adminDayMemos) ? data.adminDayMemos : [];
+    const memoByDate = memoRows.reduce((acc, m) => {
+      const ymd = m.target_date ?? m.targetDate;
+      if (!ymd) return acc;
+      acc[ymd] = String(m.content ?? "");
+      return acc;
+    }, {});
+    setAdminDayMemos(memoByDate);
 
     const rows = Array.isArray(data.ladderResults) ? data.ladderResults : [];
     setLadderResults(
@@ -720,6 +728,29 @@ function App() {
     if (serverMode) await api.addNote(payload);
   }
 
+  async function saveAdminDayMemo(targetDate, content) {
+    const ymd = String(targetDate ?? "").trim();
+    if (!ymd) return;
+    const txt = String(content ?? "");
+    if (serverMode) {
+      try {
+        await api.upsertAdminDayMemo({
+          actorUserId: auth.userId,
+          targetDate: ymd,
+          content: txt,
+        });
+        await bootstrap();
+      } catch (e) {
+        window.alert?.(`관리자 메모 저장 실패: ${e?.message || e}`);
+      }
+      return;
+    }
+    setAdminDayMemos((prev) => ({
+      ...(prev ?? {}),
+      [ymd]: txt,
+    }));
+  }
+
   async function syncHolidays() {
     try {
       if (serverMode) {
@@ -880,7 +911,7 @@ function App() {
               selectRequest={selectRequest}
               rejectRequest={rejectRequest}
               adminDayMemos={adminDayMemos}
-              setAdminDayMemos={setAdminDayMemos}
+              saveAdminDayMemo={saveAdminDayMemo}
             />
           }
         />
@@ -1422,7 +1453,7 @@ function CalendarPage({
   selectRequest,
   rejectRequest,
   adminDayMemos,
-  setAdminDayMemos,
+  saveAdminDayMemo,
 }) {
   const [detailTab, setDetailTab] = useState("list");
   const touchStartRef = useRef(null);
@@ -1440,6 +1471,7 @@ function CalendarPage({
   const [duty1UserId, setDuty1UserId] = useState(selectedHolidayDuty?.nurse1UserId ?? "");
   const [duty2UserId, setDuty2UserId] = useState(selectedHolidayDuty?.nurse2UserId ?? "");
   const [anesthesiaDutyUserId, setAnesthesiaDutyUserId] = useState(selectedHolidayDuty?.anesthesiaUserId ?? "");
+  const [adminMemoDraft, setAdminMemoDraft] = useState("");
 
   useEffect(() => {
     if (!selectedYmd || !selectedCell?.isOffDay) {
@@ -1453,6 +1485,14 @@ function CalendarPage({
     setDuty2UserId(d?.nurse2UserId ?? "");
     setAnesthesiaDutyUserId(d?.anesthesiaUserId ?? "");
   }, [selectedYmd, selectedCell?.isOffDay, holidayDuties]);
+
+  useEffect(() => {
+    if (!selectedYmd) {
+      setAdminMemoDraft("");
+      return;
+    }
+    setAdminMemoDraft(adminDayMemos?.[selectedYmd] ?? "");
+  }, [selectedYmd, adminDayMemos]);
 
   /**
    * 같은 휴가일·같은 유형 기준으로, 신청(제출)일이 같은 사람끼리만 묶음.
@@ -1793,36 +1833,34 @@ function CalendarPage({
         )}
       </div>
 
-      {isAdmin && selectedYmd && selectedCell?.inMonth ? (
+      {selectedYmd && selectedCell?.inMonth ? (
         <section className="admin-day-panel">
-          <h3>{selectedYmd} 관리자 상세</h3>
-          <div>
-            <h4>휴가자 (승인·선정)</h4>
-            <ul>
-              {selectedCell.approvedApplicants.length === 0 ? (
-                <li>없음</li>
-              ) : (
-                selectedCell.approvedApplicants.map((item) => (
-                  <li key={item.id}>
-                    {item.name} ({typeFullLabel(item.leaveType)})
-                  </li>
-                ))
-              )}
-            </ul>
-          </div>
+          <h3>{selectedYmd} 휴가자</h3>
+          <ul>
+            {selectedCell.approvedApplicants.length === 0 ? (
+              <li>없음</li>
+            ) : (
+              selectedCell.approvedApplicants.map((item) => (
+                <li key={item.id}>
+                  {item.name} ({typeFullLabel(item.leaveType)})
+                </li>
+              ))
+            )}
+          </ul>
           <div style={{ marginTop: 10 }}>
             <h4>관리자 메모</h4>
-            <textarea
-              rows={3}
-              placeholder="해당 날짜 메모를 입력하세요"
-              value={adminDayMemos?.[selectedYmd] ?? ""}
-              onChange={(e) =>
-                setAdminDayMemos((prev) => ({
-                  ...(prev ?? {}),
-                  [selectedYmd]: e.target.value,
-                }))
-              }
-            />
+            {isAdmin ? (
+              <>
+                <textarea rows={3} placeholder="해당 날짜 메모를 입력하세요" value={adminMemoDraft} onChange={(e) => setAdminMemoDraft(e.target.value)} />
+                <div style={{ marginTop: 8 }}>
+                  <button type="button" onClick={() => void saveAdminDayMemo(selectedYmd, adminMemoDraft)}>
+                    메모 저장
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p className="help" style={{ whiteSpace: "pre-wrap" }}>{adminDayMemos?.[selectedYmd] || "등록된 메모가 없습니다."}</p>
+            )}
           </div>
         </section>
       ) : null}

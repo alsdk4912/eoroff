@@ -82,6 +82,7 @@ app.get("/api/bootstrap", async (_, res) => {
       logs: await queryAll("SELECT * FROM logs"),
       ladderResults: await queryAll("SELECT * FROM ladder_results ORDER BY created_at DESC"),
       holidayDuties: await queryAll("SELECT * FROM holiday_duties"),
+      adminDayMemos: await queryAll("SELECT * FROM admin_day_memos"),
       holidays: await queryAll("SELECT * FROM holidays"),
     });
   } catch (err) {
@@ -132,6 +133,28 @@ app.post("/api/admin/users/:id/reset-password", async (req, res) => {
   if (!admin) return res.status(403).json({ error: "관리자 권한이 필요합니다." });
   await execute("UPDATE users SET password = ? WHERE id = ?", nextPassword || "1234", req.params.id);
   res.json({ ok: true });
+});
+
+app.post("/api/admin/day-memos", async (req, res) => {
+  try {
+    const { actorUserId, targetDate, content } = req.body ?? {};
+    const admin = await queryOne("SELECT id FROM users WHERE id = ? AND role = 'ADMIN'", actorUserId);
+    if (!admin) return res.status(403).json({ error: "관리자 권한이 필요합니다." });
+    const ymd = String(targetDate ?? "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return res.status(400).json({ error: "targetDate 형식이 올바르지 않습니다." });
+    const txt = String(content ?? "");
+    await execute(
+      "INSERT INTO admin_day_memos (target_date, content, updated_by, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(target_date) DO UPDATE SET content = excluded.content, updated_by = excluded.updated_by, updated_at = excluded.updated_at",
+      ymd,
+      txt,
+      actorUserId,
+      new Date().toISOString()
+    );
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /api/admin/day-memos", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
 });
 
 app.post("/api/admin/reset-leave-data", async (req, res) => {
