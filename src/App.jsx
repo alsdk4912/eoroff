@@ -1349,8 +1349,8 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
 
   return (
     <section className="card">
-      <h2>사다리 게임</h2>
-      <p className="help">동일 날짜·동일 유형에서 다수 신청 시 순번을 정하고 저장하면 모두가 같은 결과를 볼 수 있습니다.</p>
+      <h2>휴가 추첨 배정</h2>
+      <p className="help">동일 조건 신청자 간 공정한 기준에 따라 휴가를 우선순위에 따라 자동 배정합니다.</p>
       <p className="help">
         해당일 협의 신청자:{" "}
         {applicantUserIds.length > 0
