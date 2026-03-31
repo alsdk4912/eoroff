@@ -1046,13 +1046,18 @@ function MyRequestsPage({ myRequests, cancelRequest }) {
     if (statusFilter === "SELECTED") return isWinnerStatus(r.status);
     return r.status === statusFilter;
   }
-  const rows = myRequests.filter(
-    (r) =>
-      matchesStatusFilter(r) &&
-      `${r.leaveDate} ${leaveTypeLabel(r.leaveType)} ${leaveNatureLabel(r.leaveNature)} ${statusLabel(r.status)}`
-        .toLowerCase()
-        .includes(search.toLowerCase())
-  );
+  const rows = myRequests
+    .filter(
+      (r) =>
+        matchesStatusFilter(r) &&
+        `${r.leaveDate} ${leaveTypeLabel(r.leaveType)} ${leaveNatureLabel(r.leaveNature)} ${statusLabel(r.status)}`
+          .toLowerCase()
+          .includes(search.toLowerCase())
+    )
+    .sort((a, b) => {
+      if (a.leaveDate !== b.leaveDate) return a.leaveDate.localeCompare(b.leaveDate);
+      return a.requestedAt.localeCompare(b.requestedAt);
+    });
   return (
     <section className="card">
       <h2>내 신청내역</h2>
