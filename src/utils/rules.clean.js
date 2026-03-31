@@ -232,6 +232,20 @@ export function hasBlockingRequestOnDate(requests, userId, leaveDateYmd) {
   });
 }
 
+function countActiveGeneralPriorityInMonth(requests, userId, leaveDateYmd) {
+  const month = String(leaveDateYmd ?? "").trim().slice(0, 7);
+  if (!month || !userId) return 0;
+  return (requests ?? []).filter((r) => {
+    if (r.userId !== userId) return false;
+    if (r.leaveType !== "GENERAL_PRIORITY") return false;
+    const ymd = ymdFromRequestRow(r);
+    if (!ymd.startsWith(month)) return false;
+    const st = r.status;
+    if (st === "CANCELLED" || st === "REJECTED") return false;
+    return true;
+  }).length;
+}
+
 export function validateRequest({
   leaveType,
   leaveDate,
@@ -264,6 +278,13 @@ export function validateRequest({
 
   if (hasBlockingRequestOnDate(requests, userId, leaveDate)) {
     return "같은 날짜에는 휴가를 중복 신청할 수 없습니다.";
+  }
+
+  if (leaveType === "GENERAL_PRIORITY") {
+    const monthlyPriorityCount = countActiveGeneralPriorityInMonth(requests, userId, leaveDate);
+    if (monthlyPriorityCount >= 4) {
+      return "해당월에 일반휴가-우선순위는 4개까지 가능합니다.";
+    }
   }
 
   if (leaveType === "GOLDKEY") {

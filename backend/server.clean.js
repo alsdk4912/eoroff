@@ -309,6 +309,23 @@ app.post("/api/requests", async (req, res) => {
       return res.status(400).json({ error: "같은 날짜에는 휴가를 중복 신청할 수 없습니다." });
     }
 
+    if (leaveType === "GENERAL_PRIORITY") {
+      const month = String(leaveDate ?? "").slice(0, 7);
+      const row = await queryOne(
+        `SELECT COUNT(*) AS c
+         FROM requests
+         WHERE user_id = ?
+           AND leave_type = 'GENERAL_PRIORITY'
+           AND SUBSTR(leave_date, 1, 7) = ?
+           AND status NOT IN ('CANCELLED', 'REJECTED')`,
+        userId,
+        month
+      );
+      if (Number(row?.c || 0) >= 4) {
+        return res.status(400).json({ error: "해당월에 일반휴가-우선순위는 4개까지 가능합니다." });
+      }
+    }
+
     if (leaveType === "GOLDKEY") {
       const g = await queryOne("SELECT remaining_count FROM goldkeys WHERE user_id = ?", userId);
       if (!g || Number(g.remaining_count) <= 0) {
