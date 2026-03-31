@@ -1230,31 +1230,6 @@ function DashboardPage({ dashboard, goldkeys, requests, cancellations, users, se
           </table>
         </div>
       </section>
-      <section className="card">
-        <h2>취소 이력</h2>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>요청ID</th>
-                <th>취소자</th>
-                <th>사유</th>
-                <th>시각</th>
-              </tr>
-            </thead>
-            <tbody>
-              {cancellations.map((c) => (
-                <tr key={c.id}>
-                  <td>{c.leaveRequestId}</td>
-                  <td>{users.find((u) => u.id === c.cancelledBy)?.name ?? c.cancelledBy}</td>
-                  <td>{c.cancelReason}</td>
-                  <td>{new Date(c.cancelledAt).toLocaleString("ko-KR")}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
     </>
   );
 }
