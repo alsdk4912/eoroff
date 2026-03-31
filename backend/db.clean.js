@@ -108,12 +108,13 @@ CREATE TABLE IF NOT EXISTS holidays (
   synced_at TEXT NOT NULL
 );
 
--- 공휴일 당직자(간호사 2명) 기록
+-- 공휴일 당직자(수술실 간호사 2명 + 마취과 간호사 1명) 기록
 -- key: holiday_date (YYYY-MM-DD)
 CREATE TABLE IF NOT EXISTS holiday_duties (
   holiday_date TEXT PRIMARY KEY,
   nurse1_user_id TEXT,
-  nurse2_user_id TEXT
+  nurse2_user_id TEXT,
+  anesthesia_user_id TEXT
 );
 
 -- 협의 순번 사다리 결과
@@ -162,8 +163,10 @@ export async function initDb() {
 
   await ensureRequestsLeaveNatureColumn();
   await ensureRequestsNegotiationOrderColumn();
+  await ensureHolidayDutiesAnesthesiaColumn();
 
   await seedDefaultsIfEmpty();
+  await ensureAnesthesiaUsers();
   await ensureGoldkeyDefaults();
   return client;
 }
@@ -182,6 +185,14 @@ async function ensureRequestsNegotiationOrderColumn() {
   const names = new Set(cols.map((c) => c.name));
   if (!names.has("negotiation_order")) {
     await execute("ALTER TABLE requests ADD COLUMN negotiation_order INTEGER");
+  }
+}
+
+async function ensureHolidayDutiesAnesthesiaColumn() {
+  const cols = await queryAll("PRAGMA table_info(holiday_duties)");
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("anesthesia_user_id")) {
+    await execute("ALTER TABLE holiday_duties ADD COLUMN anesthesia_user_id TEXT");
   }
 }
 
@@ -208,6 +219,7 @@ async function seedDefaultsIfEmpty() {
     "이현숙",
   ];
   const admins = ["관리자", "진기숙"];
+  const anesthesiaNames = ["김인자", "박현정", "이지현", "윤지민"];
 
   for (let idx = 0; idx < names.length; idx++) {
     const name = names[idx];
@@ -228,6 +240,18 @@ async function seedDefaultsIfEmpty() {
       name,
       `A${String(idx + 1).padStart(4, "0")}`,
       "ADMIN",
+      "1234"
+    );
+  }
+
+  for (let idx = 0; idx < anesthesiaNames.length; idx++) {
+    const name = anesthesiaNames[idx];
+    await execute(
+      "INSERT INTO users (id, name, employee_no, role, password) VALUES (?, ?, ?, ?, ?)",
+      `u_anesthesia_${idx + 1}`,
+      name,
+      `A${String(idx + 1).padStart(4, "0")}`,
+      "ANESTHESIA",
       "1234"
     );
   }
@@ -275,6 +299,23 @@ async function ensureGoldkeyDefaults() {
         nurse.id
       );
     }
+  }
+}
+
+async function ensureAnesthesiaUsers() {
+  const names = ["김인자", "박현정", "이지현", "윤지민"];
+  for (let idx = 0; idx < names.length; idx++) {
+    const name = names[idx];
+    const row = await queryOne("SELECT id FROM users WHERE name = ? AND role = 'ANESTHESIA'", name);
+    if (row?.id) continue;
+    await execute(
+      "INSERT INTO users (id, name, employee_no, role, password) VALUES (?, ?, ?, ?, ?)",
+      `u_anesthesia_${idx + 1}`,
+      name,
+      `A${String(idx + 1).padStart(4, "0")}`,
+      "ANESTHESIA",
+      "1234"
+    );
   }
 }
 

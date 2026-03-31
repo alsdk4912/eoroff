@@ -189,7 +189,7 @@ function App() {
 
   const currentUser = users.find((u) => u.id === auth?.userId);
   const isAdmin = currentUser?.role === "ADMIN";
-  const canEditHolidayDuty = currentUser?.role === "NURSE" || currentUser?.role === "ADMIN";
+  const canEditHolidayDuty = currentUser?.role === "NURSE" || currentUser?.role === "ADMIN" || currentUser?.role === "ANESTHESIA";
   const myGoldkey = goldkeys.find((g) => g.userId === auth?.userId);
   const isLoggedIn = Boolean(auth?.userId);
 
@@ -217,6 +217,7 @@ function App() {
       acc[hd] = {
         nurse1UserId: d.nurse1_user_id ?? d.nurse1UserId ?? "",
         nurse2UserId: d.nurse2_user_id ?? d.nurse2UserId ?? "",
+        anesthesiaUserId: d.anesthesia_user_id ?? d.anesthesiaUserId ?? "",
       };
       return acc;
     }, {});
@@ -317,10 +318,11 @@ function App() {
     setResetDataMessage("브라우저에 저장된 휴가·골드키 데이터를 기본값으로 되돌렸습니다.");
   }
 
-  async function saveHolidayDuty(holidayDate, nurse1UserId, nurse2UserId) {
+  async function saveHolidayDuty(holidayDate, nurse1UserId, nurse2UserId, anesthesiaUserId) {
     const hd = String(holidayDate ?? "").trim();
     if (!hd) return;
-    if (!nurse1UserId || !nurse2UserId) return;
+    const a1 = String(anesthesiaUserId ?? "").trim();
+    if (!nurse1UserId || !nurse2UserId || !a1) return;
 
     if (serverMode) {
       try {
@@ -329,6 +331,7 @@ function App() {
           holidayDate: hd,
           nurse1UserId,
           nurse2UserId,
+          anesthesiaUserId: a1,
         });
         await bootstrap();
       } catch (e) {
@@ -340,7 +343,7 @@ function App() {
     // 오프라인: 브라우저 로컬에만 저장
     setHolidayDuties((prev) => ({
       ...(prev ?? {}),
-      [hd]: { nurse1UserId, nurse2UserId },
+      [hd]: { nurse1UserId, nurse2UserId, anesthesiaUserId: a1 },
     }));
   }
 
@@ -529,6 +532,10 @@ function App() {
       requests,
     });
     if (error) return setMessage(error);
+    if (currentUser?.role !== "NURSE") {
+      setMessage("마취과 간호사는 휴가 신청을 할 수 없습니다.");
+      return;
+    }
     const payload = {
       id: `lr_${Date.now()}`,
       userId: auth.userId,
@@ -1341,21 +1348,25 @@ function CalendarPage({
   const selectedCell = selectedYmd ? calendarData.find((c) => c.date === selectedYmd) : null;
   const approvedIds = new Set((selectedCell?.approvedApplicants ?? []).map((item) => item.userId));
   const nurseUsers = users.filter((u) => u.role === "NURSE");
+  const anesthesiaUsers = users.filter((u) => u.role === "ANESTHESIA");
   const workingUsers = nurseUsers.filter((u) => !approvedIds.has(u.id));
 
   const selectedHolidayDuty = selectedYmd ? holidayDuties?.[selectedYmd] : null;
   const [duty1UserId, setDuty1UserId] = useState(selectedHolidayDuty?.nurse1UserId ?? "");
   const [duty2UserId, setDuty2UserId] = useState(selectedHolidayDuty?.nurse2UserId ?? "");
+  const [anesthesiaDutyUserId, setAnesthesiaDutyUserId] = useState(selectedHolidayDuty?.anesthesiaUserId ?? "");
 
   useEffect(() => {
     if (!selectedYmd || !selectedCell?.isOffDay) {
       setDuty1UserId("");
       setDuty2UserId("");
+      setAnesthesiaDutyUserId("");
       return;
     }
     const d = holidayDuties?.[selectedYmd];
     setDuty1UserId(d?.nurse1UserId ?? "");
     setDuty2UserId(d?.nurse2UserId ?? "");
+    setAnesthesiaDutyUserId(d?.anesthesiaUserId ?? "");
   }, [selectedYmd, selectedCell?.isOffDay, holidayDuties]);
 
   /**
@@ -1431,12 +1442,13 @@ function CalendarPage({
             cell.isOffDay &&
               duty &&
               String(duty.nurse1UserId ?? "").trim() &&
-              String(duty.nurse2UserId ?? "").trim()
+              String(duty.nurse2UserId ?? "").trim() &&
+              String(duty.anesthesiaUserId ?? "").trim()
           );
           const isMyDuty =
             Boolean(currentUserId) &&
             hasDuty &&
-            (duty?.nurse1UserId === currentUserId || duty?.nurse2UserId === currentUserId);
+            (duty?.nurse1UserId === currentUserId || duty?.nurse2UserId === currentUserId || duty?.anesthesiaUserId === currentUserId);
           const myDutyClass = isMyDuty ? " calendar-cell--my-duty" : "";
           return (
             <div
@@ -1510,17 +1522,35 @@ function CalendarPage({
                       </select>
                     </div>
                     <div className="holiday-duty-action">
+                      <div className="holiday-duty-field">
+                        <label className="field-label">마취과 당직자</label>
+                        <select value={anesthesiaDutyUserId} onChange={(e) => setAnesthesiaDutyUserId(e.target.value)}>
+                          <option value="">선택</option>
+                          {anesthesiaUsers
+                            .slice()
+                            .sort((a, b) => a.name.localeCompare(b.name, "ko"))
+                            .map((u) => (
+                              <option key={u.id} value={u.id}>
+                                {u.name}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="holiday-duty-action">
                       <button
                         type="button"
-                        onClick={() => void saveHolidayDuty(selectedYmd, duty1UserId, duty2UserId)}
-                        disabled={!duty1UserId || !duty2UserId}
+                        onClick={() => void saveHolidayDuty(selectedYmd, duty1UserId, duty2UserId, anesthesiaDutyUserId)}
+                        disabled={!duty1UserId || !duty2UserId || !anesthesiaDutyUserId}
                         aria-label="공휴일 당직자 저장"
                       >
                         저장
                       </button>
                     </div>
                   </div>
-                  {(!duty1UserId || !duty2UserId) && <p className="help">당직자 2명을 선택한 뒤 저장해 주세요.</p>}
+                  {(!duty1UserId || !duty2UserId || !anesthesiaDutyUserId) && (
+                    <p className="help">수술실 당직자 2명 + 마취과 당직자 1명을 선택한 뒤 저장해 주세요.</p>
+                  )}
                 </section>
               ) : null}
               {selectedCell?.isOffDay ? (

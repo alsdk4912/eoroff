@@ -171,13 +171,13 @@ app.post("/api/admin/reset-leave-data-by-secret", async (req, res) => {
   }
 });
 
-/** 공휴일 당직자(간호사 2명) 저장/수정 */
+/** 공휴일 당직자(수술실 간호사 2명 + 마취과 간호사 1명) 저장/수정 */
 app.post("/api/admin/holiday-duties", async (req, res) => {
   try {
-    const { actorUserId, holidayDate, nurse1UserId, nurse2UserId } = req.body ?? {};
+    const { actorUserId, holidayDate, nurse1UserId, nurse2UserId, anesthesiaUserId } = req.body ?? {};
 
     const actor = await queryOne(
-      "SELECT id, role FROM users WHERE id = ? AND role IN ('ADMIN', 'NURSE')",
+      "SELECT id, role FROM users WHERE id = ? AND role IN ('ADMIN', 'NURSE', 'ANESTHESIA')",
       actorUserId
     );
     if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
@@ -187,8 +187,10 @@ app.post("/api/admin/holiday-duties", async (req, res) => {
 
     const n1 = String(nurse1UserId ?? "").trim();
     const n2 = String(nurse2UserId ?? "").trim();
-    if (!n1 || !n2) return res.status(400).json({ error: "당직자 2명을 선택하세요." });
+    const a1 = String(anesthesiaUserId ?? "").trim();
+    if (!n1 || !n2 || !a1) return res.status(400).json({ error: "수술실 2명 + 마취과 1명을 선택하세요." });
     if (n1 === n2) return res.status(400).json({ error: "당직자는 서로 다른 간호사 2명을 선택해야 합니다." });
+    if (a1 === n1 || a1 === n2) return res.status(400).json({ error: "마취과 당직자는 수술실 당직자와 달라야 합니다." });
 
     const nurses = await queryAll(
       "SELECT id FROM users WHERE id IN (?, ?) AND role = 'NURSE'",
@@ -196,6 +198,8 @@ app.post("/api/admin/holiday-duties", async (req, res) => {
       n2
     );
     if (nurses.length !== 2) return res.status(400).json({ error: "선택한 당직자 값이 유효하지 않습니다." });
+    const anesthesia = await queryOne("SELECT id FROM users WHERE id = ? AND role = 'ANESTHESIA'", a1);
+    if (!anesthesia) return res.status(400).json({ error: "마취과 당직자 값이 유효하지 않습니다." });
 
     // 공휴일 또는 주말(토/일) 날짜에만 기록 가능
     const day = new Date(`${hd}T00:00:00`).getDay();
@@ -204,10 +208,11 @@ app.post("/api/admin/holiday-duties", async (req, res) => {
     if (!holidayRow && !isWeekend) return res.status(400).json({ error: "해당 날짜가 공휴일/주말이 아닙니다." });
 
     await execute(
-      "INSERT INTO holiday_duties (holiday_date, nurse1_user_id, nurse2_user_id) VALUES (?, ?, ?) ON CONFLICT(holiday_date) DO UPDATE SET nurse1_user_id = excluded.nurse1_user_id, nurse2_user_id = excluded.nurse2_user_id",
+      "INSERT INTO holiday_duties (holiday_date, nurse1_user_id, nurse2_user_id, anesthesia_user_id) VALUES (?, ?, ?, ?) ON CONFLICT(holiday_date) DO UPDATE SET nurse1_user_id = excluded.nurse1_user_id, nurse2_user_id = excluded.nurse2_user_id, anesthesia_user_id = excluded.anesthesia_user_id",
       hd,
       n1,
-      n2
+      n2,
+      a1
     );
 
     return res.json({ ok: true });
@@ -280,6 +285,11 @@ app.post("/api/requests", async (req, res) => {
     } = req.body ?? {};
 
     const leaveNature = String(leaveNatureRaw ?? leave_nature ?? "PERSONAL").trim();
+    const user = await queryOne("SELECT id, role FROM users WHERE id = ?", userId);
+    if (!user) return res.status(400).json({ error: "사용자 정보가 올바르지 않습니다." });
+    if (user.role !== "NURSE") {
+      return res.status(403).json({ error: "마취과 간호사는 휴가 신청을 할 수 없습니다." });
+    }
     if (!ALLOWED_LEAVE_TYPES.has(leaveType)) {
       return res.status(400).json({ error: "지원하지 않는 휴가 종류입니다." });
     }
