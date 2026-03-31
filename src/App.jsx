@@ -1962,7 +1962,8 @@ function buildMonthMatrix(year, month, allRequests, users, holidaysCache) {
     const isOffDay = isHoliday || isWeekend;
     const holidayName = holidayByDate.get(iso) ?? "";
     const dayReqs = allRequests.filter((r) => r.leaveDate === iso);
-    const hasGoldkeyRequest = dayReqs.some((r) => r.leaveType === "GOLDKEY" && r.status !== "CANCELLED");
+    const activeDayReqs = dayReqs.filter((r) => r.status !== "CANCELLED");
+    const hasGoldkeyRequest = activeDayReqs.some((r) => r.leaveType === "GOLDKEY");
     cells.push({
       date: iso,
       day: d.getDate(),
@@ -1971,7 +1972,7 @@ function buildMonthMatrix(year, month, allRequests, users, holidaysCache) {
       isHoliday,
       isOffDay,
       holidayName,
-      requestCount: dayReqs.length,
+      requestCount: activeDayReqs.length,
       hasGoldkeyRequest,
       applicants: dayReqs
         .filter((r) => r.status !== "CANCELLED")
