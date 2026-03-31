@@ -1184,10 +1184,9 @@ function MyRequestsPage({ myRequests, cancelRequest }) {
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="ALL">전체 상태</option>
           <option value="APPLIED">신청</option>
-          <option value="SELECTED">승인·선정</option>
-          <option value="APPROVED">승인(APPROVED)</option>
+          <option value="SELECTED">휴가선정</option>
           <option value="CANCELLED">취소</option>
-          <option value="REJECTED">미선정</option>
+          <option value="REJECTED">휴가미선정</option>
         </select>
         <input placeholder="날짜/유형/상태 검색" value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
