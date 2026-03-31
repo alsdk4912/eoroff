@@ -123,13 +123,11 @@ app.post("/api/change-password", async (req, res) => {
 });
 
 app.post("/api/password-reset", async (req, res) => {
-  const { loginName, employeeNo, newPassword } = req.body ?? {};
+  const { loginName, employeeNo } = req.body ?? {};
   const name = String(loginName ?? "").trim();
   const empNo = String(employeeNo ?? "").trim();
-  const next = String(newPassword ?? "");
   if (!name) return res.status(400).json({ error: "이름을 입력해주세요." });
   if (!empNo) return res.status(400).json({ error: "사번을 입력해주세요." });
-  if (!next || next.length < 4) return res.status(400).json({ error: "새 비밀번호는 4자 이상이어야 합니다." });
 
   const rows = await queryAll(
     "SELECT id FROM users WHERE REPLACE(name, ' ', '') = REPLACE(?, ' ', '') AND UPPER(REPLACE(employee_no, ' ', '')) = UPPER(REPLACE(?, ' ', ''))",
@@ -139,8 +137,8 @@ app.post("/api/password-reset", async (req, res) => {
   if (rows.length === 0) return res.status(404).json({ error: "일치하는 사용자를 찾을 수 없습니다. 이름과 사번을 확인해주세요." });
   if (rows.length > 1) return res.status(409).json({ error: "동일 정보 사용자가 2명 이상입니다. 관리자에게 문의해주세요." });
 
-  await execute("UPDATE users SET password = ? WHERE id = ?", next, rows[0].id);
-  return res.json({ ok: true });
+  await execute("UPDATE users SET password = ? WHERE id = ?", "1234", rows[0].id);
+  return res.json({ ok: true, temporaryPassword: "1234" });
 });
 
 app.get("/api/admin/users", async (_, res) => {

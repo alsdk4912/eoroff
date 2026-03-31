@@ -868,8 +868,8 @@ function App() {
     setAccountMessage("비밀번호가 변경되었습니다.");
   }
 
-  async function handleSelfPasswordReset(loginName, employeeNo, newPassword) {
-    await api.resetPasswordByIdentity({ loginName, employeeNo, newPassword });
+  async function handleSelfPasswordReset(loginName, employeeNo) {
+    await api.resetPasswordByIdentity({ loginName, employeeNo });
   }
 
   async function handleResetPassword(targetUserId) {
@@ -1063,7 +1063,6 @@ function LoginPage({ onLogin, onResetPassword }) {
   const [showReset, setShowReset] = useState(false);
   const [resetName, setResetName] = useState("");
   const [resetEmployeeNo, setResetEmployeeNo] = useState("");
-  const [resetNewPassword, setResetNewPassword] = useState("");
   const [resetMsg, setResetMsg] = useState("");
   async function submit(e) {
     e.preventDefault();
@@ -1078,12 +1077,11 @@ function LoginPage({ onLogin, onResetPassword }) {
     e.preventDefault();
     setResetMsg("");
     try {
-      await onResetPassword(resetName, resetEmployeeNo, resetNewPassword);
-      setResetMsg("비밀번호가 재설정되었습니다. 새 비밀번호로 로그인해 주세요.");
+      await onResetPassword(resetName, resetEmployeeNo);
+      setResetMsg("비밀번호가 기본값 1234로 초기화되었습니다. 다시 로그인해 주세요.");
       setShowReset(false);
       setLoginName(resetName);
-      setPassword(resetNewPassword);
-      setResetNewPassword("");
+      setPassword("1234");
     } catch (e2) {
       setResetMsg(e2.message || "비밀번호 재설정에 실패했습니다.");
     }
@@ -1106,12 +1104,6 @@ function LoginPage({ onLogin, onResetPassword }) {
           <form className="login-form" style={{ marginTop: 10 }} onSubmit={submitReset}>
             <input placeholder="이름" value={resetName} onChange={(e) => setResetName(e.target.value)} />
             <input placeholder="사번 (예: N0001)" value={resetEmployeeNo} onChange={(e) => setResetEmployeeNo(e.target.value)} />
-            <input
-              type="password"
-              placeholder="새 비밀번호 (4자 이상)"
-              value={resetNewPassword}
-              onChange={(e) => setResetNewPassword(e.target.value)}
-            />
             <button type="submit">초기화 실행</button>
           </form>
         ) : null}
