@@ -1712,6 +1712,12 @@ tr.request-cancelled-row td button {
   max-width: 100%;
 }
 
+.badge--count-goldkey {
+  background: #fef3c7;
+  border-color: #f59e0b;
+  color: #92400e;
+}
+
 .badge--offday {
   display: inline-block;
   width: fit-content;

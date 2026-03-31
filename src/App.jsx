@@ -1462,7 +1462,9 @@ function CalendarPage({
             >
               <div className={`calendar-date${cell.isOffDay ? " calendar-date--holiday" : ""}`}>{cell.day}</div>
               {cell.requestCount > 0 ? (
-                <div className="badge badge--count-only">{cell.requestCount}명</div>
+                <div className={`badge badge--count-only${cell.hasGoldkeyRequest ? " badge--count-goldkey" : ""}`}>
+                  {cell.requestCount}명
+                </div>
               ) : null}
             </div>
           );
@@ -1930,6 +1932,7 @@ function buildMonthMatrix(year, month, allRequests, users, holidaysCache) {
     const isOffDay = isHoliday || isWeekend;
     const holidayName = holidayByDate.get(iso) ?? "";
     const dayReqs = allRequests.filter((r) => r.leaveDate === iso);
+    const hasGoldkeyRequest = dayReqs.some((r) => r.leaveType === "GOLDKEY" && r.status !== "CANCELLED");
     cells.push({
       date: iso,
       day: d.getDate(),
@@ -1939,6 +1942,7 @@ function buildMonthMatrix(year, month, allRequests, users, holidaysCache) {
       isOffDay,
       holidayName,
       requestCount: dayReqs.length,
+      hasGoldkeyRequest,
       applicants: dayReqs
         .filter((r) => r.status !== "CANCELLED")
         .sort((a, b) => compareSameLeaveDateRequests(a, b, users))
