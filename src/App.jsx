@@ -33,6 +33,7 @@ const LS_GOLDKEYS = "or.goldkeys.v4";
 const LS_ADJUSTMENT_LOGS = "or.adjustmentLogs.v3";
 const LS_HOLIDAY_DUTIES = "or.holidayDuties.v1";
 const LS_LADDER_RESULTS = "or.ladderResults.v1";
+const LS_ADMIN_DAY_MEMOS = "or.adminDayMemos.v1";
 
 /** 이전 버전 키는 남아 있으면 혼동만 되므로 제거(현재 키는 유지) */
 function dropStaleOfflineLeaveKeys() {
@@ -158,6 +159,7 @@ function App() {
   const [holidays, setHolidays] = useLocalStorage("or.holidays", seedHolidays);
   const [holidayDuties, setHolidayDuties] = useLocalStorage(LS_HOLIDAY_DUTIES, initialHolidayDuties);
   const [ladderResults, setLadderResults] = useLocalStorage(LS_LADDER_RESULTS, initialLadderResults);
+  const [adminDayMemos, setAdminDayMemos] = useLocalStorage(LS_ADMIN_DAY_MEMOS, {});
 
   useEffect(() => {
     dropStaleOfflineLeaveKeys();
@@ -782,12 +784,10 @@ function App() {
 
       <nav className="card nav">
         <Link to="/calendar">달력</Link>
-        <Link to="/request">신청</Link>
-        <Link to="/my">내 신청내역</Link>
         <Link to="/dashboard">종합 현황</Link>
         <Link to="/ladder">사다리 게임</Link>
         <Link to="/account">계정</Link>
-        {isAdmin ? <Link to="/admin">관리자</Link> : null}
+        {isAdmin ? <Link to="/admin">휴가선정내역</Link> : null}
         {isAdmin ? <Link to="/settings">설정</Link> : null}
       </nav>
 
@@ -865,6 +865,10 @@ function App() {
               saveNegotiationOrder={saveNegotiationOrder}
               holidayDuties={holidayDuties}
               saveHolidayDuty={saveHolidayDuty}
+              selectRequest={selectRequest}
+              rejectRequest={rejectRequest}
+              adminDayMemos={adminDayMemos}
+              setAdminDayMemos={setAdminDayMemos}
             />
           }
         />
@@ -874,12 +878,8 @@ function App() {
           element={
             isAdmin ? (
               <AdminPage
-                appliedRequests={appliedRequests}
                 allRequests={requests}
                 users={users}
-                selectRequest={selectRequest}
-                rejectRequest={rejectRequest}
-                addPriorityNote={addPriorityNote}
                 notes={notes}
                 goldkeys={goldkeys}
                 serverMode={serverMode}
@@ -1407,6 +1407,10 @@ function CalendarPage({
   saveNegotiationOrder,
   holidayDuties,
   saveHolidayDuty,
+  selectRequest,
+  rejectRequest,
+  adminDayMemos,
+  setAdminDayMemos,
 }) {
   const [detailTab, setDetailTab] = useState("list");
   const touchStartRef = useRef(null);
@@ -1417,10 +1421,8 @@ function CalendarPage({
   }, [selectedYmd, setLeaveDate]);
 
   const selectedCell = selectedYmd ? calendarData.find((c) => c.date === selectedYmd) : null;
-  const approvedIds = new Set((selectedCell?.approvedApplicants ?? []).map((item) => item.userId));
   const nurseUsers = users.filter((u) => u.role === "NURSE");
   const anesthesiaUsers = users.filter((u) => u.role === "ANESTHESIA");
-  const workingUsers = nurseUsers.filter((u) => !approvedIds.has(u.id));
 
   const selectedHolidayDuty = selectedYmd ? holidayDuties?.[selectedYmd] : null;
   const [duty1UserId, setDuty1UserId] = useState(selectedHolidayDuty?.nurse1UserId ?? "");
@@ -1502,7 +1504,7 @@ function CalendarPage({
       <h2>휴가 달력(월간)</h2>
       <p className="help">
         {isAdmin
-          ? "날짜를 누르면 아래에서 신청 현황을 보고, 하단 관리자 패널에서 승인된 휴가자·출근자를 확인할 수 있습니다."
+          ? "날짜를 누르면 아래에서 신청 현황을 보고 같은 화면에서 승인/거절, 승인된 휴가자, 관리자 메모를 확인할 수 있습니다."
           : "날짜를 누르면 아래에서 신청 인원·이름을 확인하고, 같은 화면에서 휴가를 신청할 수 있습니다."}
       </p>
       <div className="row">
@@ -1728,6 +1730,16 @@ function CalendarPage({
                                     {prefix}
                                     {nm} · {typeFullLabel(r.leaveType)} · {leaveNatureLabel(r.leaveNature)} · {statusLabel(r.status)}
                                   </span>
+                                  {isAdmin && r.status === "APPLIED" ? (
+                                    <span className="row wrap" style={{ marginLeft: "auto" }}>
+                                      <button type="button" onClick={() => void selectRequest(r.id)}>
+                                        승인
+                                      </button>
+                                      <button type="button" onClick={() => void rejectRequest(r.id)}>
+                                        거절
+                                      </button>
+                                    </span>
+                                  ) : null}
                                 </li>
                               );
                             })}
@@ -1772,31 +1784,33 @@ function CalendarPage({
       {isAdmin && selectedYmd && selectedCell?.inMonth ? (
         <section className="admin-day-panel">
           <h3>{selectedYmd} 관리자 상세</h3>
-          <div className="admin-day-grid">
-            <div>
-              <h4>휴가자 (승인·선정)</h4>
-              <ul>
-                {selectedCell.approvedApplicants.length === 0 ? (
-                  <li>없음</li>
-                ) : (
-                  selectedCell.approvedApplicants.map((item) => (
-                    <li key={item.id}>
-                      {item.name} ({typeFullLabel(item.leaveType)})
-                    </li>
-                  ))
-                )}
-              </ul>
-            </div>
-            <div>
-              <h4>출근자</h4>
-              <ul>
-                {workingUsers.length === 0 ? (
-                  <li>없음</li>
-                ) : (
-                  workingUsers.map((u) => <li key={u.id}>{u.name}</li>)
-                )}
-              </ul>
-            </div>
+          <div>
+            <h4>휴가자 (승인·선정)</h4>
+            <ul>
+              {selectedCell.approvedApplicants.length === 0 ? (
+                <li>없음</li>
+              ) : (
+                selectedCell.approvedApplicants.map((item) => (
+                  <li key={item.id}>
+                    {item.name} ({typeFullLabel(item.leaveType)})
+                  </li>
+                ))
+              )}
+            </ul>
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <h4>관리자 메모</h4>
+            <textarea
+              rows={3}
+              placeholder="해당 날짜 메모를 입력하세요"
+              value={adminDayMemos?.[selectedYmd] ?? ""}
+              onChange={(e) =>
+                setAdminDayMemos((prev) => ({
+                  ...(prev ?? {}),
+                  [selectedYmd]: e.target.value,
+                }))
+              }
+            />
           </div>
         </section>
       ) : null}
@@ -1804,21 +1818,27 @@ function CalendarPage({
   );
 }
 
-function AdminPage({ appliedRequests, allRequests, users, selectRequest, rejectRequest, addPriorityNote, notes, goldkeys, serverMode }) {
+function AdminPage({ allRequests, users, notes, goldkeys, serverMode }) {
   const [nameSearch, setNameSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("ALL");
-  const rows = appliedRequests.filter((r) => {
-    const name = users.find((u) => u.id === r.userId)?.name ?? "";
-    const matchedName = name.toLowerCase().includes(nameSearch.toLowerCase());
-    const matchedType = typeFilter === "ALL" || r.leaveType === typeFilter;
-    return matchedName && matchedType;
-  });
+  const rows = allRequests
+    .filter((r) => r.status === "APPROVED" || r.status === "REJECTED")
+    .filter((r) => {
+      const name = users.find((u) => u.id === r.userId)?.name ?? "";
+      const matchedName = name.toLowerCase().includes(nameSearch.toLowerCase());
+      const matchedType = typeFilter === "ALL" || r.leaveType === typeFilter;
+      return matchedName && matchedType;
+    })
+    .sort((a, b) => {
+      if (a.leaveDate !== b.leaveDate) return a.leaveDate.localeCompare(b.leaveDate);
+      return a.requestedAt.localeCompare(b.requestedAt);
+    });
   return (
     <>
       <section className="card">
-        <h2>관리자 신청자 관리</h2>
+        <h2>휴가선정내역</h2>
         <p className="help" style={{ marginBottom: 10 }}>
-          골드키: 휴가일이 서로 다르면 신청 시각 순, 같은 휴가일이면 협의 순번이 있으면 그 순서가 우선·없으면 신청 시각 순. 다만 같은 해 7~12월 휴가일 골드키를 4/1~4/10에 접수한 건은 달력에서 모두 협의로만 순번을 정합니다.
+          승인/거절 이력은 신청일이 아니라 휴가일 기준으로 정렬됩니다.
         </p>
         <div className="row wrap">
           <input placeholder="간호사 이름 검색" value={nameSearch} onChange={(e) => setNameSearch(e.target.value)} />
@@ -1838,9 +1858,9 @@ function AdminPage({ appliedRequests, allRequests, users, selectRequest, rejectR
                 <th>휴가일</th>
                 <th>유형</th>
                 <th>성격</th>
+                <th>상태</th>
                 <th>협의순</th>
                 <th>신청시각</th>
-                <th>액션</th>
               </tr>
             </thead>
             <tbody>
@@ -1852,17 +1872,9 @@ function AdminPage({ appliedRequests, allRequests, users, selectRequest, rejectR
                     <span className={`leave-type-pill ${buildLeaveChipClass(r.leaveType, r.status)}`}>{leaveTypeLabel(r.leaveType)}</span>
                   </td>
                   <td>{leaveNatureLabel(r.leaveNature)}</td>
+                  <td>{statusLabel(r.status)}</td>
                   <td>{r.negotiationOrder != null ? r.negotiationOrder : "—"}</td>
                   <td>{new Date(r.requestedAt).toLocaleString("ko-KR")}</td>
-                  <td className="row wrap">
-                    <button type="button" onClick={() => void selectRequest(r.id)}>
-                      승인
-                    </button>
-                    <button type="button" onClick={() => void rejectRequest(r.id)}>
-                      반려
-                    </button>
-                    {r.leaveType !== "GOLDKEY" ? <button onClick={() => addPriorityNote(r.id)}>협의메모</button> : null}
-                  </td>
                 </tr>
               ))}
             </tbody>
