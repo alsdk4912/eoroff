@@ -784,6 +784,8 @@ function App() {
 
       <nav className="card nav">
         <Link to="/calendar">달력</Link>
+        {currentUser?.role === "NURSE" ? <Link to="/request">신청</Link> : null}
+        {currentUser?.role === "NURSE" ? <Link to="/my">내 신청내역</Link> : null}
         <Link to="/dashboard">종합 현황</Link>
         <Link to="/ladder">사다리 게임</Link>
         <Link to="/account">계정</Link>
