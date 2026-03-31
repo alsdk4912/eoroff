@@ -30,7 +30,11 @@ export function toMonthString(dateLike) {
 
 export function addMonths(baseDate, offset) {
   const d = new Date(baseDate);
+  const day = d.getDate();
+  d.setDate(1);
   d.setMonth(d.getMonth() + offset);
+  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(day, last));
   return d;
 }
 
@@ -72,6 +76,16 @@ function compareNegotiationOrder(a, b) {
   return 0;
 }
 
+function isSameYearMonth(dateObj, year, month1to12) {
+  return dateObj.getFullYear() === year && dateObj.getMonth() + 1 === month1to12;
+}
+
+function endOfDay(dateObj) {
+  const d = new Date(dateObj);
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
 /**
  * 관리자 신청 목록: 같은 휴가일·같은 유형에서 협의 순번이 있으면 우선.
  * 골드키: 휴가일이 다르면 신청시각 순, 같은 휴가일이면 순번→신청시각(먼저 신청한 사람이 앞).
@@ -80,6 +94,9 @@ export function compareAppliedRequests(a, b, users) {
   const t = leaveTypeOrder(a.leaveType) - leaveTypeOrder(b.leaveType);
   if (t !== 0) return t;
   if (a.leaveType === "GOLDKEY" && b.leaveType === "GOLDKEY") {
+    const ap = isSecondHalfGoldkeyAprilConsultationRequest(a);
+    const bp = isSecondHalfGoldkeyAprilConsultationRequest(b);
+    if (ap !== bp) return ap ? -1 : 1;
     if (a.leaveDate !== b.leaveDate) return a.requestedAt.localeCompare(b.requestedAt);
     const nc = compareNegotiationOrder(a, b);
     if (nc !== 0) return nc;
@@ -95,6 +112,11 @@ export function compareAppliedRequests(a, b, users) {
 export function compareSameLeaveDateRequests(a, b, _users) {
   const ord = leaveTypeOrder(a.leaveType) - leaveTypeOrder(b.leaveType);
   if (ord !== 0) return ord;
+  if (a.leaveType === "GOLDKEY" && b.leaveType === "GOLDKEY") {
+    const ap = isSecondHalfGoldkeyAprilConsultationRequest(a);
+    const bp = isSecondHalfGoldkeyAprilConsultationRequest(b);
+    if (ap !== bp) return ap ? -1 : 1;
+  }
   const nc = compareNegotiationOrder(a, b);
   if (nc !== 0) return nc;
   if (a.leaveType === "GOLDKEY" && b.leaveType === "GOLDKEY") {
@@ -218,8 +240,25 @@ export function validateRequest({
   const currentMonth = toMonthString(now);
   const plus1 = toMonthString(addMonths(now, 1));
   const plus2 = toMonthString(addMonths(now, 2));
+  const nowYear = now.getFullYear();
+  const nowMonth = now.getMonth() + 1;
+
+  const aprilStart = new Date(nowYear, 3, 1, 0, 0, 0, 0);
+  const april2At0900 = new Date(nowYear, 3, 2, 9, 0, 0, 0);
+  const aprilEnd = endOfDay(new Date(nowYear, 3, 30));
+  const inAprilPolicyMonth = nowMonth === 4;
+  const inAprilWindow = inAprilPolicyMonth && now >= aprilStart && now <= aprilEnd;
 
   if (leaveType === "GOLDKEY") {
+    if (inAprilWindow) {
+      if (target.getFullYear() !== nowYear) return "4월 골드키 신청은 같은 해 대상(6~12월)만 가능합니다.";
+      const targetMonthNum = target.getMonth() + 1;
+      if (targetMonthNum < 6) return "4월 골드키는 6월 이후만 신청 가능합니다.";
+      if (hasBlockingGoldkeyOnDate(requests, userId, leaveDate)) {
+        return "해당 날짜에 이미 골드키 신청이 있습니다.";
+      }
+      return "";
+    }
     if (targetMonth < plus2) return "골드키는 현재월+2달부터 신청 가능합니다.";
     if ((remainingGoldkey ?? 0) <= 0) return "잔여 골드키가 없습니다.";
     if (hasBlockingGoldkeyOnDate(requests, userId, leaveDate)) {
@@ -237,6 +276,28 @@ export function validateRequest({
   const todayStart = new Date(now);
   todayStart.setHours(0, 0, 0, 0);
   if (target < todayStart) return "해당월 잔여일자부터 신청 가능합니다.";
+
+  if (leaveType === "GENERAL_PRIORITY" && inAprilPolicyMonth) {
+    if (!isSameYearMonth(target, nowYear, 5)) return "4월 일반-우선은 5월 대상만 신청 가능합니다.";
+    if (now < aprilStart || now > april2At0900) {
+      return "4월 일반-우선은 4/1 00:00 ~ 4/2 09:00까지만 신청 가능합니다.";
+    }
+    return "";
+  }
+
+  if (leaveType === "GENERAL_NORMAL" && inAprilPolicyMonth) {
+    if (isSameYearMonth(target, nowYear, 4)) {
+      if (now < aprilStart || now > aprilEnd) return "4월 일반-후순위(당월)는 4/1 ~ 4/30에만 신청 가능합니다.";
+      return "";
+    }
+    if (isSameYearMonth(target, nowYear, 5)) {
+      if (now < april2At0900 || now > aprilEnd) {
+        return "4월 일반-후순위(다음달)는 4/2 09:00 ~ 4/30에만 신청 가능합니다.";
+      }
+      return "";
+    }
+    return "4월 일반-후순위는 4월(당월) 또는 5월(다음달)만 신청 가능합니다.";
+  }
 
   const firstBusiness = getNthBusinessDay(now.getFullYear(), now.getMonth(), 1, holidaysCache);
   const secondBusiness = getNthBusinessDay(now.getFullYear(), now.getMonth(), 2, holidaysCache);
