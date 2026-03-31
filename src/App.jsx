@@ -1350,7 +1350,7 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
   return (
     <section className="card">
       <h2>휴가 추첨 배정</h2>
-      <p className="help">동일 조건 신청자 간 공정한 기준에 따라 휴가를 우선순위로 자동 배정합니다.</p>
+      <p className="help">동일 조건 신청자 간 공정한 기준에 따라 휴가의 순위를 자동 배정합니다.</p>
       <p className="help">
         해당일 협의 신청자:{" "}
         {applicantUserIds.length > 0
