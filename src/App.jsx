@@ -815,7 +815,6 @@ function App() {
               saveNegotiationOrder={saveNegotiationOrder}
               holidayDuties={holidayDuties}
               saveHolidayDuty={saveHolidayDuty}
-              onAutoAssignHolidayDutyYear={autoAssignUnsetHolidayDutiesByYear}
             />
           }
         />
@@ -1331,7 +1330,6 @@ function CalendarPage({
   saveNegotiationOrder,
   holidayDuties,
   saveHolidayDuty,
-  onAutoAssignHolidayDutyYear,
 }) {
   const [detailTab, setDetailTab] = useState("list");
 
@@ -1419,18 +1417,6 @@ function CalendarPage({
       <div className="row">
         <label>월 선택 </label>
         <input type="month" value={calendarMonth} onChange={(e) => setCalendarMonth(e.target.value)} />
-        {canEditHolidayDuty ? (
-          <button
-            type="button"
-            onClick={() => {
-              const y = Number(String(calendarMonth || "").slice(0, 4));
-              if (!Number.isInteger(y)) return;
-              void onAutoAssignHolidayDutyYear(y);
-            }}
-          >
-            미정 당직 자동지정(연도)
-          </button>
-        ) : null}
       </div>
       <div className="calendar">
         {["일", "월", "화", "수", "목", "금", "토"].map((d) => (
@@ -1475,11 +1461,6 @@ function CalendarPage({
               }}
             >
               <div className={`calendar-date${cell.isOffDay ? " calendar-date--holiday" : ""}`}>{cell.day}</div>
-              {cell.inMonth && cell.isOffDay ? (
-                <div className="badge badge--offday">
-                  {hasDuty ? "확정" : "미정"}
-                </div>
-              ) : null}
               {cell.requestCount > 0 ? (
                 <div className="badge badge--count-only">{cell.requestCount}명</div>
               ) : null}
