@@ -1103,7 +1103,7 @@ function LoginPage({ onLogin, onResetPassword }) {
         {showReset ? (
           <form className="login-form" style={{ marginTop: 10 }} onSubmit={submitReset}>
             <input placeholder="이름" value={resetName} onChange={(e) => setResetName(e.target.value)} />
-            <input placeholder="사번 (예: N0001)" value={resetEmployeeNo} onChange={(e) => setResetEmployeeNo(e.target.value)} />
+            <input placeholder="관리자는 A0001" value={resetEmployeeNo} onChange={(e) => setResetEmployeeNo(e.target.value)} />
             <button type="submit">초기화 실행</button>
           </form>
         ) : null}
