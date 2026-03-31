@@ -785,11 +785,11 @@ function App() {
       <nav className="card nav">
         {isAdmin ? (
           <>
-            <Link to="/calendar">달력</Link>
-            <Link to="/dashboard">종합 현황</Link>
-            <Link to="/admin">휴가선정내역</Link>
-            <Link to="/ladder">사다리 게임</Link>
-            <Link to="/account">계정</Link>
+            <Link to="/calendar">일정 관리</Link>
+            <Link to="/dashboard">통합 현황</Link>
+            <Link to="/admin">휴가 배정 내역</Link>
+            <Link to="/ladder">추첨 배정</Link>
+            <Link to="/account">비밀번호 변경</Link>
           </>
         ) : (
           <>
