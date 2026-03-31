@@ -36,6 +36,10 @@ body {
   gap: 10px;
 }
 
+.login-secondary-button {
+  width: 100%;
+}
+
 .top {
   display: flex;
   justify-content: space-between;

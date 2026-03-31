@@ -1096,7 +1096,7 @@ function LoginPage({ onLogin, onResetPassword }) {
           <button type="submit">로그인</button>
         </form>
         <div style={{ marginTop: 8 }}>
-          <button type="button" onClick={() => setShowReset((v) => !v)}>
+          <button type="button" className="login-secondary-button" onClick={() => setShowReset((v) => !v)}>
             {showReset ? "초기화 닫기" : "비밀번호 초기화"}
           </button>
         </div>
