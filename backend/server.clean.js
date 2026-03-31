@@ -297,21 +297,22 @@ app.post("/api/requests", async (req, res) => {
       return res.status(400).json({ error: "휴가 성격을 선택하세요." });
     }
 
+    const duplicate = await queryOne(
+      `SELECT id FROM requests
+       WHERE user_id = ? AND leave_date = ?
+         AND status NOT IN ('CANCELLED', 'REJECTED')
+       LIMIT 1`,
+      userId,
+      leaveDate
+    );
+    if (duplicate) {
+      return res.status(400).json({ error: "같은 날짜에는 휴가를 중복 신청할 수 없습니다." });
+    }
+
     if (leaveType === "GOLDKEY") {
       const g = await queryOne("SELECT remaining_count FROM goldkeys WHERE user_id = ?", userId);
       if (!g || Number(g.remaining_count) <= 0) {
         return res.status(400).json({ error: "잔여 골드키가 없습니다." });
-      }
-      const dup = await queryOne(
-        `SELECT id FROM requests
-         WHERE user_id = ? AND leave_date = ? AND leave_type = 'GOLDKEY'
-           AND status NOT IN ('CANCELLED', 'REJECTED')
-         LIMIT 1`,
-        userId,
-        leaveDate
-      );
-      if (dup) {
-        return res.status(400).json({ error: "해당 날짜에 이미 골드키 신청이 있습니다." });
       }
     }
 

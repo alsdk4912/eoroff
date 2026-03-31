@@ -219,6 +219,19 @@ export function hasBlockingGoldkeyOnDate(requests, userId, leaveDateYmd) {
   });
 }
 
+/** 취소·미선정 제외: 진행 중인 휴가가 해당 날짜에 이미 있으면 true */
+export function hasBlockingRequestOnDate(requests, userId, leaveDateYmd) {
+  const ymd = String(leaveDateYmd ?? "").trim().slice(0, 10);
+  if (!ymd || !userId) return false;
+  return (requests ?? []).some((r) => {
+    if (r.userId !== userId) return false;
+    if (ymdFromRequestRow(r) !== ymd) return false;
+    const st = r.status;
+    if (st === "CANCELLED" || st === "REJECTED") return false;
+    return true;
+  });
+}
+
 export function validateRequest({
   leaveType,
   leaveDate,
@@ -249,21 +262,19 @@ export function validateRequest({
   const inAprilPolicyMonth = nowMonth === 4;
   const inAprilWindow = inAprilPolicyMonth && now >= aprilStart && now <= aprilEnd;
 
+  if (hasBlockingRequestOnDate(requests, userId, leaveDate)) {
+    return "같은 날짜에는 휴가를 중복 신청할 수 없습니다.";
+  }
+
   if (leaveType === "GOLDKEY") {
     if (inAprilWindow) {
       if (target.getFullYear() !== nowYear) return "4월 골드키 신청은 같은 해 대상(6~12월)만 가능합니다.";
       const targetMonthNum = target.getMonth() + 1;
       if (targetMonthNum < 6) return "4월 골드키는 6월 이후만 신청 가능합니다.";
-      if (hasBlockingGoldkeyOnDate(requests, userId, leaveDate)) {
-        return "해당 날짜에 이미 골드키 신청이 있습니다.";
-      }
       return "";
     }
     if (targetMonth < plus2) return "골드키는 현재월+2달부터 신청 가능합니다.";
     if ((remainingGoldkey ?? 0) <= 0) return "잔여 골드키가 없습니다.";
-    if (hasBlockingGoldkeyOnDate(requests, userId, leaveDate)) {
-      return "해당 날짜에 이미 골드키 신청이 있습니다.";
-    }
     return "";
   }
 
