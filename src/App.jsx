@@ -1587,7 +1587,7 @@ function CalendarPage({
 
   return (
     <section className="card">
-      <h2>휴가 달력(월간)</h2>
+      <h2>일정</h2>
       <p className="help">
         {isAdmin
           ? "날짜를 누르면 아래에서 신청 현황을 보고 같은 화면에서 승인/거절, 승인된 휴가자, 관리자 메모를 확인할 수 있습니다."
