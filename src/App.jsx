@@ -408,6 +408,47 @@ function App() {
     setLadderResults((prev) => [payload, ...(Array.isArray(prev) ? prev : [])]);
   }
 
+  async function applyLadderResultToNegotiationOrder({ leaveDate, leaveType, orderUserIds }) {
+    const target = requests
+      .filter((r) => r.leaveDate === leaveDate && r.leaveType === leaveType && r.status === "APPLIED")
+      .sort((a, b) => a.requestedAt.localeCompare(b.requestedAt));
+    if (target.length === 0) return;
+
+    const byUser = new Map();
+    for (const r of target) {
+      if (!byUser.has(r.userId)) byUser.set(r.userId, []);
+      byUser.get(r.userId).push(r);
+    }
+
+    const updates = [];
+    for (let i = 0; i < orderUserIds.length; i += 1) {
+      const userId = orderUserIds[i];
+      const list = byUser.get(userId) ?? [];
+      const row = list.shift();
+      if (!row) continue;
+      updates.push({ requestId: row.id, negotiationOrder: i + 1 });
+    }
+
+    if (updates.length === 0) return;
+    if (serverMode) {
+      try {
+        for (const u of updates) {
+          await api.patchNegotiationOrder(u.requestId, { negotiationOrder: u.negotiationOrder });
+        }
+        await bootstrap();
+      } catch (e) {
+        window.alert?.(`사다리 결과 순번 반영 실패: ${e?.message || e}`);
+      }
+      return;
+    }
+    setRequests((prev) =>
+      prev.map((r) => {
+        const u = updates.find((x) => x.requestId === r.id);
+        return u ? { ...r, negotiationOrder: u.negotiationOrder } : r;
+      })
+    );
+  }
+
   async function saveNegotiationOrder(requestId, rawString) {
     const trimmed = String(rawString ?? "").trim();
     const negotiationOrder = trimmed === "" ? null : Number(trimmed);
@@ -788,8 +829,10 @@ function App() {
           element={
             <LadderGamePage
               users={users}
+              requests={requests}
               ladderResults={ladderResults}
               createLadderResult={createLadderResult}
+              applyLadderResultToNegotiationOrder={applyLadderResultToNegotiationOrder}
               currentUserId={auth?.userId}
             />
           }
@@ -1162,12 +1205,13 @@ function shuffleArray(items) {
   return arr;
 }
 
-function LadderGamePage({ users, ladderResults, createLadderResult, currentUserId }) {
+function LadderGamePage({ users, requests, ladderResults, createLadderResult, applyLadderResultToNegotiationOrder, currentUserId }) {
   const now = toLocalYMD(new Date());
   const [leaveDate, setLeaveDate] = useState(now);
   const [leaveType, setLeaveType] = useState("GENERAL_PRIORITY");
   const [selectedUserIds, setSelectedUserIds] = useState([]);
   const [previewOrder, setPreviewOrder] = useState([]);
+  const [ladderMsg, setLadderMsg] = useState("");
 
   const nurseUsers = useMemo(
     () => users.filter((u) => u.role === "NURSE").sort((a, b) => a.name.localeCompare(b.name, "ko")),
@@ -1175,12 +1219,21 @@ function LadderGamePage({ users, ladderResults, createLadderResult, currentUserI
   );
 
   const idToName = useMemo(() => new Map(users.map((u) => [u.id, u.name])), [users]);
+  const applicantsForTarget = useMemo(
+    () =>
+      (Array.isArray(requests) ? requests : [])
+        .filter((r) => r.leaveDate === leaveDate && r.leaveType === leaveType && r.status === "APPLIED")
+        .map((r) => r.userId),
+    [requests, leaveDate, leaveType]
+  );
+  const applicantUserIds = useMemo(() => [...new Set(applicantsForTarget)], [applicantsForTarget]);
 
   function toggleUser(userId) {
     setSelectedUserIds((prev) => (prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]));
   }
 
   function runLadder() {
+    setLadderMsg("");
     if (selectedUserIds.length < 2) {
       window.alert?.("사다리 게임은 참여자 2명 이상이 필요합니다.");
       return;
@@ -1190,8 +1243,19 @@ function LadderGamePage({ users, ladderResults, createLadderResult, currentUserI
   }
 
   async function saveResult() {
+    setLadderMsg("");
     if (previewOrder.length < 2) {
       window.alert?.("먼저 사다리 실행을 눌러 순번을 생성하세요.");
+      return;
+    }
+    const selectedSet = new Set(selectedUserIds);
+    const applicantSet = new Set(applicantUserIds);
+    const isSameSize = selectedSet.size === applicantSet.size;
+    const isSameMember = isSameSize && [...selectedSet].every((id) => applicantSet.has(id));
+    if (!isSameMember) {
+      const msg = "휴가신청자와 사다리게임의 참여자가 다릅니다. 해당일 협의 신청자와 동일한 인원으로 다시 진행해 주세요.";
+      setLadderMsg(msg);
+      window.alert?.(msg);
       return;
     }
     const payload = {
@@ -1204,12 +1268,24 @@ function LadderGamePage({ users, ladderResults, createLadderResult, currentUserI
       createdAt: new Date().toISOString(),
     };
     await createLadderResult(payload);
+    await applyLadderResultToNegotiationOrder({
+      leaveDate,
+      leaveType,
+      orderUserIds: previewOrder,
+    });
+    setLadderMsg("사다리 결과를 저장하고 달력 협의 순번에 자동 반영했습니다.");
   }
 
   return (
     <section className="card">
       <h2>사다리 게임</h2>
       <p className="help">동일 날짜·동일 유형에서 다수 신청 시 순번을 정하고 저장하면 모두가 같은 결과를 볼 수 있습니다.</p>
+      <p className="help">
+        해당일 협의 신청자:{" "}
+        {applicantUserIds.length > 0
+          ? applicantUserIds.map((id) => idToName.get(id) ?? id).join(", ")
+          : "없음"}
+      </p>
       <div className="row wrap" style={{ marginBottom: 10 }}>
         <div>
           <label className="field-label">휴가일</label>
@@ -1262,6 +1338,7 @@ function LadderGamePage({ users, ladderResults, createLadderResult, currentUserI
           {previewOrder.map((id, idx) => `${idx + 1}순위 ${idToName.get(id) ?? id}`).join(" / ")}
         </p>
       ) : null}
+      {ladderMsg ? <p className="msg">{ladderMsg}</p> : null}
 
       <hr className="divider" />
       <h3>저장된 결과</h3>
