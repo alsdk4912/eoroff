@@ -31,6 +31,10 @@ body {
   max-width: 420px;
 }
 
+.login-card h2 {
+  text-align: center;
+}
+
 .login-form {
   display: grid;
   gap: 10px;
