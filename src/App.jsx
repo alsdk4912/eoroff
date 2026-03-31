@@ -2160,7 +2160,6 @@ function parseLocalDateYmd(ymd) {
 
 function isDutyBlockedByRule(name, ymd) {
   const nm = String(name ?? "").trim();
-  if (nm === "정수영") return true;
   if (nm === "장지은") return ymd <= "2026-08-05";
   if (nm === "이지선") return ymd <= "2026-09-06";
   return false;
