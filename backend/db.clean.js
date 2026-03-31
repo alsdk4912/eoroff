@@ -135,6 +135,15 @@ CREATE TABLE IF NOT EXISTS admin_day_memos (
   updated_by TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+-- 날짜별 간호사 추가 메모(댓글)
+CREATE TABLE IF NOT EXISTS day_comments (
+  id TEXT PRIMARY KEY,
+  target_date TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 `;
 
 export async function initDb() {

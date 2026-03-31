@@ -89,6 +89,8 @@ export const api = {
     requestJson("/ladder-results", { method: "POST", body: JSON.stringify(payload) }),
   upsertAdminDayMemo: (payload) =>
     requestJson("/admin/day-memos", { method: "POST", body: JSON.stringify(payload) }),
+  createDayComment: (payload) =>
+    requestJson("/day-comments", { method: "POST", body: JSON.stringify(payload) }),
   bulkSetGoldkeyUsage: (payload) =>
     requestJson("/admin/goldkeys/usage-bulk", { method: "POST", body: JSON.stringify(payload) }),
   downloadBackupSql: async () => {

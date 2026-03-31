@@ -34,6 +34,7 @@ const LS_ADJUSTMENT_LOGS = "or.adjustmentLogs.v3";
 const LS_HOLIDAY_DUTIES = "or.holidayDuties.v1";
 const LS_LADDER_RESULTS = "or.ladderResults.v1";
 const LS_ADMIN_DAY_MEMOS = "or.adminDayMemos.v1";
+const LS_DAY_COMMENTS = "or.dayComments.v1";
 
 /** 이전 버전 키는 남아 있으면 혼동만 되므로 제거(현재 키는 유지) */
 function dropStaleOfflineLeaveKeys() {
@@ -160,6 +161,7 @@ function App() {
   const [holidayDuties, setHolidayDuties] = useLocalStorage(LS_HOLIDAY_DUTIES, initialHolidayDuties);
   const [ladderResults, setLadderResults] = useLocalStorage(LS_LADDER_RESULTS, initialLadderResults);
   const [adminDayMemos, setAdminDayMemos] = useLocalStorage(LS_ADMIN_DAY_MEMOS, {});
+  const [dayComments, setDayComments] = useLocalStorage(LS_DAY_COMMENTS, []);
 
   useEffect(() => {
     dropStaleOfflineLeaveKeys();
@@ -232,6 +234,18 @@ function App() {
       return acc;
     }, {});
     setAdminDayMemos(memoByDate);
+    const dayCommentRows = Array.isArray(data.dayComments) ? data.dayComments : [];
+    setDayComments(
+      dayCommentRows
+        .map((row) => ({
+          id: row.id,
+          targetDate: row.target_date ?? row.targetDate,
+          content: String(row.content ?? ""),
+          userId: row.user_id ?? row.userId,
+          createdAt: row.created_at ?? row.createdAt,
+        }))
+        .filter((row) => row.id && row.targetDate && row.userId)
+    );
 
     const rows = Array.isArray(data.ladderResults) ? data.ladderResults : [];
     setLadderResults(
@@ -751,6 +765,33 @@ function App() {
     }));
   }
 
+  async function createDayComment(targetDate, content) {
+    const ymd = String(targetDate ?? "").trim();
+    const txt = String(content ?? "").trim();
+    if (!ymd || !txt || !auth?.userId) return;
+    if (serverMode) {
+      try {
+        await api.createDayComment({
+          actorUserId: auth.userId,
+          targetDate: ymd,
+          content: txt,
+        });
+        await bootstrap();
+      } catch (e) {
+        window.alert?.(`추가 메모 저장 실패: ${e?.message || e}`);
+      }
+      return;
+    }
+    const newRow = {
+      id: `dc_${Date.now()}`,
+      targetDate: ymd,
+      content: txt,
+      userId: auth.userId,
+      createdAt: new Date().toISOString(),
+    };
+    setDayComments((prev) => [newRow, ...(Array.isArray(prev) ? prev : [])]);
+  }
+
   async function syncHolidays() {
     try {
       if (serverMode) {
@@ -912,6 +953,8 @@ function App() {
               rejectRequest={rejectRequest}
               adminDayMemos={adminDayMemos}
               saveAdminDayMemo={saveAdminDayMemo}
+              dayComments={dayComments}
+              createDayComment={createDayComment}
             />
           }
         />
@@ -1488,6 +1531,8 @@ function CalendarPage({
   rejectRequest,
   adminDayMemos,
   saveAdminDayMemo,
+  dayComments,
+  createDayComment,
 }) {
   const [detailTab, setDetailTab] = useState("list");
   const touchStartRef = useRef(null);
@@ -1506,6 +1551,7 @@ function CalendarPage({
   const [duty2UserId, setDuty2UserId] = useState(selectedHolidayDuty?.nurse2UserId ?? "");
   const [anesthesiaDutyUserId, setAnesthesiaDutyUserId] = useState(selectedHolidayDuty?.anesthesiaUserId ?? "");
   const [adminMemoDraft, setAdminMemoDraft] = useState("");
+  const [commentDraft, setCommentDraft] = useState("");
 
   useEffect(() => {
     if (!selectedYmd || !selectedCell?.isOffDay) {
@@ -1527,6 +1573,18 @@ function CalendarPage({
     }
     setAdminMemoDraft(adminDayMemos?.[selectedYmd] ?? "");
   }, [selectedYmd, adminDayMemos]);
+
+  useEffect(() => {
+    setCommentDraft("");
+  }, [selectedYmd]);
+
+  const selectedDayComments = useMemo(() => {
+    if (!selectedYmd) return [];
+    return (Array.isArray(dayComments) ? dayComments : [])
+      .filter((row) => row.targetDate === selectedYmd)
+      .slice()
+      .sort((a, b) => String(a.createdAt ?? "").localeCompare(String(b.createdAt ?? "")));
+  }, [dayComments, selectedYmd]);
 
   /**
    * 같은 휴가일·같은 유형 기준으로, 신청(제출)일이 같은 사람끼리만 묶음.
@@ -1895,6 +1953,44 @@ function CalendarPage({
             ) : (
               <p className="help" style={{ whiteSpace: "pre-wrap" }}>{adminDayMemos?.[selectedYmd] || "등록된 메모가 없습니다."}</p>
             )}
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <h4>추가 메모</h4>
+            {selectedDayComments.length === 0 ? (
+              <p className="help">등록된 추가 메모가 없습니다.</p>
+            ) : (
+              <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
+                {selectedDayComments.map((row) => {
+                  const authorName = users.find((u) => u.id === row.userId)?.name ?? row.userId;
+                  return (
+                    <li key={row.id} style={{ marginBottom: 6 }}>
+                      <strong>{authorName}</strong>: {row.content}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <div style={{ marginTop: 8 }}>
+              <textarea
+                rows={2}
+                placeholder="추가 메모를 입력하세요"
+                value={commentDraft}
+                onChange={(e) => setCommentDraft(e.target.value)}
+              />
+              <div style={{ marginTop: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!selectedYmd || !commentDraft.trim()) return;
+                    void createDayComment(selectedYmd, commentDraft);
+                    setCommentDraft("");
+                  }}
+                  disabled={!commentDraft.trim()}
+                >
+                  댓글 등록
+                </button>
+              </div>
+            </div>
           </div>
         </section>
       ) : null}

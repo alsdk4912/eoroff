@@ -83,6 +83,7 @@ app.get("/api/bootstrap", async (_, res) => {
       ladderResults: await queryAll("SELECT * FROM ladder_results ORDER BY created_at DESC"),
       holidayDuties: await queryAll("SELECT * FROM holiday_duties"),
       adminDayMemos: await queryAll("SELECT * FROM admin_day_memos"),
+      dayComments: await queryAll("SELECT * FROM day_comments ORDER BY created_at ASC"),
       holidays: await queryAll("SELECT * FROM holidays"),
     });
   } catch (err) {
@@ -153,6 +154,35 @@ app.post("/api/admin/day-memos", async (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     console.error("POST /api/admin/day-memos", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
+app.post("/api/day-comments", async (req, res) => {
+  try {
+    const { actorUserId, targetDate, content } = req.body ?? {};
+    const actor = await queryOne(
+      "SELECT id, role FROM users WHERE id = ? AND role IN ('ADMIN', 'NURSE', 'ANESTHESIA')",
+      actorUserId
+    );
+    if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
+    const ymd = String(targetDate ?? "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return res.status(400).json({ error: "targetDate 형식이 올바르지 않습니다." });
+    const txt = String(content ?? "").trim();
+    if (!txt) return res.status(400).json({ error: "메모 내용을 입력하세요." });
+    if (txt.length > 500) return res.status(400).json({ error: "메모는 500자 이내로 입력하세요." });
+    const id = `dc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    await execute(
+      "INSERT INTO day_comments (id, target_date, user_id, content, created_at) VALUES (?, ?, ?, ?, ?)",
+      id,
+      ymd,
+      actorUserId,
+      txt,
+      new Date().toISOString()
+    );
+    return res.json({ ok: true, id });
+  } catch (err) {
+    console.error("POST /api/day-comments", err);
     return res.status(500).json({ error: String(err?.message || err) });
   }
 });
