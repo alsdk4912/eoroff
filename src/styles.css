@@ -1947,3 +1947,27 @@ tr.request-cancelled-row td button {
     grid-template-columns: 1fr;
   }
 }
+
+.day-comment-section h4 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.day-comment-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.day-comment-item {
+  margin-bottom: 6px;
+  font-size: 12px !important;
+  line-height: 1.45;
+  font-weight: 400 !important;
+  color: #475569 !important;
+}
+
+.day-comment-author {
+  font-weight: 400 !important;
+  color: #475569 !important;
+}

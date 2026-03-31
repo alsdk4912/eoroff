@@ -1954,17 +1954,17 @@ function CalendarPage({
               <p className="help" style={{ whiteSpace: "pre-wrap" }}>{adminDayMemos?.[selectedYmd] || "등록된 메모가 없습니다."}</p>
             )}
           </div>
-          <div style={{ marginTop: 12 }}>
+          <div className="day-comment-section" style={{ marginTop: 12 }}>
             <h4>추가 메모</h4>
             {selectedDayComments.length === 0 ? (
               <p className="help">등록된 추가 메모가 없습니다.</p>
             ) : (
-              <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
+              <ul className="day-comment-list">
                 {selectedDayComments.map((row) => {
                   const authorName = users.find((u) => u.id === row.userId)?.name ?? row.userId;
                   return (
-                    <li key={row.id} style={{ marginBottom: 6 }}>
-                      <strong>{authorName}</strong>: {row.content}
+                    <li key={row.id} className="day-comment-item">
+                      <span className="day-comment-author">{authorName}</span>: {row.content}
                     </li>
                   );
                 })}
