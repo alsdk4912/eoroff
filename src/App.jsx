@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, Route, Routes } from "react-router-dom";
 import {
   holidaysCache as seedHolidays,
@@ -1416,6 +1416,7 @@ function CalendarPage({
   saveHolidayDuty,
 }) {
   const [detailTab, setDetailTab] = useState("list");
+  const touchStartRef = useRef(null);
 
   useEffect(() => {
     if (!selectedYmd) return;
@@ -1494,6 +1495,15 @@ function CalendarPage({
     return map;
   }, [selectedYmd, dayRequests]);
 
+  function moveCalendarMonth(offset) {
+    const [yy, mm] = String(calendarMonth || "").split("-").map(Number);
+    if (!Number.isInteger(yy) || !Number.isInteger(mm)) return;
+    const d = new Date(yy, mm - 1, 1);
+    d.setMonth(d.getMonth() + offset);
+    const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    setCalendarMonth(next);
+  }
+
   return (
     <section className="card">
       <h2>휴가 달력(월간)</h2>
@@ -1506,7 +1516,26 @@ function CalendarPage({
         <label>월 선택 </label>
         <input type="month" value={calendarMonth} onChange={(e) => setCalendarMonth(e.target.value)} />
       </div>
-      <div className="calendar">
+      <div
+        className="calendar"
+        onTouchStart={(e) => {
+          const t = e.changedTouches?.[0];
+          if (!t) return;
+          touchStartRef.current = { x: t.clientX, y: t.clientY };
+        }}
+        onTouchEnd={(e) => {
+          const t = e.changedTouches?.[0];
+          const start = touchStartRef.current;
+          touchStartRef.current = null;
+          if (!t || !start) return;
+          const dx = t.clientX - start.x;
+          const dy = t.clientY - start.y;
+          if (Math.abs(dx) < 50) return;
+          if (Math.abs(dy) > Math.abs(dx) * 0.8) return;
+          if (dx < 0) moveCalendarMonth(1);
+          else moveCalendarMonth(-1);
+        }}
+      >
         {["일", "월", "화", "수", "목", "금", "토"].map((d) => (
           <div key={d} className="calendar-head">
             {d}
