@@ -828,7 +828,7 @@ function App() {
             {currentUser?.role === "NURSE" ? <Link to="/request">휴가 신청</Link> : null}
             {currentUser?.role === "NURSE" ? <Link to="/my">신청 내역</Link> : null}
             <Link to="/dashboard">종합 현황</Link>
-            <Link to="/ladder">추첨 배정</Link>
+            {currentUser?.role !== "ANESTHESIA" ? <Link to="/ladder">추첨 배정</Link> : null}
             <Link to="/account">비밀번호 변경</Link>
           </>
         )}
@@ -864,6 +864,7 @@ function App() {
               cancellations={cancellations}
               users={users}
               serverMode={serverMode}
+              currentRole={currentUser?.role}
             />
           }
         />
@@ -1155,49 +1156,51 @@ const WORK_SCHEDULE_2026_ROWS = [
   { name: "정수영", values: ["", "", "6D1", "6D1", "6D1", "6D1", "1D1", "1D1", "1D1"] },
 ];
 
-function DashboardPage({ dashboard, goldkeys, requests, cancellations, users, serverMode }) {
+function DashboardPage({ dashboard, goldkeys, requests, cancellations, users, serverMode, currentRole }) {
   return (
     <>
-      <section className="card">
-        <h2>골드키 잔여 내역</h2>
-        <p className="help" style={{ marginBottom: 10 }}>
-          <strong>신청·사용</strong>은 골드키로 제출한 누적 건수입니다(취소·반려 포함, 취소해도 숫자는 그대로). 잔여 = 총개수 − 신청·사용.
-        </p>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>이름</th>
-                <th>골드키 총개수</th>
-                <th>신청·사용</th>
-                <th>잔여개수</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users
-                .filter((u) => u.role === "NURSE")
-                .sort((a, b) => a.name.localeCompare(b.name, "ko"))
-                .map((u) => {
-                  const g = goldkeys.find((x) => x.userId === u.id);
-                  const quotaTotal = goldkeyQuotaTotalForDisplay(u, g, serverMode);
-                  const applyUse = countGoldkeyApplyUse(requests, u.id);
-                  const remaining = Math.max(0, quotaTotal - applyUse);
-                  return (
-                    <tr key={u.id}>
-                      <td>{u.name}</td>
-                      <td>{quotaTotal}</td>
-                      <td>{applyUse}</td>
-                      <td>{remaining}</td>
-                    </tr>
-                  );
-                })}
-            </tbody>
-          </table>
-        </div>
-        <p className="help">
-          참고: 전체 신청 {dashboard.total} / 신청중 {dashboard.applied} / 승인·선정 {dashboard.selected} / 취소 {dashboard.cancelled}
-        </p>
-      </section>
+      {currentRole !== "ANESTHESIA" ? (
+        <section className="card">
+          <h2>골드키 잔여 내역</h2>
+          <p className="help" style={{ marginBottom: 10 }}>
+            <strong>신청·사용</strong>은 골드키로 제출한 누적 건수입니다(취소·반려 포함, 취소해도 숫자는 그대로). 잔여 = 총개수 − 신청·사용.
+          </p>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>이름</th>
+                  <th>골드키 총개수</th>
+                  <th>신청·사용</th>
+                  <th>잔여개수</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users
+                  .filter((u) => u.role === "NURSE")
+                  .sort((a, b) => a.name.localeCompare(b.name, "ko"))
+                  .map((u) => {
+                    const g = goldkeys.find((x) => x.userId === u.id);
+                    const quotaTotal = goldkeyQuotaTotalForDisplay(u, g, serverMode);
+                    const applyUse = countGoldkeyApplyUse(requests, u.id);
+                    const remaining = Math.max(0, quotaTotal - applyUse);
+                    return (
+                      <tr key={u.id}>
+                        <td>{u.name}</td>
+                        <td>{quotaTotal}</td>
+                        <td>{applyUse}</td>
+                        <td>{remaining}</td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+          <p className="help">
+            참고: 전체 신청 {dashboard.total} / 신청중 {dashboard.applied} / 승인·선정 {dashboard.selected} / 취소 {dashboard.cancelled}
+          </p>
+        </section>
+      ) : null}
       <section className="card">
         <h2>2026년 근무표</h2>
         <div className="table-wrap">
