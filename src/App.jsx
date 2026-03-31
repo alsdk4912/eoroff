@@ -1665,9 +1665,6 @@ function CalendarPage({
                         <p className="help">이 날짜에 등록된 신청이 없습니다.</p>
                       ) : (
                         <>
-                          <p className="help" style={{ marginBottom: 10 }}>
-                            <strong>하반기 골드키</strong>(같은 해 7~12월 휴가일)는 매년 <strong>4월 1일~10일</strong>에 접수된 신청은 모두 「협의」만 사용합니다(자동 「신청순」 없음). 그 외에는 같은 <strong>휴가일</strong>·같은 <strong>유형</strong>에서 제출일이 같은 사람이 2명 이상이면 「협의」, 나 혼자만 해당이면 「신청순」이 붙습니다.
-                          </p>
                           <ul className="calendar-applicant-list">
                             {dayRequests.map((r) => {
                               const nm = users.find((u) => u.id === r.userId)?.name ?? r.userId;
