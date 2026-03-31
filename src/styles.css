@@ -1912,6 +1912,15 @@ tr.request-cancelled-row td button {
   padding-left: 16px;
 }
 
+.admin-day-empty {
+  list-style: none;
+  padding-left: 0;
+  margin-left: 0;
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  color: #64748b !important;
+}
+
 .holiday-duty-panel {
   margin: 14px 0 6px;
   border: 1px solid #fee2e2;

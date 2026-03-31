@@ -1648,7 +1648,7 @@ function CalendarPage({
       <h2>일정</h2>
       <p className="help">
         {isAdmin
-          ? "날짜를 누르면 아래에서 신청 현황을 보고 같은 화면에서 승인/거절, 승인된 휴가자, 관리자 메모를 확인할 수 있습니다."
+          ? "날짜를 누르면 아래에서 신청 현황을 보고 같은 화면에서 승인/거절, 승인된 휴가자, 듀티 메모를 확인할 수 있습니다."
           : "날짜를 누르면 아래에서 신청 인원·이름을 확인하고, 같은 화면에서 휴가를 신청할 수 있습니다."}
       </p>
       <div className="row">
@@ -1930,7 +1930,7 @@ function CalendarPage({
           <h3>{selectedYmd} 휴가자</h3>
           <ul>
             {selectedCell.approvedApplicants.length === 0 ? (
-              <li>없음</li>
+              <li className="help admin-day-empty">없음</li>
             ) : (
               selectedCell.approvedApplicants.map((item) => (
                 <li key={item.id}>
@@ -1940,7 +1940,7 @@ function CalendarPage({
             )}
           </ul>
           <div style={{ marginTop: 10 }}>
-            <h4>관리자 메모</h4>
+            <h4>듀티 메모</h4>
             {isAdmin ? (
               <>
                 <textarea rows={3} placeholder="해당 날짜 메모를 입력하세요" value={adminMemoDraft} onChange={(e) => setAdminMemoDraft(e.target.value)} />
@@ -1955,7 +1955,6 @@ function CalendarPage({
             )}
           </div>
           <div className="day-comment-section" style={{ marginTop: 12 }}>
-            <h4>추가 메모</h4>
             {selectedDayComments.length === 0 ? (
               <p className="help">등록된 추가 메모가 없습니다.</p>
             ) : (
