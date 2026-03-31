@@ -1135,6 +1135,26 @@ function goldkeyQuotaTotalForDisplay(user, g, serverMode) {
   return policy;
 }
 
+const WORK_SCHEDULE_2026_MONTHS = ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월"];
+const WORK_SCHEDULE_2026_ROWS = [
+  { name: "임희종", values: ["야E", "수E", "야D0", "9-5", "5D2", "3D1", "7D2", "6D2", "6D1"] },
+  { name: "이양희", values: ["수E", "6D2", "6D2", "3D1", "9-5", "3D2", "5D2", "5D1", "1D2"] },
+  { name: "허정숙", values: ["6D2", "야E", "5D2", "5D2", "7D2", "9-5", "3D1", "3D2", "야D0"] },
+  { name: "이현숙", values: ["9-5", "야D0", "3D2", "3D2", "수E", "1D2", "6D2", "5D2", "7D2"] },
+  { name: "유진", values: ["야D0", "5D2", "3D1", "7D2", "7D1", "야E", "야D0", "PRN", "3D2"] },
+  { name: "김해림", values: ["7D2", "PRN", "야D0", "1D2", "1D1", "7D1", "수E", "9-5", "3D1"] },
+  { name: "양현아", values: ["5D2", "3D1", "야E", "PRN", "6D2", "6D2", "9-5", "야D0", "9-5"] },
+  { name: "장지은", values: ["1D2", "6D1", "6D1", "6D2", "5D1", "7D2", "야D0", "야D0", "수E"] },
+  { name: "손다솜", values: ["PRN", "1D2", "1D2", "1D1", "3D1", "5D2", "3D2", "7D1", "야E"] },
+  { name: "오민아", values: ["야D0", "3D2", "9-5", "7D1", "PRN", "야D0", "5D1", "야E", "5D2"] },
+  { name: "최종선", values: ["3D2", "9-5", "PRN", "야D0", "야D0", "수E", "1D2", "1D2", "7D1"] },
+  { name: "장성필", values: ["6D1", "야D0", "수E", "야E", "3D2", "PRN", "7D1", "7D2", "5D1"] },
+  { name: "이지선", values: ["7D1", "7D2", "7D2", "야D0", "1D2", "1D1", "6D1", "3D1", "야D0"] },
+  { name: "최유리", values: ["3D1", "1D1", "1D1", "수E", "야E", "5D1", "PRN", "6D1", "6D2"] },
+  { name: "최유경", values: ["1D1", "7D1", "7D1", "5D1", "야D0", "야D0", "야E", "수E", "PRN"] },
+  { name: "정수영", values: ["", "", "6D1", "6D1", "6D1", "6D1", "1D1", "1D1", "1D1"] },
+];
+
 function DashboardPage({ dashboard, goldkeys, requests, cancellations, users, serverMode }) {
   return (
     <>
@@ -1177,6 +1197,31 @@ function DashboardPage({ dashboard, goldkeys, requests, cancellations, users, se
         <p className="help">
           참고: 전체 신청 {dashboard.total} / 신청중 {dashboard.applied} / 승인·선정 {dashboard.selected} / 취소 {dashboard.cancelled}
         </p>
+      </section>
+      <section className="card">
+        <h2>2026년 근무표</h2>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>이름</th>
+                {WORK_SCHEDULE_2026_MONTHS.map((m) => (
+                  <th key={m}>{m}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {WORK_SCHEDULE_2026_ROWS.map((row) => (
+                <tr key={row.name}>
+                  <td>{row.name}</td>
+                  {row.values.map((v, idx) => (
+                    <td key={`${row.name}-${idx}`}>{v || "-"}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
       <section className="card">
         <h2>취소 이력</h2>
