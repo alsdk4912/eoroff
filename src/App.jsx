@@ -949,13 +949,6 @@ function LoginPage({ onLogin }) {
           <button type="submit">로그인</button>
         </form>
         {error ? <p className="msg">{error}</p> : null}
-        <p className="help" style={{ marginTop: 12 }}>
-          <strong>alsdk4912.github.io/eoroff</strong> · 빌드{" "}
-          {import.meta.env.VITE_DEPLOY_TAG
-            ? String(import.meta.env.VITE_DEPLOY_TAG).slice(0, 7)
-            : "로컬"}{" "}
-          (GitHub Actions 배포 커밋 앞 7자리. 배포 후 바뀌면 최신 페이지입니다.)
-        </p>
       </section>
     </div>
   );
