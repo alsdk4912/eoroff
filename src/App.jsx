@@ -1212,7 +1212,14 @@ function DashboardPage({ dashboard, goldkeys, requests, cancellations, users, se
             </thead>
             <tbody>
               {WORK_SCHEDULE_2026_ROWS.map((row) => (
-                <tr key={row.name}>
+                <tr
+                  key={row.name}
+                  className={
+                    row.name === "유진" || row.name === "오민아" || row.name === "최유경"
+                      ? "work-schedule-row--highlight"
+                      : ""
+                  }
+                >
                   <td>{row.name}</td>
                   {row.values.map((v, idx) => (
                     <td key={`${row.name}-${idx}`}>{v || "-"}</td>

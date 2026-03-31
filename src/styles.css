@@ -1718,6 +1718,10 @@ tr.request-cancelled-row td button {
   color: #92400e;
 }
 
+.work-schedule-row--highlight td {
+  background: #ecfdf5;
+}
+
 .badge--offday {
   display: inline-block;
   width: fit-content;
