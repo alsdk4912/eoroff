@@ -1983,6 +1983,7 @@ function CalendarPage({
   deleteDayComment,
 }) {
   const [detailTab, setDetailTab] = useState("list");
+  const CALENDAR_DAY_CHIP_MAX = 4;
 
   useEffect(() => {
     if (!selectedYmd) return;
@@ -2102,14 +2103,19 @@ function CalendarPage({
           ? "날짜를 누르면 아래에서 신청 현황을 보고 같은 화면에서 승인/거절, 승인된 휴가자, 듀티 메모를 확인할 수 있습니다."
           : "날짜를 누르면 아래에서 신청 인원·이름을 확인하고, 같은 화면에서 휴가를 신청할 수 있습니다."}
       </p>
-      <div className="row">
-        <label>월 선택 </label>
-        <button type="button" className="calendar-month-arrow" onClick={() => moveCalendarMonth(-1)} aria-label="이전 달">
-          ◀
+      <div className="calendar-nav" role="navigation" aria-label="달력 월 이동">
+        <button type="button" className="calendar-nav-btn" onClick={() => moveCalendarMonth(-1)} aria-label="이전 달">
+          ‹
         </button>
-        <input type="month" value={calendarMonth} onChange={(e) => setCalendarMonth(e.target.value)} />
-        <button type="button" className="calendar-month-arrow" onClick={() => moveCalendarMonth(1)} aria-label="다음 달">
-          ▶
+        <input
+          type="month"
+          className="calendar-nav-month"
+          value={calendarMonth}
+          onChange={(e) => setCalendarMonth(e.target.value)}
+          aria-label="표시할 연월"
+        />
+        <button type="button" className="calendar-nav-btn" onClick={() => moveCalendarMonth(1)} aria-label="다음 달">
+          ›
         </button>
       </div>
       <div className="calendar">
@@ -2156,20 +2162,22 @@ function CalendarPage({
               }}
             >
               <div className={`calendar-date${cell.isOffDay ? " calendar-date--holiday" : ""}`}>{cell.day}</div>
-              {cell.requestCount > 0 ? (
-                <div className="calendar-mini-events" aria-label={`휴가 신청 ${cell.requestCount}건`}>
-                  {(cell.applicants ?? []).slice(0, 3).map((ap) => (
-                    <div
-                      key={ap.id}
-                      className={`calendar-mini-event selected-item ${leaveTypeCssClass(ap.leaveType)}${
-                        ap.status === "CANCELLED" ? " request-cancelled" : ""
-                      }`}
-                      title={`${ap.name} · ${typeFullLabel(ap.leaveType)}`}
+              {cell.inMonth && Array.isArray(cell.displayApplicants) && cell.displayApplicants.length > 0 ? (
+                <div className="calendar-cell-events">
+                  {cell.displayApplicants.slice(0, CALENDAR_DAY_CHIP_MAX).map((a) => (
+                    <span
+                      key={a.id}
+                      className={`calendar-day-chip ${buildLeaveChipClass(a.leaveType, a.status)}`}
+                      title={`${a.name} · ${typeFullLabel(a.leaveType)} · ${statusLabel(a.status)}`}
                     >
-                      {ap.name}
-                    </div>
+                      {a.name}
+                    </span>
                   ))}
-                  {cell.requestCount > 3 ? <div className="calendar-mini-more">+{cell.requestCount - 3}명</div> : null}
+                  {cell.displayApplicants.length > CALENDAR_DAY_CHIP_MAX ? (
+                    <span className="calendar-chip-more" title={`외 ${cell.displayApplicants.length - CALENDAR_DAY_CHIP_MAX}명`}>
+                      +{cell.displayApplicants.length - CALENDAR_DAY_CHIP_MAX}
+                    </span>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -2769,6 +2777,14 @@ function buildMonthMatrix(year, month, allRequests, users, holidaysCache) {
     const dayReqs = allRequests.filter((r) => r.leaveDate === iso);
     const activeDayReqs = dayReqs.filter((r) => r.status !== "CANCELLED");
     const hasGoldkeyRequest = activeDayReqs.some((r) => r.leaveType === "GOLDKEY");
+    const sortedDayReqs = [...dayReqs].sort((a, b) => compareSameLeaveDateRequests(a, b, users));
+    const displayApplicants = sortedDayReqs.map((r) => ({
+      id: r.id,
+      userId: r.userId,
+      leaveType: r.leaveType,
+      status: r.status,
+      name: users.find((u) => u.id === r.userId)?.name ?? r.userId,
+    }));
     cells.push({
       date: iso,
       day: d.getDate(),
@@ -2779,6 +2795,7 @@ function buildMonthMatrix(year, month, allRequests, users, holidaysCache) {
       holidayName,
       requestCount: activeDayReqs.length,
       hasGoldkeyRequest,
+      displayApplicants,
       applicants: dayReqs
         .filter((r) => r.status !== "CANCELLED")
         .sort((a, b) => compareSameLeaveDateRequests(a, b, users))
