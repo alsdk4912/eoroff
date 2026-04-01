@@ -1628,6 +1628,8 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
   const [ladderSpec, setLadderSpec] = useState(null);
   const [animating, setAnimating] = useState(false);
   const [runnerState, setRunnerState] = useState(null);
+  const [activeRunnerId, setActiveRunnerId] = useState("");
+  const [activePathKeys, setActivePathKeys] = useState({});
 
   const nurseUsers = useMemo(
     () => users.filter((u) => u.role === "NURSE").sort((a, b) => a.name.localeCompare(b.name, "ko")),
@@ -1670,6 +1672,8 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
     setPreviewOrder(order);
     setRunnerState(null);
     setAnimating(false);
+    setActiveRunnerId("");
+    setActivePathKeys({});
   }
 
   async function playLadderAnimation(targetUserId, specArg) {
@@ -1680,12 +1684,22 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     setAnimating(true);
     setRunnerState(null);
+    setActiveRunnerId(target.userId);
+    setActivePathKeys({});
     let lane = target.startLane;
     setRunnerState({ userId: target.userId, lane, row: 0 });
     await sleep(390);
     for (let r = 0; r < spec.rowCount; r += 1) {
-      if (lane > 0 && spec.links[r][lane - 1]) lane -= 1;
-      else if (lane < spec.laneCount - 1 && spec.links[r][lane]) lane += 1;
+      const beforeLane = lane;
+      const nextPath = { [`v-${r}-${beforeLane}`]: true };
+      if (lane > 0 && spec.links[r][lane - 1]) {
+        lane -= 1;
+        nextPath[`h-${r}-${lane}`] = true;
+      } else if (lane < spec.laneCount - 1 && spec.links[r][lane]) {
+        nextPath[`h-${r}-${lane}`] = true;
+        lane += 1;
+      }
+      setActivePathKeys((prev) => ({ ...prev, ...nextPath }));
       setRunnerState({ userId: target.userId, lane, row: r + 1 });
       await sleep(210);
     }
@@ -1776,18 +1790,6 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
 
       {ladderSpec ? (
         <div style={{ marginBottom: 12, overflowX: "auto" }}>
-          <div className="row wrap" style={{ marginBottom: 8 }}>
-            {ladderSpec.laneUsers.map((userId) => (
-              <button
-                key={`runner-btn-${userId}`}
-                type="button"
-                onClick={() => void playLadderAnimation(userId, ladderSpec)}
-                disabled={animating}
-              >
-                {idToName.get(userId) ?? userId} 타기
-              </button>
-            ))}
-          </div>
           <svg
             width={Math.max(620, ladderSpec.laneCount * 140)}
             height={Math.max(420, ladderSpec.rowCount * 30 + 130)}
@@ -1796,34 +1798,49 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
           >
             {ladderSpec.laneUsers.map((userId, lane) => {
               const x = 70 + lane * 120;
-              const color = laneColor(lane);
+              const isActiveName = activeRunnerId === userId;
               return (
-                <g key={`lane-${userId}`}>
-                  <rect x={x - 52} y={2} rx={10} ry={10} width={104} height={24} fill="#f8fafc" stroke={color} strokeWidth="1.5" />
+                <g
+                  key={`lane-${userId}`}
+                  onClick={() => void playLadderAnimation(userId, ladderSpec)}
+                  style={{ cursor: animating ? "not-allowed" : "pointer", pointerEvents: animating ? "none" : "auto" }}
+                >
+                  <rect x={x - 56} y={2} rx={10} ry={10} width={112} height={24} fill={isActiveName ? "#fee2e2" : "#f8fafc"} stroke="#111827" strokeWidth="1.5" />
                   <text x={x} y={18} textAnchor="middle" fontSize="13" fill="#0f172a" fontWeight="700">
                     {idToName.get(userId) ?? userId}
                   </text>
-                  <line x1={x} y1={32} x2={x} y2={32 + ladderSpec.rowCount * 30} stroke={color} strokeWidth="4" opacity="0.95" />
                 </g>
               );
             })}
+            {Array.from({ length: ladderSpec.rowCount }, (_, r) =>
+              ladderSpec.laneUsers.map((_, lane) => {
+                const x = 70 + lane * 120;
+                const y1 = 32 + r * 30;
+                const y2 = y1 + 30;
+                const k = `v-${r}-${lane}`;
+                const active = Boolean(activePathKeys[k]);
+                return <line key={`v-${r}-${lane}`} x1={x} y1={y1} x2={x} y2={y2} stroke={active ? "#dc2626" : "#111827"} strokeWidth={active ? 5 : 3} />;
+              })
+            )}
             {ladderSpec.links.map((row, r) =>
               row.map((on, c) => {
                 if (!on) return null;
                 const x1 = 70 + c * 120;
                 const x2 = 70 + (c + 1) * 120;
                 const y = 32 + (r + 1) * 30;
-                return <line key={`link-${r}-${c}`} x1={x1} y1={y} x2={x2} y2={y} stroke="#0ea5e9" strokeWidth="4" />;
+                const k = `h-${r}-${c}`;
+                const active = Boolean(activePathKeys[k]);
+                return <line key={`link-${r}-${c}`} x1={x1} y1={y} x2={x2} y2={y} stroke={active ? "#dc2626" : "#111827"} strokeWidth={active ? 5 : 3} />;
               })
             )}
             {runnerState ? (
               <g>
                 <image
                   href={LADDER_RUNNER_IMAGE_SRC}
-                  x={70 + runnerState.lane * 120 - 16}
-                  y={32 + runnerState.row * 30 - 20}
-                  width="32"
-                  height="32"
+                  x={70 + runnerState.lane * 120 - 24}
+                  y={32 + runnerState.row * 30 - 30}
+                  width="48"
+                  height="48"
                   preserveAspectRatio="xMidYMid meet"
                 />
                 <text
@@ -1841,10 +1858,9 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
             {ladderSpec.order.map((userId, rank) => {
               const x = 70 + rank * 120;
               const y = 32 + ladderSpec.rowCount * 30 + 26;
-              const color = laneColor(rank);
               return (
                 <g key={`rank-${userId}`}>
-                  <rect x={x - 58} y={y - 16} rx={10} ry={10} width={116} height={22} fill="#ffffff" stroke={color} strokeWidth="1.5" />
+                  <rect x={x - 58} y={y - 16} rx={10} ry={10} width={116} height={22} fill="#ffffff" stroke="#111827" strokeWidth="1.5" />
                   <text x={x} y={y - 1} textAnchor="middle" fontSize="12.5" fill="#0f172a" fontWeight="700">
                     {rank + 1}순위 {idToName.get(userId) ?? userId}
                   </text>
