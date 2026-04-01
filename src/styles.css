@@ -2003,3 +2003,19 @@ tr.request-cancelled-row td button {
 .day-comment-edit-wrap textarea {
   width: 100%;
 }
+
+.ladder-name-chip .ladder-name-chip-rect {
+  transition: all 0.18s ease;
+}
+
+.ladder-name-chip:hover .ladder-name-chip-rect {
+  fill: #dbeafe;
+  stroke: #1d4ed8;
+  stroke-width: 2;
+}
+
+.ladder-name-chip--active .ladder-name-chip-rect {
+  fill: #fee2e2;
+  stroke: #dc2626;
+  stroke-width: 2;
+}

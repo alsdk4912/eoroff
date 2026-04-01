@@ -1616,8 +1616,6 @@ function laneColor(index) {
   return palette[index % palette.length];
 }
 
-const LADDER_RUNNER_IMAGE_SRC = "/nurse-runner.png";
-
 function LadderGamePage({ users, requests, ladderResults, createLadderResult, applyLadderResultToNegotiationOrder, currentUserId }) {
   const now = toLocalYMD(new Date());
   const [leaveDate, setLeaveDate] = useState(now);
@@ -1803,9 +1801,10 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
                 <g
                   key={`lane-${userId}`}
                   onClick={() => void playLadderAnimation(userId, ladderSpec)}
+                  className={`ladder-name-chip${isActiveName ? " ladder-name-chip--active" : ""}`}
                   style={{ cursor: animating ? "not-allowed" : "pointer", pointerEvents: animating ? "none" : "auto" }}
                 >
-                  <rect x={x - 56} y={2} rx={10} ry={10} width={112} height={24} fill={isActiveName ? "#fee2e2" : "#f8fafc"} stroke="#111827" strokeWidth="1.5" />
+                  <rect className="ladder-name-chip-rect" x={x - 56} y={2} rx={10} ry={10} width={112} height={24} fill={isActiveName ? "#fee2e2" : "#f8fafc"} stroke="#111827" strokeWidth="1.5" />
                   <text x={x} y={18} textAnchor="middle" fontSize="13" fill="#0f172a" fontWeight="700">
                     {idToName.get(userId) ?? userId}
                   </text>
@@ -1835,14 +1834,9 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
             )}
             {runnerState ? (
               <g>
-                <image
-                  href={LADDER_RUNNER_IMAGE_SRC}
-                  x={70 + runnerState.lane * 120 - 24}
-                  y={32 + runnerState.row * 30 - 30}
-                  width="48"
-                  height="48"
-                  preserveAspectRatio="xMidYMid meet"
-                />
+                <text x={70 + runnerState.lane * 120} y={32 + runnerState.row * 30 + 8} textAnchor="middle" fontSize="30" fill="#dc2626">
+                  ❤
+                </text>
                 <text
                   x={70 + runnerState.lane * 120}
                   y={32 + runnerState.row * 30 - 18}
