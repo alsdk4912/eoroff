@@ -791,7 +791,7 @@ function App() {
   async function uncancelRequest(requestId) {
     const target = requests.find((r) => r.id === requestId);
     if (!target || target.status !== "CANCELLED") return;
-    if (!window.confirm("취소를 복원하고 다시 신청 상태로 되돌릴까요?")) return;
+    if (!window.confirm("정말 복원하시겠습니까?")) return;
     const prevSnapshot = requests;
     const prevCancellations = cancellations;
     setRequests((prev) => prev.map((r) => (r.id === requestId ? { ...r, status: "APPLIED", cancelLocked: false } : r)));
@@ -1327,7 +1327,7 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest }) {
                     if (r.status === "CANCELLED") {
                       return (
                         <button type="button" onClick={() => void uncancelRequest(r.id)}>
-                          취소 복원
+                          복원
                         </button>
                       );
                     }

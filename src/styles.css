@@ -1639,6 +1639,7 @@ tr.request-dimmed-row .leave-type-pill.selected-item {
 tr.request-cancelled-row td {
   text-decoration: line-through !important;
   color: #64748b !important;
+  background: #f1f5f9 !important;
 }
 
 tr.request-cancelled-row .leave-type-pill.selected-item {
