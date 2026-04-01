@@ -49,8 +49,17 @@ function toKstParts(dateLike) {
   };
 }
 
+function toYmdPartsLoose(dateLike) {
+  const direct = toKstParts(dateLike);
+  if (direct) return direct;
+  const raw = String(dateLike ?? "").trim();
+  const m = /^(\d{4})\D+(\d{1,2})\D+(\d{1,2})/.exec(raw);
+  if (!m) return null;
+  return { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) };
+}
+
 function isKstAprilFirstToTenth(dateLike) {
-  const p = toKstParts(dateLike);
+  const p = toYmdPartsLoose(dateLike);
   return Boolean(p && p.month === 4 && p.day >= 1 && p.day <= 10);
 }
 
@@ -64,8 +73,8 @@ function parseYmdParts(ymd) {
 function isLongTermGoldkeyDeductionExempt(row, cancelledAt) {
   if (String(row?.leave_type ?? "") !== "GOLDKEY") return false;
   const leave = parseYmdParts(row?.leave_date);
-  const requested = toKstParts(row?.requested_at);
-  const cancelled = toKstParts(cancelledAt);
+  const requested = toYmdPartsLoose(row?.requested_at);
+  const cancelled = toYmdPartsLoose(cancelledAt);
   if (!leave || !requested || !cancelled) return false;
   if (leave.year !== cancelled.year) return false;
   if (leave.month < 7 || leave.month > 12) return false;
@@ -569,7 +578,7 @@ app.post("/api/requests/:id/cancel", async (req, res) => {
     if (!row) return res.status(404).json({ error: "요청을 찾을 수 없습니다." });
     if (String(row.status) === "CANCELLED") return res.json({ ok: true, alreadyCancelled: true });
 
-    const cancelledAt = req.body.cancelledAt || new Date().toISOString();
+    const cancelledAt = new Date().toISOString();
     const deductionExempt = isLongTermGoldkeyDeductionExempt(row, cancelledAt);
     const deductionNote = deductionExempt ? "차감 제외 처리됨(장기휴가 모집기간)" : null;
 
