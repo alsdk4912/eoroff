@@ -114,8 +114,8 @@ async function reconcileGoldkeyUsageByPolicy(nowLike = new Date().toISOString())
     if (isSpecialLongTermGoldkeyRequest(r)) {
       const leave = parseYmdParts(r.leave_date);
       const opened = leave ? isAfterRecruitWindowKst(nowLike, leave.year) : false;
-      const active = String(r.status ?? "") !== "CANCELLED" && String(r.status ?? "") !== "REJECTED";
-      shouldCount = opened && active;
+      // 4/11 이후에는 상태(활성/비활성)와 무관하게 신청 건수 기준으로 일괄 반영
+      shouldCount = opened;
     }
     if (!shouldCount) continue;
     usedByUser.set(userId, (usedByUser.get(userId) || 0) + 1);
