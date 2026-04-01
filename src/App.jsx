@@ -1936,13 +1936,14 @@ function NegotiationOrderInput({ request, onCommit, disabled }) {
     <input
       type="text"
       inputMode="numeric"
+      maxLength={3}
       className="negotiation-order-input"
       disabled={disabled}
       value={val}
       onChange={(e) => setVal(e.target.value.replace(/\D/g, "").slice(0, 3))}
       onBlur={() => onCommit(request.id, val)}
       aria-label="협의 순번"
-      placeholder="순번"
+      placeholder=""
       title="협의 후 순번(1~999). 비우면 미정입니다."
     />
   );

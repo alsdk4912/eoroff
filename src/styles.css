@@ -1095,4 +1095,69 @@ tr.request-cancelled-row td button {
   .ladder-field-label {
     font-size: 14px !important;
   }
+
+  /* 달력 신청 현황: 순번 칸 축소 + 가로 한 줄 정렬 */
+  .calendar-applicant-item--row {
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+  }
+
+  .negotiation-order-cell {
+    min-width: 0;
+    width: auto;
+    flex: 0 0 auto;
+  }
+
+  .negotiation-order-input {
+    width: 2.125rem !important;
+    min-width: 2rem;
+    max-width: 2.75rem;
+    padding: 5px 3px !important;
+    font-size: 13px !important;
+    line-height: 1.2;
+    box-sizing: border-box;
+  }
+
+  .negotiation-order-placeholder {
+    width: 2.125rem;
+    min-width: 2rem;
+    height: 1.75rem;
+  }
+
+  .negotiation-order-readonly {
+    min-width: 1.5rem;
+    height: 1.75rem;
+    padding: 0 4px;
+    font-size: 13px;
+  }
+
+  .negotiation-mode-pill {
+    padding: 3px 7px;
+    font-size: 10px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .calendar-applicant-item--row .calendar-applicant-name {
+    flex: 1 1 0;
+    min-width: 0;
+    font-size: 11px;
+    padding: 6px 8px;
+    line-height: 1.35;
+  }
+
+  .calendar-applicant-item--row .row.wrap {
+    flex-shrink: 0;
+    margin-left: 0 !important;
+    gap: 4px;
+  }
+
+  .calendar-applicant-item--row .row.wrap button {
+    padding: 6px 10px !important;
+    font-size: 12px !important;
+  }
 }
