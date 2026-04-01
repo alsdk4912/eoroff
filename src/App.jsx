@@ -729,6 +729,8 @@ function App() {
   async function cancelRequest(requestId) {
     const target = requests.find((r) => r.id === requestId);
     if (target?.cancelLocked) return;
+    const confirmCancel = window.confirm("정말 이 휴가 신청을 취소할까요?");
+    if (!confirmCancel) return;
     const reason = window.prompt("취소 사유를 입력하세요");
     if (!reason) return;
     const payload = {
