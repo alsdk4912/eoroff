@@ -554,10 +554,10 @@ tbody tr:last-child td {
   padding: 3px 6px !important;
   margin-bottom: 0 !important;
   line-height: 1.35 !important;
-  /* iOS Safari: block + text-align 만으로 한글 칩이 한쪽으로 치우칠 때 대비 — 좌우 flex 스페이서로 가운데 정렬 */
   display: flex;
   flex-direction: row;
   align-items: center;
+  justify-content: center;
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
@@ -567,18 +567,22 @@ tbody tr:last-child td {
   font-weight: 700 !important;
   border-radius: 6px !important;
   white-space: normal;
-  word-break: keep-all;
-  text-align: center;
-  text-align-last: center;
   direction: ltr;
   unicode-bidi: isolate;
 }
 
-.calendar-day-chip::before,
-.calendar-day-chip::after {
-  content: "";
-  flex: 1 1 0;
+/* 익명 텍스트 노드 대신 실제 박스에 정렬 (iOS/WebKit 한글 칩 치우침 완화) */
+.calendar-day-chip__text {
+  display: block;
+  flex: 1 1 auto;
   min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  word-break: keep-all;
+  text-align: center !important;
+  text-align-last: center !important;
 }
 
 .calendar-chip-more {

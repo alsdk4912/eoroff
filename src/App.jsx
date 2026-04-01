@@ -2174,7 +2174,7 @@ function CalendarPage({
                       className={`calendar-day-chip ${buildLeaveChipClass(a.leaveType, a.status)}`}
                       title={`${a.name} · ${typeFullLabel(a.leaveType)} · ${statusLabel(a.status)}`}
                     >
-                      {a.name}
+                      <span className="calendar-day-chip__text">{a.name}</span>
                     </span>
                   ))}
                   {cell.displayApplicants.length > CALENDAR_DAY_CHIP_MAX ? (
