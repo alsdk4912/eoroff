@@ -496,8 +496,9 @@ tbody tr:last-child td {
   background: var(--surface);
   padding: 6px 6px 5px;
   border: 1px solid var(--separator);
-  max-height: 120px;
-  overflow: hidden;
+  /* 이름 전체 표시: 셀 높이는 해당 주 행에서 가장 긴 셀에 맞춰 늘어남 */
+  max-height: none;
+  overflow: visible;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -525,25 +526,25 @@ tbody tr:last-child td {
 .calendar-cell-events {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  flex: 1;
+  gap: 3px;
+  flex: 1 1 auto;
   min-height: 0;
   margin-top: 2px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .calendar-day-chip {
   font-size: 10px !important;
-  padding: 2px 5px !important;
+  padding: 3px 5px !important;
   margin-bottom: 0 !important;
-  line-height: 1.25 !important;
+  line-height: 1.35 !important;
   display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
   max-width: 100%;
   font-weight: 700 !important;
   border-radius: 6px !important;
+  white-space: normal;
+  word-break: keep-all;
 }
 
 .calendar-chip-more {
@@ -723,6 +724,47 @@ tbody tr:last-child td {
 }
 
 /* ----- Ladder ----- */
+.ladder-date-type-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px 16px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+
+.ladder-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  cursor: default;
+}
+
+.ladder-field-label {
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  color: var(--text-primary) !important;
+  margin: 0 !important;
+  letter-spacing: -0.2px;
+}
+
+.ladder-field--date .ymd-split {
+  flex-wrap: wrap;
+  gap: 6px !important;
+}
+
+.ladder-field--date .ymd-select {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.ladder-field--type select {
+  width: 100%;
+  font-size: 14px;
+  font-weight: 500;
+}
+
 .ladder-toolbar {
   margin-bottom: 10px;
 }
@@ -1036,5 +1078,13 @@ tr.request-cancelled-row td button {
 
   .admin-day-grid {
     grid-template-columns: 1fr;
+  }
+
+  .ladder-date-type-row {
+    gap: 10px 10px;
+  }
+
+  .ladder-field-label {
+    font-size: 14px !important;
   }
 }

@@ -1776,20 +1776,20 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
           ? applicantUserIds.map((id) => idToName.get(id) ?? id).join(", ")
           : "없음"}
       </p>
-      <div className="row wrap ladder-toolbar">
-        <div>
-          <label className="field-label">휴가일</label>
+      <div className="ladder-date-type-row">
+        <label className="ladder-field ladder-field--date">
+          <span className="field-label ladder-field-label">휴가일</span>
           <YmdSplitInput value={leaveDate} onChange={setLeaveDate} />
-        </div>
-        <div>
-          <label className="field-label">유형</label>
+        </label>
+        <label className="ladder-field ladder-field--type">
+          <span className="field-label ladder-field-label">유형</span>
           <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)}>
             <option value="GENERAL_PRIORITY">일반휴가-우선순위</option>
             <option value="GENERAL_NORMAL">일반휴가-후순위</option>
             <option value="GOLDKEY">골드키</option>
             <option value="HALF_DAY">반차</option>
           </select>
-        </div>
+        </label>
       </div>
 
       <div className="ladder-participant-block">
