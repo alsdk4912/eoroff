@@ -1320,9 +1320,41 @@ function MyRequestsPage({ myRequests, cancelRequest }) {
   );
 }
 
-/** 오프라인 fallback: 골드키 신청 건수 */
-function countGoldkeyApplyUse(requests, userId) {
-  return requests.filter((r) => r.userId === userId && r.leaveType === "GOLDKEY").length;
+function parseYmdLoose(ymd) {
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(String(ymd ?? "").trim());
+  if (!m) return null;
+  return { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) };
+}
+
+function isAfterApril10(nowLike, year) {
+  const p = toKstParts(nowLike);
+  if (!p) return false;
+  if (p.year > year) return true;
+  if (p.year < year) return false;
+  if (p.month > 4) return true;
+  if (p.month < 4) return false;
+  return p.day >= 11;
+}
+
+function isSpecialLongTermGoldkeyRequestForDashboard(r) {
+  if (r.leaveType !== "GOLDKEY") return false;
+  const leave = parseYmdLoose(r.leaveDate);
+  const req = toKstParts(r.requestedAt);
+  if (!leave || !req) return false;
+  if (leave.year !== req.year) return false;
+  if (leave.month < 7 || leave.month > 12) return false;
+  return req.month === 4 && req.day >= 1 && req.day <= 10;
+}
+
+/** 종합현황 표시용 신청·사용 집계 (요청 정책: 4/11 전엔 장기모집 특수건 미반영, 4/11 후엔 상태 무관 신청건수 반영) */
+function countGoldkeyApplyUse(requests, userId, nowLike = new Date().toISOString()) {
+  return requests.filter((r) => {
+    if (r.userId !== userId || r.leaveType !== "GOLDKEY") return false;
+    if (!isSpecialLongTermGoldkeyRequestForDashboard(r)) return true;
+    const leave = parseYmdLoose(r.leaveDate);
+    if (!leave) return true;
+    return isAfterApril10(nowLike, leave.year);
+  }).length;
 }
 
 /** 종합현황·관리자: 서버 연결 시 API 총량 우선, 오프라인·누락 시 이름별 정책(간호사별 10~15) */
@@ -1381,10 +1413,8 @@ function DashboardPage({ dashboard, goldkeys, requests, cancellations, users, se
                   .map((u) => {
                     const g = goldkeys.find((x) => x.userId === u.id);
                     const quotaTotal = goldkeyQuotaTotalForDisplay(u, g, serverMode);
-                    const usedFromStore = Number(g?.usedCount ?? g?.used_count);
-                    const remainingFromStore = Number(g?.remainingCount ?? g?.remaining_count);
-                    const applyUse = Number.isFinite(usedFromStore) ? usedFromStore : countGoldkeyApplyUse(requests, u.id);
-                    const remaining = Number.isFinite(remainingFromStore) ? remainingFromStore : Math.max(0, quotaTotal - applyUse);
+                    const applyUse = countGoldkeyApplyUse(requests, u.id, new Date().toISOString());
+                    const remaining = Math.max(0, quotaTotal - applyUse);
                     return (
                       <tr key={u.id}>
                         <td>{u.name}</td>
