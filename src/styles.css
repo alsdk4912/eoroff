@@ -103,31 +103,16 @@ body::before {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 6px;
+  gap: 10px;
   flex-shrink: 0;
 }
 
-.app-header-account-link {
-  flex: 0 0 auto;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.2;
+/* Link + 버튼 동일: 로그아웃과 같은 고스트 스타일 유지 */
+.app-header-account-btn {
+  display: inline-block;
   text-decoration: none;
-  color: var(--accent);
-  padding: 6px 12px;
-  border-radius: var(--radius-pill);
-  border: 1px solid rgba(37, 99, 235, 0.22);
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
-  transition: background 0.15s ease, transform 0.12s ease;
-}
-
-.app-header-account-link:hover {
-  background: var(--accent-muted);
-}
-
-.app-header-account-link:active {
-  transform: scale(0.98);
+  text-align: center;
+  box-sizing: border-box;
 }
 
 /* ----- Navigation pills ----- */

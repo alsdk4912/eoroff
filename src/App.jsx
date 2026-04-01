@@ -995,7 +995,7 @@ function App() {
             <button type="button" className="btn-ghost-header" onClick={handleLogout}>
               로그아웃
             </button>
-            <Link to="/account" className="app-header-account-link">
+            <Link to="/account" className="btn-ghost-header app-header-account-btn">
               비밀번호 변경
             </Link>
           </div>
