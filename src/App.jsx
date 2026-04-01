@@ -991,9 +991,14 @@ function App() {
       <header className="app-header">
         <div className="app-header-row">
           <h1 className="app-header-title">EOR 휴가</h1>
-          <button type="button" className="btn-ghost-header" onClick={handleLogout}>
-            로그아웃
-          </button>
+          <div className="app-header-actions">
+            <button type="button" className="btn-ghost-header" onClick={handleLogout}>
+              로그아웃
+            </button>
+            <Link to="/account" className="app-header-account-link">
+              비밀번호 변경
+            </Link>
+          </div>
         </div>
         <p className="app-header-meta">
           {currentUser?.name} · {currentUser?.role} · {serverMode ? "연동" : "로컬"} · 빌드{" "}
@@ -1008,7 +1013,6 @@ function App() {
             <Link to="/dashboard">통합 현황</Link>
             <Link to="/admin">휴가 배정 내역</Link>
             <Link to="/ladder">추첨 배정</Link>
-            <Link to="/account">비밀번호 변경</Link>
           </>
         ) : (
           <>
@@ -1016,7 +1020,6 @@ function App() {
             {currentUser?.role === "NURSE" ? <Link to="/my">신청 내역</Link> : null}
             <Link to="/dashboard">종합 현황</Link>
             {currentUser?.role !== "ANESTHESIA" ? <Link to="/ladder">추첨 배정</Link> : null}
-            <Link to="/account">비밀번호 변경</Link>
           </>
         )}
       </nav>

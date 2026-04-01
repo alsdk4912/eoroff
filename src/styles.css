@@ -99,6 +99,37 @@ body::before {
   opacity: 0.88;
 }
 
+.app-header-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.app-header-account-link {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  color: var(--accent);
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  border: 1px solid rgba(37, 99, 235, 0.22);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  transition: background 0.15s ease, transform 0.12s ease;
+}
+
+.app-header-account-link:hover {
+  background: var(--accent-muted);
+}
+
+.app-header-account-link:active {
+  transform: scale(0.98);
+}
+
 /* ----- Navigation pills ----- */
 .app-nav {
   display: flex;
