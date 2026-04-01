@@ -81,6 +81,55 @@ function isLongTermGoldkeyDeductionExempt(row, cancelledAt) {
   return isKstAprilFirstToTenth(row.requested_at) && isKstAprilFirstToTenth(cancelledAt);
 }
 
+function isSpecialLongTermGoldkeyRequest(row) {
+  if (String(row?.leave_type ?? "") !== "GOLDKEY") return false;
+  const leave = parseYmdParts(row?.leave_date);
+  const requested = toYmdPartsLoose(row?.requested_at);
+  if (!leave || !requested) return false;
+  if (leave.year !== requested.year) return false;
+  if (leave.month < 7 || leave.month > 12) return false;
+  return requested.month === 4 && requested.day >= 1 && requested.day <= 10;
+}
+
+function isAfterRecruitWindowKst(nowLike, year) {
+  const now = toYmdPartsLoose(nowLike);
+  if (!now) return false;
+  if (now.year > year) return true;
+  if (now.year < year) return false;
+  if (now.month > 4) return true;
+  if (now.month < 4) return false;
+  return now.day >= 11;
+}
+
+async function reconcileGoldkeyUsageByPolicy(nowLike = new Date().toISOString()) {
+  const reqRows = await queryAll(
+    "SELECT user_id, leave_type, leave_date, requested_at, status FROM requests WHERE leave_type = 'GOLDKEY'"
+  );
+  const goldkeyRows = await queryAll("SELECT user_id, quota_total FROM goldkeys");
+  const usedByUser = new Map();
+  for (const r of reqRows) {
+    const userId = String(r.user_id ?? "");
+    if (!userId) continue;
+    let shouldCount = true;
+    if (isSpecialLongTermGoldkeyRequest(r)) {
+      const leave = parseYmdParts(r.leave_date);
+      const opened = leave ? isAfterRecruitWindowKst(nowLike, leave.year) : false;
+      const active = String(r.status ?? "") !== "CANCELLED" && String(r.status ?? "") !== "REJECTED";
+      shouldCount = opened && active;
+    }
+    if (!shouldCount) continue;
+    usedByUser.set(userId, (usedByUser.get(userId) || 0) + 1);
+  }
+
+  for (const g of goldkeyRows) {
+    const userId = String(g.user_id ?? "");
+    const quota = Number(g.quota_total || 0);
+    const used = Math.max(0, Number(usedByUser.get(userId) || 0));
+    const remaining = Math.max(0, quota - used);
+    await execute("UPDATE goldkeys SET used_count = ?, remaining_count = ? WHERE user_id = ?", used, remaining, userId);
+  }
+}
+
 async function upsertKoreanHolidaysFromPublicApi(year, monthOpt) {
   const y = Number(year);
   if (!Number.isInteger(y) || y < 2000 || y > 2100) throw new Error("year 범위가 올바르지 않습니다.");
@@ -133,6 +182,7 @@ app.get("/api/health", (_, res) => {
 
 app.get("/api/bootstrap", async (_, res) => {
   try {
+    await reconcileGoldkeyUsageByPolicy(new Date().toISOString());
     res.json({
       users: await queryAll("SELECT id, name, employee_no, role FROM users"),
       goldkeys: await queryAll("SELECT * FROM goldkeys"),
@@ -506,13 +556,6 @@ app.post("/api/requests", async (req, res) => {
       }
     }
 
-    if (leaveType === "GOLDKEY") {
-      const g = await queryOne("SELECT remaining_count FROM goldkeys WHERE user_id = ?", userId);
-      if (!g || Number(g.remaining_count) <= 0) {
-        return res.status(400).json({ error: "잔여 골드키가 없습니다." });
-      }
-    }
-
     await runTransaction(async (tx) => {
       await tx.execute(
         "INSERT INTO requests (id, user_id, leave_date, leave_type, leave_nature, status, requested_at, memo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -525,16 +568,10 @@ app.post("/api/requests", async (req, res) => {
         requestedAt,
         memo
       );
-      if (leaveType === "GOLDKEY") {
-        const r = await tx.execute(
-          "UPDATE goldkeys SET used_count = used_count + 1, remaining_count = remaining_count - 1 WHERE user_id = ? AND remaining_count > 0",
-          userId
-        );
-        if (!r.changes) {
-          throw new Error("골드키 잔여 차감에 실패했습니다.");
-        }
-      }
     });
+    if (leaveType === "GOLDKEY") {
+      await reconcileGoldkeyUsageByPolicy(requestedAt || new Date().toISOString());
+    }
 
     res.json({ ok: true });
   } catch (err) {
@@ -584,12 +621,6 @@ app.post("/api/requests/:id/cancel", async (req, res) => {
 
     await runTransaction(async (tx) => {
       await tx.execute("UPDATE requests SET status = 'CANCELLED' WHERE id = ?", req.params.id);
-      if (deductionExempt) {
-        await tx.execute(
-          "UPDATE goldkeys SET used_count = CASE WHEN used_count > 0 THEN used_count - 1 ELSE 0 END, remaining_count = CASE WHEN remaining_count < quota_total THEN remaining_count + 1 ELSE quota_total END WHERE user_id = ?",
-          row.user_id
-        );
-      }
       await tx.execute(
         "INSERT INTO cancellations (id, leave_request_id, cancelled_by, cancel_reason, cancelled_at, deduction_exempt, deduction_note) VALUES (?, ?, ?, ?, ?, ?, ?)",
         req.body.cancellationId,
@@ -601,6 +632,7 @@ app.post("/api/requests/:id/cancel", async (req, res) => {
         deductionNote
       );
     });
+    await reconcileGoldkeyUsageByPolicy(cancelledAt);
     res.json({ ok: true, deductionExempt, deductionNote });
   } catch (err) {
     console.error("POST /api/requests/:id/cancel", err);
