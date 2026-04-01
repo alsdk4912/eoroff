@@ -729,14 +729,12 @@ function App() {
   async function cancelRequest(requestId) {
     const target = requests.find((r) => r.id === requestId);
     if (target?.cancelLocked) return;
-    const confirmCancel = window.confirm("정말 이 휴가 신청을 취소할까요?");
-    if (!confirmCancel) return;
-    const reason = window.prompt("취소 사유를 입력하세요");
-    if (!reason) return;
+    const ok = window.confirm("정말 취소하시겠습니까?");
+    if (!ok) return;
     const payload = {
       cancellationId: `lc_${Date.now()}`,
       cancelledBy: auth.userId,
-      cancelReason: reason,
+      cancelReason: "사용자 취소",
       cancelledAt: new Date().toISOString(),
     };
     const deductionExempt = isLongTermGoldkeyDeductionExempt(target, payload.cancelledAt);
