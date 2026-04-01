@@ -1576,22 +1576,31 @@ function DashboardPage({
                   }
                 >
                   <td className="work-schedule-name-cell">{row.name}</td>
-                  {WORK_SCHEDULE_2026_MONTHS.map((_, idx) => (
-                    <td key={`${row.name}-${idx}`} className="work-schedule-month-cell">
-                      <select
-                        className="work-schedule-select"
-                        value={row.values?.[idx] ?? ""}
-                        onChange={(e) => onDraftCellChange(row.name, idx, e.target.value)}
-                        aria-label={`${row.name} ${idx + 1}월 근무`}
-                      >
-                        {WORK_SCHEDULE_OPTIONS.map((opt) => (
-                          <option key={`${row.name}-${idx}-${opt || "empty"}`} value={opt}>
-                            {opt || "-"}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                  ))}
+                  {WORK_SCHEDULE_2026_MONTHS.map((_, idx) => {
+                    const cellVal = row.values?.[idx] ?? "";
+                    const faceLabel = String(cellVal).trim() ? cellVal : "—";
+                    return (
+                      <td key={`${row.name}-${idx}`} className="work-schedule-month-cell">
+                        <label className="work-schedule-picker">
+                          <span className="work-schedule-picker-face" aria-hidden="true">
+                            {faceLabel}
+                          </span>
+                          <select
+                            className="work-schedule-select"
+                            value={cellVal}
+                            onChange={(e) => onDraftCellChange(row.name, idx, e.target.value)}
+                            aria-label={`${row.name} ${idx + 1}월 근무`}
+                          >
+                            {WORK_SCHEDULE_OPTIONS.map((opt) => (
+                              <option key={`${row.name}-${idx}-${opt || "empty"}`} value={opt}>
+                                {opt || "-"}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>
