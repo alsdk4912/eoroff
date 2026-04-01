@@ -1266,6 +1266,32 @@ function RequestPage({
   );
 }
 
+/** 내 신청내역: 한 줄 가독성용 짧은 표기 */
+function formatLeaveDateShort(ymd) {
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(String(ymd ?? "").trim());
+  if (!m) return String(ymd ?? "");
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  const cy = new Date().getFullYear();
+  if (y !== cy) return `${y}.${mo}/${d}`;
+  return `${mo}/${d}`;
+}
+
+function formatRequestedAtCompact(iso) {
+  try {
+    const t = new Date(iso);
+    if (Number.isNaN(t.getTime())) return String(iso ?? "");
+    const mo = t.getMonth() + 1;
+    const d = t.getDate();
+    const h = String(t.getHours()).padStart(2, "0");
+    const min = String(t.getMinutes()).padStart(2, "0");
+    return `${mo}/${d} ${h}:${min}`;
+  } catch {
+    return String(iso ?? "");
+  }
+}
+
 function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest }) {
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [search, setSearch] = useState("");
@@ -1287,9 +1313,9 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest }) {
       return a.requestedAt.localeCompare(b.requestedAt);
     });
   return (
-    <section className="card">
-      <h2>내 신청내역</h2>
-      <div className="row wrap">
+    <section className="card my-requests-card">
+      <h2 id="my-requests-heading">내 신청내역</h2>
+      <div className="row wrap my-requests-toolbar">
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="ALL">전체 상태</option>
           <option value="APPLIED">신청</option>
@@ -1299,8 +1325,8 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest }) {
         </select>
         <input placeholder="날짜/유형/상태 검색" value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
-      <div className="table-wrap">
-        <table>
+      <div className="table-wrap my-requests-wrap">
+        <table className="my-requests-table" aria-labelledby="my-requests-heading">
           <thead>
             <tr>
               <th>휴가일</th>
@@ -1317,14 +1343,14 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest }) {
                 key={r.id}
                 className={r.status === "CANCELLED" ? "request-cancelled-row" : ""}
               >
-                <td>{r.leaveDate}</td>
-                <td>
+                <td className="my-requests-col my-requests-col--date">{formatLeaveDateShort(r.leaveDate)}</td>
+                <td className="my-requests-col my-requests-col--type">
                   <span className={`leave-type-pill ${buildLeaveChipClass(r.leaveType, r.status)}`}>{leaveTypeLabel(r.leaveType)}</span>
                 </td>
-                <td>{leaveNatureLabel(r.leaveNature)}</td>
-                <td>{statusLabel(r.status)}</td>
-                <td>{new Date(r.requestedAt).toLocaleString("ko-KR")}</td>
-                <td>
+                <td className="my-requests-col my-requests-col--nature">{leaveNatureLabel(r.leaveNature)}</td>
+                <td className="my-requests-col my-requests-col--status">{statusLabel(r.status)}</td>
+                <td className="my-requests-col my-requests-col--time">{formatRequestedAtCompact(r.requestedAt)}</td>
+                <td className="my-requests-col my-requests-col--action">
                   {(() => {
                     const isLocked = Boolean(r.cancelLocked);
                     if (r.status === "CANCELLED") {

@@ -376,6 +376,113 @@ tbody tr:last-child td {
   border-bottom: none;
 }
 
+/* ----- 내 신청내역: 모바일에서 신청 1건 = 가로 한 줄 ----- */
+.my-requests-table .my-requests-col {
+  vertical-align: middle;
+}
+
+.my-requests-table .my-requests-col--type .leave-type-pill {
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .my-requests-card h2 {
+    font-size: 17px;
+    margin-bottom: 10px;
+  }
+
+  .my-requests-toolbar {
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .my-requests-toolbar select,
+  .my-requests-toolbar input {
+    font-size: 13px;
+    padding: 8px 10px;
+    min-height: 40px;
+  }
+
+  .my-requests-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .my-requests-table {
+    width: max-content;
+    min-width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .my-requests-table thead {
+    display: none;
+  }
+
+  .my-requests-table tbody {
+    display: block;
+    width: 100%;
+  }
+
+  .my-requests-table tbody tr {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 8px;
+    border-bottom: 1px solid var(--separator);
+    box-sizing: border-box;
+  }
+
+  .my-requests-table tbody tr:last-child {
+    border-bottom: none;
+  }
+
+  .my-requests-table tbody td {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    padding: 0;
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.25;
+    border-bottom: none;
+    white-space: nowrap;
+  }
+
+  .my-requests-table tbody td.my-requests-col--date {
+    font-weight: 700;
+    flex: 0 0 auto;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .my-requests-table tbody td.my-requests-col--type .leave-type-pill {
+    font-size: 10px !important;
+    padding: 2px 6px !important;
+    line-height: 1.2 !important;
+    margin: 0 !important;
+  }
+
+  .my-requests-table tbody td.my-requests-col--time {
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+    flex: 0 0 auto;
+  }
+
+  .my-requests-table tbody td.my-requests-col--action {
+    margin-left: auto;
+    flex: 0 0 auto;
+  }
+
+  .my-requests-table tbody td.my-requests-col--action button {
+    padding: 6px 8px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+}
+
 /* ----- Misc ----- */
 .help {
   margin-top: 8px;
