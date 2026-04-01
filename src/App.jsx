@@ -82,11 +82,20 @@ function toLocalYMD(d) {
 function toKstParts(dateLike) {
   const d = new Date(dateLike);
   if (Number.isNaN(d.getTime())) return null;
-  const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+  const year = Number(parts.find((p) => p.type === "year")?.value);
+  const month = Number(parts.find((p) => p.type === "month")?.value);
+  const day = Number(parts.find((p) => p.type === "day")?.value);
+  if (!year || !month || !day) return null;
   return {
-    year: kst.getUTCFullYear(),
-    month: kst.getUTCMonth() + 1,
-    day: kst.getUTCDate(),
+    year,
+    month,
+    day,
   };
 }
 
@@ -749,8 +758,11 @@ function App() {
     }
     if (serverMode) {
       try {
-        await api.cancelRequest(requestId, payload);
+        const result = await api.cancelRequest(requestId, payload);
         await bootstrap();
+        if (result?.deductionExempt) {
+          window.alert?.(result?.deductionNote || "차감 제외 처리됨(장기휴가 모집기간)");
+        }
       } catch (e) {
         window.alert?.(`취소 반영 실패: ${e?.message || e}`);
         setRequests(prevSnapshot);

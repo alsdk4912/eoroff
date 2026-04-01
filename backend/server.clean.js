@@ -23,11 +23,20 @@ const HOST = process.env.HOST || "0.0.0.0";
 function toKstParts(dateLike) {
   const d = new Date(dateLike);
   if (Number.isNaN(d.getTime())) return null;
-  const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+  const year = Number(parts.find((p) => p.type === "year")?.value);
+  const month = Number(parts.find((p) => p.type === "month")?.value);
+  const day = Number(parts.find((p) => p.type === "day")?.value);
+  if (!year || !month || !day) return null;
   return {
-    year: kst.getUTCFullYear(),
-    month: kst.getUTCMonth() + 1,
-    day: kst.getUTCDate(),
+    year,
+    month,
+    day,
   };
 }
 
