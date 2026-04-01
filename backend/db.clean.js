@@ -413,11 +413,9 @@ async function ensureKnownEmployeeNos() {
 }
 
 async function backfillLongTermGoldkeyCancellationExemptions() {
-  const rows = await queryAll(
+  const cancellationRows = await queryAll(
     `SELECT
        c.id AS cancellation_id,
-       c.deduction_exempt,
-       c.deduction_note,
        c.cancelled_at,
        r.id AS request_id,
        r.user_id,
@@ -428,26 +426,52 @@ async function backfillLongTermGoldkeyCancellationExemptions() {
      JOIN requests r ON r.id = c.leave_request_id`
   );
 
-  for (const row of rows) {
-    const alreadyExempt = Number(row.deduction_exempt || 0) === 1;
-    if (alreadyExempt) continue;
+  for (const row of cancellationRows) {
     if (String(row.leave_type || "") !== "GOLDKEY") continue;
     const leave = parseLeaveYmd(row.leave_date);
     if (!leave || leave.month < 7 || leave.month > 12) continue;
     if (!isKstAprilFirstToTenth(row.requested_at)) continue;
     if (!isKstAprilFirstToTenth(row.cancelled_at)) continue;
 
-    await runTransaction(async (tx) => {
-      await tx.execute(
-        "UPDATE goldkeys SET used_count = CASE WHEN used_count > 0 THEN used_count - 1 ELSE 0 END, remaining_count = CASE WHEN remaining_count < quota_total THEN remaining_count + 1 ELSE quota_total END WHERE user_id = ?",
-        row.user_id
-      );
-      await tx.execute(
-        "UPDATE cancellations SET deduction_exempt = 1, deduction_note = ? WHERE id = ?",
-        "차감 제외 처리됨(장기휴가 모집기간)",
-        row.cancellation_id
-      );
-    });
+    await execute(
+      "UPDATE cancellations SET deduction_exempt = 1, deduction_note = ? WHERE id = ?",
+      "차감 제외 처리됨(장기휴가 모집기간)",
+      row.cancellation_id
+    );
+  }
+
+  await execute("UPDATE cancellations SET deduction_exempt = 0, deduction_note = NULL WHERE deduction_exempt IS NULL");
+
+  const allGoldkeyByUser = await queryAll(
+    `SELECT user_id, COUNT(*) AS c
+     FROM requests
+     WHERE leave_type = 'GOLDKEY'
+     GROUP BY user_id`
+  );
+  const exemptGoldkeyByUser = await queryAll(
+    `SELECT r.user_id, COUNT(*) AS c
+     FROM cancellations c
+     JOIN requests r ON r.id = c.leave_request_id
+     WHERE r.leave_type = 'GOLDKEY' AND c.deduction_exempt = 1
+     GROUP BY r.user_id`
+  );
+
+  const totalMap = new Map(allGoldkeyByUser.map((r) => [String(r.user_id), Number(r.c || 0)]));
+  const exemptMap = new Map(exemptGoldkeyByUser.map((r) => [String(r.user_id), Number(r.c || 0)]));
+  const goldkeyRows = await queryAll("SELECT user_id, quota_total FROM goldkeys");
+  for (const g of goldkeyRows) {
+    const userId = String(g.user_id);
+    const total = totalMap.get(userId) || 0;
+    const exempt = exemptMap.get(userId) || 0;
+    const expectedUsed = Math.max(0, total - exempt);
+    const quota = Number(g.quota_total || 0);
+    const expectedRemaining = Math.max(0, quota - expectedUsed);
+    await execute(
+      "UPDATE goldkeys SET used_count = ?, remaining_count = ? WHERE user_id = ?",
+      expectedUsed,
+      expectedRemaining,
+      userId
+    );
   }
 }
 
