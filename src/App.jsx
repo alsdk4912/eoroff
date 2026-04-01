@@ -1553,10 +1553,10 @@ function DashboardPage({
           </div>
         </section>
       ) : null}
-      <section className="card">
+      <section className="card work-schedule-card">
         <h2>2026년 근무표</h2>
-        <div className="table-wrap">
-          <table>
+        <div className="table-wrap work-schedule-wrap">
+          <table className="work-schedule-table">
             <thead>
               <tr>
                 <th>이름</th>
@@ -1575,10 +1575,11 @@ function DashboardPage({
                       : ""
                   }
                 >
-                  <td>{row.name}</td>
+                  <td className="work-schedule-name-cell">{row.name}</td>
                   {WORK_SCHEDULE_2026_MONTHS.map((_, idx) => (
-                    <td key={`${row.name}-${idx}`}>
+                    <td key={`${row.name}-${idx}`} className="work-schedule-month-cell">
                       <select
+                        className="work-schedule-select"
                         value={row.values?.[idx] ?? ""}
                         onChange={(e) => onDraftCellChange(row.name, idx, e.target.value)}
                         aria-label={`${row.name} ${idx + 1}월 근무`}

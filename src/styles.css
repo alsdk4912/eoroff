@@ -1077,6 +1077,100 @@ tbody tr:last-child td {
   background: #ecfdf5;
 }
 
+/* ----- 종합현황 · 2026 근무표: 모바일에서 select에 글자(안E, 5D2 등)가 보이도록 ----- */
+.work-schedule-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.work-schedule-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.work-schedule-table th,
+.work-schedule-table td {
+  border-right: 1px solid var(--separator);
+  border-bottom: 1px solid var(--separator);
+  box-sizing: border-box;
+}
+
+.work-schedule-table th:last-child,
+.work-schedule-table td:last-child {
+  border-right: none;
+}
+
+.work-schedule-table thead th {
+  background: #fafafa;
+}
+
+.work-schedule-table th:first-child,
+.work-schedule-table td.work-schedule-name-cell {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 3.5rem;
+  max-width: 5.5rem;
+  white-space: nowrap;
+  padding: 8px 6px;
+  background: var(--surface);
+  box-shadow: 2px 0 6px rgba(0, 0, 0, 0.06);
+}
+
+.work-schedule-table thead th:first-child {
+  z-index: 3;
+  background: #fafafa;
+}
+
+.work-schedule-table tbody tr.work-schedule-row--highlight td.work-schedule-name-cell {
+  background: #ecfdf5;
+}
+
+.work-schedule-table th:not(:first-child),
+.work-schedule-table td.work-schedule-month-cell {
+  min-width: 5rem;
+  width: 5rem;
+  padding: 6px 4px;
+  vertical-align: middle;
+}
+
+.work-schedule-table .work-schedule-select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  min-height: 42px;
+  padding: 8px 26px 8px 8px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.25;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--separator);
+  background-color: var(--fill-secondary);
+  color: var(--text-primary);
+}
+
+.work-schedule-table tbody tr:last-child td {
+  border-bottom: 1px solid var(--separator);
+}
+
+@media (max-width: 768px) {
+  .work-schedule-table th:not(:first-child),
+  .work-schedule-table td.work-schedule-month-cell {
+    min-width: 5.25rem;
+    width: 5.25rem;
+  }
+
+  .work-schedule-table .work-schedule-select {
+    /* iOS: 16px 미만이면 포커스 시 확대 — 글자 가독성과 함께 */
+    font-size: 16px;
+    min-height: 44px;
+    padding: 8px 28px 8px 7px;
+  }
+}
+
 .badge--count-only {
   display: block;
   width: fit-content;
