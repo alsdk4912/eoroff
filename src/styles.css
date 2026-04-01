@@ -2026,3 +2026,50 @@ tr.request-cancelled-row td button {
   stroke: #dc2626;
   stroke-width: 2;
 }
+
+/* Calendar compact event chips */
+.calendar-month-arrow {
+  min-width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 999px;
+  line-height: 1;
+}
+
+.calendar-mini-events {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 70px;
+  overflow: hidden;
+}
+
+.calendar-mini-event {
+  font-size: 10px !important;
+  line-height: 1.25 !important;
+  font-weight: 700 !important;
+  margin-bottom: 0 !important;
+  padding: 1px 5px !important;
+  border-radius: 6px !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.calendar-mini-more {
+  font-size: 10px;
+  line-height: 1.2;
+  color: #64748b;
+  font-weight: 700;
+  padding-left: 2px;
+}
+
+@media (max-width: 768px) {
+  .calendar-mini-events {
+    max-height: 54px;
+  }
+  .calendar-mini-event {
+    font-size: 9px !important;
+    padding: 1px 4px !important;
+  }
+}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, Navigate, Route, Routes } from "react-router-dom";
 import {
   holidaysCache as seedHolidays,
@@ -1983,7 +1983,6 @@ function CalendarPage({
   deleteDayComment,
 }) {
   const [detailTab, setDetailTab] = useState("list");
-  const touchStartRef = useRef(null);
 
   useEffect(() => {
     if (!selectedYmd) return;
@@ -2105,28 +2104,15 @@ function CalendarPage({
       </p>
       <div className="row">
         <label>월 선택 </label>
+        <button type="button" className="calendar-month-arrow" onClick={() => moveCalendarMonth(-1)} aria-label="이전 달">
+          ◀
+        </button>
         <input type="month" value={calendarMonth} onChange={(e) => setCalendarMonth(e.target.value)} />
+        <button type="button" className="calendar-month-arrow" onClick={() => moveCalendarMonth(1)} aria-label="다음 달">
+          ▶
+        </button>
       </div>
-      <div
-        className="calendar"
-        onTouchStart={(e) => {
-          const t = e.changedTouches?.[0];
-          if (!t) return;
-          touchStartRef.current = { x: t.clientX, y: t.clientY };
-        }}
-        onTouchEnd={(e) => {
-          const t = e.changedTouches?.[0];
-          const start = touchStartRef.current;
-          touchStartRef.current = null;
-          if (!t || !start) return;
-          const dx = t.clientX - start.x;
-          const dy = t.clientY - start.y;
-          if (Math.abs(dx) < 50) return;
-          if (Math.abs(dy) > Math.abs(dx) * 0.8) return;
-          if (dx < 0) moveCalendarMonth(1);
-          else moveCalendarMonth(-1);
-        }}
-      >
+      <div className="calendar">
         {["일", "월", "화", "수", "목", "금", "토"].map((d) => (
           <div key={d} className="calendar-head">
             {d}
@@ -2171,8 +2157,19 @@ function CalendarPage({
             >
               <div className={`calendar-date${cell.isOffDay ? " calendar-date--holiday" : ""}`}>{cell.day}</div>
               {cell.requestCount > 0 ? (
-                <div className={`badge badge--count-only${cell.hasGoldkeyRequest ? " badge--count-goldkey" : ""}`}>
-                  {cell.requestCount}
+                <div className="calendar-mini-events" aria-label={`휴가 신청 ${cell.requestCount}건`}>
+                  {(cell.applicants ?? []).slice(0, 3).map((ap) => (
+                    <div
+                      key={ap.id}
+                      className={`calendar-mini-event selected-item ${leaveTypeCssClass(ap.leaveType)}${
+                        ap.status === "CANCELLED" ? " request-cancelled" : ""
+                      }`}
+                      title={`${ap.name} · ${typeFullLabel(ap.leaveType)}`}
+                    >
+                      {ap.name}
+                    </div>
+                  ))}
+                  {cell.requestCount > 3 ? <div className="calendar-mini-more">+{cell.requestCount - 3}명</div> : null}
                 </div>
               ) : null}
             </div>
