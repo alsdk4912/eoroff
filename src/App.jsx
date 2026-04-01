@@ -80,6 +80,15 @@ function toLocalYMD(d) {
 }
 
 function toKstParts(dateLike) {
+  const raw = String(dateLike ?? "").trim();
+  const korean = /^(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.\s*(오전|오후)\s*(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(raw);
+  if (korean) {
+    return {
+      year: Number(korean[1]),
+      month: Number(korean[2]),
+      day: Number(korean[3]),
+    };
+  }
   const d = new Date(dateLike);
   if (Number.isNaN(d.getTime())) return null;
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -101,7 +110,7 @@ function toKstParts(dateLike) {
 
 function parseYmdParts(ymd) {
   const s = String(ymd ?? "").trim();
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
   if (!m) return null;
   return { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) };
 }
