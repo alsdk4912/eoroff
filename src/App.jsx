@@ -35,6 +35,7 @@ const LS_HOLIDAY_DUTIES = "or.holidayDuties.v1";
 const LS_LADDER_RESULTS = "or.ladderResults.v1";
 const LS_ADMIN_DAY_MEMOS = "or.adminDayMemos.v1";
 const LS_DAY_COMMENTS = "or.dayComments.v1";
+const LS_WORK_SCHEDULE_2026 = "or.workSchedule2026.v1";
 
 /** 이전 버전 키는 남아 있으면 혼동만 되므로 제거(현재 키는 유지) */
 function dropStaleOfflineLeaveKeys() {
@@ -214,6 +215,7 @@ function App() {
   const [ladderResults, setLadderResults] = useLocalStorage(LS_LADDER_RESULTS, initialLadderResults);
   const [adminDayMemos, setAdminDayMemos] = useLocalStorage(LS_ADMIN_DAY_MEMOS, {});
   const [dayComments, setDayComments] = useLocalStorage(LS_DAY_COMMENTS, []);
+  const [workScheduleRows, setWorkScheduleRows] = useLocalStorage(LS_WORK_SCHEDULE_2026, WORK_SCHEDULE_2026_ROWS);
 
   useEffect(() => {
     dropStaleOfflineLeaveKeys();
@@ -913,6 +915,21 @@ function App() {
     setDayComments((prev) => (Array.isArray(prev) ? prev : []).filter((row) => !(row.id === id && row.userId === auth.userId)));
   }
 
+  function updateWorkScheduleCell(name, monthIndex, value) {
+    const n = String(name ?? "").trim();
+    const idx = Number(monthIndex);
+    if (!n || !Number.isInteger(idx) || idx < 0 || idx >= WORK_SCHEDULE_2026_MONTHS.length) return;
+    const nextValue = String(value ?? "").trim();
+    setWorkScheduleRows((prev) =>
+      (Array.isArray(prev) ? prev : WORK_SCHEDULE_2026_ROWS).map((row) => {
+        if (row.name !== n) return row;
+        const vals = Array.isArray(row.values) ? [...row.values] : Array.from({ length: WORK_SCHEDULE_2026_MONTHS.length }, () => "");
+        vals[idx] = nextValue;
+        return { ...row, values: vals };
+      })
+    );
+  }
+
   async function syncHolidays() {
     try {
       if (serverMode) {
@@ -1030,6 +1047,8 @@ function App() {
               users={users}
               serverMode={serverMode}
               currentRole={currentUser?.role}
+              workScheduleRows={workScheduleRows}
+              onChangeWorkScheduleCell={updateWorkScheduleCell}
             />
           }
         />
@@ -1386,8 +1405,9 @@ const WORK_SCHEDULE_2026_ROWS = [
   { name: "최유경", values: ["1D1", "7D1", "7D1", "5D1", "안D0", "안D0", "안E", "수E", "PRN"] },
   { name: "정수영", values: ["", "", "6D1", "6D1", "6D1", "6D1", "1D1", "1D1", "1D1"] },
 ];
+const WORK_SCHEDULE_OPTIONS = ["", "안E", "안D0", "수E", "9-5", "5D2", "3D1", "7D2", "6D2", "6D1", "3D2", "1D2", "7D1", "1D1", "5D1", "PRN"];
 
-function DashboardPage({ dashboard, goldkeys, requests, cancellations, users, serverMode, currentRole }) {
+function DashboardPage({ dashboard, goldkeys, requests, cancellations, users, serverMode, currentRole, workScheduleRows, onChangeWorkScheduleCell }) {
   return (
     <>
       {currentRole !== "ANESTHESIA" ? (
@@ -1427,9 +1447,6 @@ function DashboardPage({ dashboard, goldkeys, requests, cancellations, users, se
               </tbody>
             </table>
           </div>
-          <p className="help">
-            참고: 전체 신청 {dashboard.total} / 신청중 {dashboard.applied} / 승인·선정 {dashboard.selected} / 취소 {dashboard.cancelled}
-          </p>
         </section>
       ) : null}
       <section className="card">
@@ -1445,7 +1462,7 @@ function DashboardPage({ dashboard, goldkeys, requests, cancellations, users, se
               </tr>
             </thead>
             <tbody>
-              {WORK_SCHEDULE_2026_ROWS.map((row) => (
+              {(Array.isArray(workScheduleRows) ? workScheduleRows : WORK_SCHEDULE_2026_ROWS).map((row) => (
                 <tr
                   key={row.name}
                   className={
@@ -1455,8 +1472,20 @@ function DashboardPage({ dashboard, goldkeys, requests, cancellations, users, se
                   }
                 >
                   <td>{row.name}</td>
-                  {row.values.map((v, idx) => (
-                    <td key={`${row.name}-${idx}`}>{v || "-"}</td>
+                  {WORK_SCHEDULE_2026_MONTHS.map((_, idx) => (
+                    <td key={`${row.name}-${idx}`}>
+                      <select
+                        value={row.values?.[idx] ?? ""}
+                        onChange={(e) => onChangeWorkScheduleCell(row.name, idx, e.target.value)}
+                        aria-label={`${row.name} ${idx + 1}월 근무`}
+                      >
+                        {WORK_SCHEDULE_OPTIONS.map((opt) => (
+                          <option key={`${row.name}-${idx}-${opt || "empty"}`} value={opt}>
+                            {opt || "-"}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
                   ))}
                 </tr>
               ))}
