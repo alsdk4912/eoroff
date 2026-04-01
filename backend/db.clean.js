@@ -251,6 +251,7 @@ export async function initDb() {
   await seedDefaultsIfEmpty();
   await ensureAnesthesiaUsers();
   await ensureKnownEmployeeNos();
+  await ensureOfficialHolidayCorrections();
   await backfillLongTermGoldkeyCancellationExemptions();
   await ensureGoldkeyDefaults();
   return client;
@@ -419,6 +420,29 @@ async function ensureKnownEmployeeNos() {
   for (const [name, employeeNo] of Object.entries(EMPLOYEE_NO_BY_NAME)) {
     await execute("UPDATE users SET employee_no = ? WHERE name = ?", employeeNo, name);
   }
+}
+
+async function ensureOfficialHolidayCorrections() {
+  const nowIso = new Date().toISOString();
+  const official2026 = [
+    ["2026-07-17", "제헌절"],
+    ["2026-09-24", "추석 연휴"],
+    ["2026-09-25", "추석"],
+    ["2026-09-26", "추석 연휴"],
+  ];
+
+  for (const [holidayDate, holidayName] of official2026) {
+    await execute(
+      "INSERT INTO holidays (holiday_date, holiday_name, is_holiday, synced_at) VALUES (?, ?, 1, ?) ON CONFLICT(holiday_date) DO UPDATE SET holiday_name = excluded.holiday_name, is_holiday = 1, synced_at = excluded.synced_at",
+      holidayDate,
+      holidayName,
+      nowIso
+    );
+  }
+
+  // 2026 추석 대체공휴일 오표기 정정
+  await execute("DELETE FROM holidays WHERE holiday_date = ?", "2026-09-28");
+  await execute("DELETE FROM holiday_duties WHERE holiday_date = ?", "2026-09-28");
 }
 
 async function backfillLongTermGoldkeyCancellationExemptions() {
