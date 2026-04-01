@@ -452,6 +452,18 @@ tbody tr:last-child td {
     background: transparent !important;
   }
 
+  .my-requests-table tbody tr.request-cancelled-row td.my-requests-cancelled-merge {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .my-requests-table .my-requests-cancelled-strike {
+    display: block;
+    white-space: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
   .my-requests-table tbody td {
     display: flex;
     align-items: center;
@@ -1309,14 +1321,29 @@ tr.request-dimmed-row .leave-type-pill.selected-item {
 }
 
 tr.request-cancelled-row td {
-  text-decoration: line-through !important;
   color: #4b5563 !important;
   background: #e5e7eb !important;
 }
 
+/* 내 신청내역 취소: 한 덩어리 텍스트에만 취소선 (복원 버튼 열 제외) — 셀마다 line-through 금지 */
+.my-requests-table .my-requests-cancelled-strike {
+  text-decoration: line-through;
+  text-decoration-skip-ink: none;
+  color: #4b5563;
+}
+
+.my-requests-table .my-requests-cancelled-merge {
+  vertical-align: middle;
+}
+
+/* 칩에도 개별 취소선이 있으면 끊겨 보임 → 부모 한 줄만 적용 */
+.my-requests-table .my-requests-cancelled-strike .leave-type-pill.selected-item.request-cancelled,
+.my-requests-table .my-requests-cancelled-strike .selected-item.request-cancelled {
+  text-decoration: none !important;
+}
+
 /* 취소: 유형 칩에 또 회색 박스 두지 않고, 행 전체가 하나의 회색 블록으로 보이게 */
 tr.request-cancelled-row .leave-type-pill.selected-item {
-  text-decoration: line-through !important;
   background: transparent !important;
   color: #4b5563 !important;
   border: none !important;
