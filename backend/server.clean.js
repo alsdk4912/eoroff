@@ -20,6 +20,40 @@ app.use(express.json());
 const PORT = Number(process.env.PORT) || 4015;
 const HOST = process.env.HOST || "0.0.0.0";
 
+function toKstParts(dateLike) {
+  const d = new Date(dateLike);
+  if (Number.isNaN(d.getTime())) return null;
+  const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+  return {
+    year: kst.getUTCFullYear(),
+    month: kst.getUTCMonth() + 1,
+    day: kst.getUTCDate(),
+  };
+}
+
+function isKstAprilFirstToTenth(dateLike) {
+  const p = toKstParts(dateLike);
+  return Boolean(p && p.month === 4 && p.day >= 1 && p.day <= 10);
+}
+
+function parseYmdParts(ymd) {
+  const s = String(ymd ?? "").trim();
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  return { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) };
+}
+
+function isLongTermGoldkeyDeductionExempt(row, cancelledAt) {
+  if (String(row?.leave_type ?? "") !== "GOLDKEY") return false;
+  const leave = parseYmdParts(row?.leave_date);
+  const requested = toKstParts(row?.requested_at);
+  const cancelled = toKstParts(cancelledAt);
+  if (!leave || !requested || !cancelled) return false;
+  if (leave.year !== cancelled.year) return false;
+  if (leave.month < 7 || leave.month > 12) return false;
+  return isKstAprilFirstToTenth(row.requested_at) && isKstAprilFirstToTenth(cancelledAt);
+}
+
 async function upsertKoreanHolidaysFromPublicApi(year, monthOpt) {
   const y = Number(year);
   if (!Number.isInteger(y) || y < 2000 || y > 2100) throw new Error("year 범위가 올바르지 않습니다.");
@@ -510,22 +544,37 @@ app.post("/api/requests/:id/negotiation-order", handleNegotiationOrder);
 
 app.post("/api/requests/:id/cancel", async (req, res) => {
   try {
-    const row = await queryOne("SELECT id FROM requests WHERE id = ?", req.params.id);
+    const row = await queryOne(
+      "SELECT id, user_id, leave_type, leave_date, requested_at, status FROM requests WHERE id = ?",
+      req.params.id
+    );
     if (!row) return res.status(404).json({ error: "요청을 찾을 수 없습니다." });
+    if (String(row.status) === "CANCELLED") return res.json({ ok: true, alreadyCancelled: true });
+
+    const cancelledAt = req.body.cancelledAt || new Date().toISOString();
+    const deductionExempt = isLongTermGoldkeyDeductionExempt(row, cancelledAt);
+    const deductionNote = deductionExempt ? "차감 제외 처리됨(장기휴가 모집기간)" : null;
 
     await runTransaction(async (tx) => {
-      /* 골드키: 취소해도 잔여/사용 카운트는 되돌리지 않음(신청·사용은 누적) */
       await tx.execute("UPDATE requests SET status = 'CANCELLED' WHERE id = ?", req.params.id);
+      if (deductionExempt) {
+        await tx.execute(
+          "UPDATE goldkeys SET used_count = CASE WHEN used_count > 0 THEN used_count - 1 ELSE 0 END, remaining_count = CASE WHEN remaining_count < quota_total THEN remaining_count + 1 ELSE quota_total END WHERE user_id = ?",
+          row.user_id
+        );
+      }
       await tx.execute(
-        "INSERT INTO cancellations (id, leave_request_id, cancelled_by, cancel_reason, cancelled_at) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO cancellations (id, leave_request_id, cancelled_by, cancel_reason, cancelled_at, deduction_exempt, deduction_note) VALUES (?, ?, ?, ?, ?, ?, ?)",
         req.body.cancellationId,
         req.params.id,
         req.body.cancelledBy,
         req.body.cancelReason,
-        req.body.cancelledAt
+        cancelledAt,
+        deductionExempt ? 1 : 0,
+        deductionNote
       );
     });
-    res.json({ ok: true });
+    res.json({ ok: true, deductionExempt, deductionNote });
   } catch (err) {
     console.error("POST /api/requests/:id/cancel", err);
     res.status(500).json({ error: String(err?.message || err) });

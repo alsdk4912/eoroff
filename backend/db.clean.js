@@ -100,7 +100,9 @@ CREATE TABLE IF NOT EXISTS cancellations (
   leave_request_id TEXT NOT NULL,
   cancelled_by TEXT NOT NULL,
   cancel_reason TEXT NOT NULL,
-  cancelled_at TEXT NOT NULL
+  cancelled_at TEXT NOT NULL,
+  deduction_exempt INTEGER NOT NULL DEFAULT 0,
+  deduction_note TEXT
 );
 
 CREATE TABLE IF NOT EXISTS selections (
@@ -199,6 +201,7 @@ export async function initDb() {
   await ensureRequestsLeaveNatureColumn();
   await ensureRequestsNegotiationOrderColumn();
   await ensureHolidayDutiesAnesthesiaColumn();
+  await ensureCancellationsDeductionColumns();
 
   await seedDefaultsIfEmpty();
   await ensureAnesthesiaUsers();
@@ -229,6 +232,17 @@ async function ensureHolidayDutiesAnesthesiaColumn() {
   const names = new Set(cols.map((c) => c.name));
   if (!names.has("anesthesia_user_id")) {
     await execute("ALTER TABLE holiday_duties ADD COLUMN anesthesia_user_id TEXT");
+  }
+}
+
+async function ensureCancellationsDeductionColumns() {
+  const cols = await queryAll("PRAGMA table_info(cancellations)");
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("deduction_exempt")) {
+    await execute("ALTER TABLE cancellations ADD COLUMN deduction_exempt INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!names.has("deduction_note")) {
+    await execute("ALTER TABLE cancellations ADD COLUMN deduction_note TEXT");
   }
 }
 

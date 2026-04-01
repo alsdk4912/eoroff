@@ -79,6 +79,40 @@ function toLocalYMD(d) {
   return `${y}-${m}-${day}`;
 }
 
+function toKstParts(dateLike) {
+  const d = new Date(dateLike);
+  if (Number.isNaN(d.getTime())) return null;
+  const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+  return {
+    year: kst.getUTCFullYear(),
+    month: kst.getUTCMonth() + 1,
+    day: kst.getUTCDate(),
+  };
+}
+
+function parseYmdParts(ymd) {
+  const s = String(ymd ?? "").trim();
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  return { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) };
+}
+
+function isKstAprilFirstToTenth(dateLike) {
+  const p = toKstParts(dateLike);
+  return Boolean(p && p.month === 4 && p.day >= 1 && p.day <= 10);
+}
+
+function isLongTermGoldkeyDeductionExempt(requestRow, cancelledAt) {
+  if (!requestRow || requestRow.leaveType !== "GOLDKEY") return false;
+  const leave = parseYmdParts(requestRow.leaveDate);
+  const requested = toKstParts(requestRow.requestedAt);
+  const cancelled = toKstParts(cancelledAt);
+  if (!leave || !requested || !cancelled) return false;
+  if (leave.year !== cancelled.year) return false;
+  if (leave.month < 7 || leave.month > 12) return false;
+  return isKstAprilFirstToTenth(requestRow.requestedAt) && isKstAprilFirstToTenth(cancelledAt);
+}
+
 function leaveTypeCssClass(leaveType) {
   return `type-${String(leaveType || "").toLowerCase()}`;
 }
@@ -201,7 +235,17 @@ function App() {
     setUsers(data.users.map((u) => ({ id: u.id, name: u.name, role: u.role, employeeNo: u.employee_no })));
     setRequests(data.requests.map(mapRequestRow));
     setNotes(data.notes.map((n) => ({ id: n.id, leaveRequestId: n.leave_request_id, content: n.content, agreedOrder: n.agreed_order })));
-    setCancellations(data.cancellations.map((c) => ({ id: c.id, leaveRequestId: c.leave_request_id, cancelledBy: c.cancelled_by, cancelReason: c.cancel_reason, cancelledAt: c.cancelled_at })));
+    setCancellations(
+      data.cancellations.map((c) => ({
+        id: c.id,
+        leaveRequestId: c.leave_request_id,
+        cancelledBy: c.cancelled_by,
+        cancelReason: c.cancel_reason,
+        cancelledAt: c.cancelled_at,
+        deductionExempt: Boolean(c.deduction_exempt ?? c.deductionExempt),
+        deductionNote: String(c.deduction_note ?? c.deductionNote ?? ""),
+      }))
+    );
     setSelections(data.selections.map((s) => ({ id: s.id, leaveRequestId: s.leave_request_id, selectedBy: s.selected_by, selectedAt: s.selected_at })));
     setGoldkeys(
       data.goldkeys.map((g) => ({
@@ -673,8 +717,11 @@ function App() {
       cancelReason: reason,
       cancelledAt: new Date().toISOString(),
     };
+    const deductionExempt = isLongTermGoldkeyDeductionExempt(target, payload.cancelledAt);
+    const deductionNote = deductionExempt ? "차감 제외 처리됨(장기휴가 모집기간)" : "";
     const prevSnapshot = requests;
     const prevCancellations = cancellations;
+    const prevGoldkeys = goldkeys;
     setRequests((prev) => {
       const next = prev.map((r) => (r.id === requestId ? { ...r, status: "CANCELLED", cancelLocked: true } : r));
       if (!serverMode) {
@@ -686,8 +733,20 @@ function App() {
       }
       return next;
     });
-    setCancellations((prev) => [...prev, { id: payload.cancellationId, leaveRequestId: requestId, ...payload }]);
-    /* 골드키: 취소해도 used/remaining(신청·사용 횟수)은 되돌리지 않음 — 서버·오프라인 동일 */
+    setCancellations((prev) => [...prev, { id: payload.cancellationId, leaveRequestId: requestId, ...payload, deductionExempt, deductionNote }]);
+    if (!serverMode && deductionExempt && target?.leaveType === "GOLDKEY" && target?.userId) {
+      setGoldkeys((prev) =>
+        prev.map((g) =>
+          g.userId === target.userId
+            ? {
+                ...g,
+                usedCount: Math.max(0, Number(g.usedCount || 0) - 1),
+                remainingCount: Math.min(Number(g.quotaTotal || 0), Number(g.remainingCount || 0) + 1),
+              }
+            : g
+        )
+      );
+    }
     if (serverMode) {
       try {
         await api.cancelRequest(requestId, payload);
@@ -696,6 +755,7 @@ function App() {
         window.alert?.(`취소 반영 실패: ${e?.message || e}`);
         setRequests(prevSnapshot);
         setCancellations(prevCancellations);
+        setGoldkeys(prevGoldkeys);
         try {
           localStorage.setItem(LS_REQUESTS, JSON.stringify(prevSnapshot));
         } catch {
@@ -1014,6 +1074,7 @@ function App() {
                 users={users}
                 notes={notes}
                 goldkeys={goldkeys}
+                cancellations={cancellations}
                 serverMode={serverMode}
               />
             ) : (
@@ -2133,7 +2194,7 @@ function CalendarPage({
   );
 }
 
-function AdminPage({ allRequests, users, notes, goldkeys, serverMode }) {
+function AdminPage({ allRequests, users, notes, goldkeys, cancellations, serverMode }) {
   const [nameSearch, setNameSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("ALL");
   const rows = allRequests
@@ -2148,6 +2209,20 @@ function AdminPage({ allRequests, users, notes, goldkeys, serverMode }) {
       if (a.leaveDate !== b.leaveDate) return a.leaveDate.localeCompare(b.leaveDate);
       return a.requestedAt.localeCompare(b.requestedAt);
     });
+  const cancellationRows = (Array.isArray(cancellations) ? cancellations : [])
+    .map((c) => {
+      const req = allRequests.find((r) => r.id === c.leaveRequestId);
+      if (!req) return null;
+      return {
+        ...c,
+        leaveDate: req.leaveDate,
+        leaveType: req.leaveType,
+        userId: req.userId,
+      };
+    })
+    .filter(Boolean)
+    .filter((c) => c.leaveType === "GOLDKEY")
+    .sort((a, b) => String(b.cancelledAt ?? "").localeCompare(String(a.cancelledAt ?? "")));
   return (
     <>
       <section className="card">
@@ -2192,6 +2267,44 @@ function AdminPage({ allRequests, users, notes, goldkeys, serverMode }) {
                   <td>{new Date(r.requestedAt).toLocaleString("ko-KR")}</td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <section className="card">
+        <h2>골드키 취소 이력</h2>
+        <p className="help" style={{ marginBottom: 10 }}>
+          장기휴가 모집기간(4/1~4/10) 예외가 적용된 취소는 차감 처리에 별도로 표시됩니다.
+        </p>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>간호사</th>
+                <th>휴가일</th>
+                <th>유형</th>
+                <th>취소시각</th>
+                <th>차감처리</th>
+                <th>취소사유</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cancellationRows.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="help">취소 이력이 없습니다.</td>
+                </tr>
+              ) : (
+                cancellationRows.map((c) => (
+                  <tr key={c.id}>
+                    <td>{users.find((u) => u.id === c.userId)?.name ?? c.userId}</td>
+                    <td>{c.leaveDate}</td>
+                    <td>{leaveTypeLabel(c.leaveType)}</td>
+                    <td>{new Date(c.cancelledAt).toLocaleString("ko-KR")}</td>
+                    <td>{c.deductionExempt ? c.deductionNote || "차감 제외 처리됨(장기휴가 모집기간)" : "기존 규칙(차감 유지)"}</td>
+                    <td>{c.cancelReason}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
