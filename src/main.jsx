@@ -30,6 +30,13 @@ if (!isGithubPages && "serviceWorker" in navigator) {
         document.addEventListener("visibilitychange", () => {
           if (document.visibilityState === "visible") void reg.update();
         });
+        /* 배포 직후 새 SW를 더 빨리 받기 위해 주기적으로 업데이트 확인 */
+        window.setInterval(
+          () => {
+            if (document.visibilityState === "visible") void reg.update();
+          },
+          3 * 60 * 1000
+        );
       })
       .catch((error) => {
         console.error("Service worker registration failed:", error);

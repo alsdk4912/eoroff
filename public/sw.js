@@ -1,5 +1,5 @@
 /* GitHub Pages: 예전 index.html이 캐시에 남으면 VITE_DEPLOY_TAG(빌드 SHA)가 영원히 안 바뀐 것처럼 보임 → HTML은 네트워크 우선 */
-const CACHE_NAME = "eor-pwa-v15-eoroff-negotiation-row-mobile";
+const CACHE_NAME = "eor-pwa-v16-eoroff-sw-network-first";
 const APP_SHELL = [
   "./manifest.json",
   "./icon.svg",
@@ -57,6 +57,26 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  /* 빌드마다 해시가 바뀌는 JS/CSS·폰트는 네트워크 우선 → 배포 직후에도 최신 번들을 빨리 가져옴 */
+  const isHashedAsset =
+    path.includes("/assets/") || /\.(?:js|mjs|css|woff2?)$/i.test(path);
+
+  if (isHashedAsset) {
+    event.respondWith(
+      fetch(event.request, { cache: "no-cache" })
+        .then((response) => {
+          if (response.ok) {
+            const cloned = response.clone();
+            void caches.open(CACHE_NAME).then((cache) => cache.put(event.request, cloned));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  /* 그 외(아이콘 등): 캐시 우선 */
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;
@@ -64,7 +84,7 @@ self.addEventListener("fetch", (event) => {
       return fetch(event.request)
         .then((response) => {
           const cloned = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, cloned));
+          void caches.open(CACHE_NAME).then((cache) => cache.put(event.request, cloned));
           return response;
         })
         .catch(() => caches.match("./index.html"));
