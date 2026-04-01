@@ -1611,6 +1611,11 @@ function traceLadderLane(startLane, links, laneCount) {
   return lane;
 }
 
+function laneColor(index) {
+  const palette = ["#2563eb", "#0ea5e9", "#14b8a6", "#22c55e", "#f59e0b", "#ef4444", "#a855f7", "#ec4899"];
+  return palette[index % palette.length];
+}
+
 function LadderGamePage({ users, requests, ladderResults, createLadderResult, applyLadderResultToNegotiationOrder, currentUserId }) {
   const now = toLocalYMD(new Date());
   const [leaveDate, setLeaveDate] = useState(now);
@@ -1776,12 +1781,14 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
           >
             {ladderSpec.laneUsers.map((userId, lane) => {
               const x = 70 + lane * 120;
+              const color = laneColor(lane);
               return (
                 <g key={`lane-${userId}`}>
-                  <text x={x} y={20} textAnchor="middle" fontSize="14" fill="#334155">
+                  <rect x={x - 52} y={2} rx={10} ry={10} width={104} height={24} fill="#f8fafc" stroke={color} strokeWidth="1.5" />
+                  <text x={x} y={18} textAnchor="middle" fontSize="13" fill="#0f172a" fontWeight="700">
                     {idToName.get(userId) ?? userId}
                   </text>
-                  <line x1={x} y1={32} x2={x} y2={32 + ladderSpec.rowCount * 30} stroke="#94a3b8" strokeWidth="2.5" />
+                  <line x1={x} y1={32} x2={x} y2={32 + ladderSpec.rowCount * 30} stroke={color} strokeWidth="4" opacity="0.95" />
                 </g>
               );
             })}
@@ -1796,10 +1803,13 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
             )}
             {runnerState ? (
               <g>
-                <circle cx={70 + runnerState.lane * 120} cy={32 + runnerState.row * 30} r="15" fill="#e0f2fe" stroke="#0284c7" strokeWidth="2" />
-                <text x={70 + runnerState.lane * 120} y={32 + runnerState.row * 30 + 5} textAnchor="middle" fontSize="14">
-                  🧑‍⚕️
-                </text>
+                <g transform={`translate(${70 + runnerState.lane * 120 - 14}, ${32 + runnerState.row * 30 - 18})`}>
+                  <circle cx="14" cy="14" r="7" fill="#fde68a" stroke="#d97706" strokeWidth="1" />
+                  <rect x="7" y="22" width="14" height="12" rx="4" fill="#93c5fd" stroke="#1d4ed8" strokeWidth="1" />
+                  <rect x="11" y="4" width="6" height="3" rx="1.5" fill="#ffffff" stroke="#94a3b8" strokeWidth="0.8" />
+                  <line x1="14" y1="4.4" x2="14" y2="6.8" stroke="#ef4444" strokeWidth="0.8" />
+                  <line x1="12.8" y1="5.6" x2="15.2" y2="5.6" stroke="#ef4444" strokeWidth="0.8" />
+                </g>
                 <text
                   x={70 + runnerState.lane * 120}
                   y={32 + runnerState.row * 30 - 18}
@@ -1815,10 +1825,14 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
             {ladderSpec.order.map((userId, rank) => {
               const x = 70 + rank * 120;
               const y = 32 + ladderSpec.rowCount * 30 + 26;
+              const color = laneColor(rank);
               return (
-                <text key={`rank-${userId}`} x={x} y={y} textAnchor="middle" fontSize="13" fill="#0f172a">
-                  {rank + 1}순위 {idToName.get(userId) ?? userId}
-                </text>
+                <g key={`rank-${userId}`}>
+                  <rect x={x - 58} y={y - 16} rx={10} ry={10} width={116} height={22} fill="#ffffff" stroke={color} strokeWidth="1.5" />
+                  <text x={x} y={y - 1} textAnchor="middle" fontSize="12.5" fill="#0f172a" fontWeight="700">
+                    {rank + 1}순위 {idToName.get(userId) ?? userId}
+                  </text>
+                </g>
               );
             })}
           </svg>
