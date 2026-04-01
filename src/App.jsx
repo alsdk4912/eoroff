@@ -1591,6 +1591,26 @@ function shuffleArray(items) {
   return arr;
 }
 
+function buildRandomLadderLinks(laneCount, rowCount) {
+  const links = Array.from({ length: rowCount }, () => Array.from({ length: Math.max(0, laneCount - 1) }, () => false));
+  for (let r = 0; r < rowCount; r += 1) {
+    for (let c = 0; c < laneCount - 1; c += 1) {
+      if (c > 0 && links[r][c - 1]) continue;
+      if (Math.random() < 0.35) links[r][c] = true;
+    }
+  }
+  return links;
+}
+
+function traceLadderLane(startLane, links, laneCount) {
+  let lane = startLane;
+  for (let r = 0; r < links.length; r += 1) {
+    if (lane > 0 && links[r][lane - 1]) lane -= 1;
+    else if (lane < laneCount - 1 && links[r][lane]) lane += 1;
+  }
+  return lane;
+}
+
 function LadderGamePage({ users, requests, ladderResults, createLadderResult, applyLadderResultToNegotiationOrder, currentUserId }) {
   const now = toLocalYMD(new Date());
   const [leaveDate, setLeaveDate] = useState(now);
@@ -1598,6 +1618,9 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
   const [selectedUserIds, setSelectedUserIds] = useState([]);
   const [previewOrder, setPreviewOrder] = useState([]);
   const [ladderMsg, setLadderMsg] = useState("");
+  const [ladderSpec, setLadderSpec] = useState(null);
+  const [animating, setAnimating] = useState(false);
+  const [runnerState, setRunnerState] = useState(null);
 
   const nurseUsers = useMemo(
     () => users.filter((u) => u.role === "NURSE").sort((a, b) => a.name.localeCompare(b.name, "ko")),
@@ -1624,8 +1647,41 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
       window.alert?.("사다리 게임은 참여자 2명 이상이 필요합니다.");
       return;
     }
-    const order = shuffleArray(selectedUserIds);
+    const laneCount = selectedUserIds.length;
+    const rowCount = Math.max(8, laneCount * 4);
+    const links = buildRandomLadderLinks(laneCount, rowCount);
+    const byStart = selectedUserIds.map((userId, startLane) => ({
+      userId,
+      startLane,
+      endLane: traceLadderLane(startLane, links, laneCount),
+    }));
+    const order = byStart
+      .slice()
+      .sort((a, b) => a.endLane - b.endLane)
+      .map((x) => x.userId);
+    setLadderSpec({ laneCount, rowCount, links, byStart, laneUsers: [...selectedUserIds], order });
     setPreviewOrder(order);
+  }
+
+  async function playLadderAnimation() {
+    if (!ladderSpec || animating) return;
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    setAnimating(true);
+    setRunnerState(null);
+    for (const item of ladderSpec.byStart) {
+      let lane = item.startLane;
+      setRunnerState({ userId: item.userId, lane, row: 0 });
+      await sleep(260);
+      for (let r = 0; r < ladderSpec.rowCount; r += 1) {
+        if (lane > 0 && ladderSpec.links[r][lane - 1]) lane -= 1;
+        else if (lane < ladderSpec.laneCount - 1 && ladderSpec.links[r][lane]) lane += 1;
+        setRunnerState({ userId: item.userId, lane, row: r + 1 });
+        await sleep(140);
+      }
+      await sleep(220);
+    }
+    setRunnerState(null);
+    setAnimating(false);
   }
 
   async function saveResult() {
@@ -1713,10 +1769,69 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
         <button type="button" onClick={runLadder}>
           사다리 실행
         </button>
+        <button type="button" onClick={() => void playLadderAnimation()} disabled={!ladderSpec || animating}>
+          {animating ? "애니메이션 진행중..." : "애니메이션 보기"}
+        </button>
         <button type="button" onClick={() => void saveResult()} disabled={previewOrder.length < 2}>
           결과 저장
         </button>
       </div>
+
+      {ladderSpec ? (
+        <div style={{ marginBottom: 12, overflowX: "auto" }}>
+          <svg
+            width={Math.max(360, ladderSpec.laneCount * 90)}
+            height={Math.max(280, ladderSpec.rowCount * 24 + 90)}
+            role="img"
+            aria-label="사다리 애니메이션"
+          >
+            {ladderSpec.laneUsers.map((userId, lane) => {
+              const x = 45 + lane * 80;
+              return (
+                <g key={`lane-${userId}`}>
+                  <text x={x} y={16} textAnchor="middle" fontSize="12" fill="#334155">
+                    {idToName.get(userId) ?? userId}
+                  </text>
+                  <line x1={x} y1={26} x2={x} y2={26 + ladderSpec.rowCount * 24} stroke="#94a3b8" strokeWidth="2" />
+                </g>
+              );
+            })}
+            {ladderSpec.links.map((row, r) =>
+              row.map((on, c) => {
+                if (!on) return null;
+                const x1 = 45 + c * 80;
+                const x2 = 45 + (c + 1) * 80;
+                const y = 26 + (r + 1) * 24;
+                return <line key={`link-${r}-${c}`} x1={x1} y1={y} x2={x2} y2={y} stroke="#0ea5e9" strokeWidth="3" />;
+              })
+            )}
+            {runnerState ? (
+              <g>
+                <circle
+                  cx={45 + runnerState.lane * 80}
+                  cy={26 + runnerState.row * 24}
+                  r="7"
+                  fill="#ef4444"
+                  stroke="#b91c1c"
+                  strokeWidth="1.5"
+                />
+                <text x={45 + runnerState.lane * 80} y={26 + runnerState.row * 24 - 10} textAnchor="middle" fontSize="11" fill="#b91c1c">
+                  {idToName.get(runnerState.userId) ?? runnerState.userId}
+                </text>
+              </g>
+            ) : null}
+            {ladderSpec.order.map((userId, rank) => {
+              const x = 45 + rank * 80;
+              const y = 26 + ladderSpec.rowCount * 24 + 20;
+              return (
+                <text key={`rank-${userId}`} x={x} y={y} textAnchor="middle" fontSize="12" fill="#0f172a">
+                  {rank + 1}순위 {idToName.get(userId) ?? userId}
+                </text>
+              );
+            })}
+          </svg>
+        </div>
+      ) : null}
 
       {previewOrder.length > 0 ? (
         <p className="help">
