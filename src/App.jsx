@@ -1616,6 +1616,8 @@ function laneColor(index) {
   return palette[index % palette.length];
 }
 
+const LADDER_RUNNER_IMAGE_SRC = "/nurse-runner.png";
+
 function LadderGamePage({ users, requests, ladderResults, createLadderResult, applyLadderResultToNegotiationOrder, currentUserId }) {
   const now = toLocalYMD(new Date());
   const [leaveDate, setLeaveDate] = useState(now);
@@ -1666,27 +1668,28 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
       .map((x) => x.userId);
     setLadderSpec({ laneCount, rowCount, links, byStart, laneUsers: [...selectedUserIds], order });
     setPreviewOrder(order);
-    void playLadderAnimation({ laneCount, rowCount, links, byStart, laneUsers: [...selectedUserIds], order });
+    setRunnerState(null);
+    setAnimating(false);
   }
 
-  async function playLadderAnimation(specArg) {
+  async function playLadderAnimation(targetUserId, specArg) {
     const spec = specArg || ladderSpec;
     if (!spec || animating) return;
+    const target = spec.byStart.find((item) => item.userId === targetUserId);
+    if (!target) return;
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     setAnimating(true);
     setRunnerState(null);
-    for (const item of spec.byStart) {
-      let lane = item.startLane;
-      setRunnerState({ userId: item.userId, lane, row: 0 });
-      await sleep(390);
-      for (let r = 0; r < spec.rowCount; r += 1) {
-        if (lane > 0 && spec.links[r][lane - 1]) lane -= 1;
-        else if (lane < spec.laneCount - 1 && spec.links[r][lane]) lane += 1;
-        setRunnerState({ userId: item.userId, lane, row: r + 1 });
-        await sleep(210);
-      }
-      await sleep(330);
+    let lane = target.startLane;
+    setRunnerState({ userId: target.userId, lane, row: 0 });
+    await sleep(390);
+    for (let r = 0; r < spec.rowCount; r += 1) {
+      if (lane > 0 && spec.links[r][lane - 1]) lane -= 1;
+      else if (lane < spec.laneCount - 1 && spec.links[r][lane]) lane += 1;
+      setRunnerState({ userId: target.userId, lane, row: r + 1 });
+      await sleep(210);
     }
+    await sleep(330);
     setRunnerState(null);
     setAnimating(false);
   }
@@ -1773,6 +1776,18 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
 
       {ladderSpec ? (
         <div style={{ marginBottom: 12, overflowX: "auto" }}>
+          <div className="row wrap" style={{ marginBottom: 8 }}>
+            {ladderSpec.laneUsers.map((userId) => (
+              <button
+                key={`runner-btn-${userId}`}
+                type="button"
+                onClick={() => void playLadderAnimation(userId, ladderSpec)}
+                disabled={animating}
+              >
+                {idToName.get(userId) ?? userId} 타기
+              </button>
+            ))}
+          </div>
           <svg
             width={Math.max(620, ladderSpec.laneCount * 140)}
             height={Math.max(420, ladderSpec.rowCount * 30 + 130)}
@@ -1803,13 +1818,14 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
             )}
             {runnerState ? (
               <g>
-                <g transform={`translate(${70 + runnerState.lane * 120 - 14}, ${32 + runnerState.row * 30 - 18})`}>
-                  <circle cx="14" cy="14" r="7" fill="#fde68a" stroke="#d97706" strokeWidth="1" />
-                  <rect x="7" y="22" width="14" height="12" rx="4" fill="#93c5fd" stroke="#1d4ed8" strokeWidth="1" />
-                  <rect x="11" y="4" width="6" height="3" rx="1.5" fill="#ffffff" stroke="#94a3b8" strokeWidth="0.8" />
-                  <line x1="14" y1="4.4" x2="14" y2="6.8" stroke="#ef4444" strokeWidth="0.8" />
-                  <line x1="12.8" y1="5.6" x2="15.2" y2="5.6" stroke="#ef4444" strokeWidth="0.8" />
-                </g>
+                <image
+                  href={LADDER_RUNNER_IMAGE_SRC}
+                  x={70 + runnerState.lane * 120 - 16}
+                  y={32 + runnerState.row * 30 - 20}
+                  width="32"
+                  height="32"
+                  preserveAspectRatio="xMidYMid meet"
+                />
                 <text
                   x={70 + runnerState.lane * 120}
                   y={32 + runnerState.row * 30 - 18}
