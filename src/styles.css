@@ -538,9 +538,13 @@ tbody tr:last-child td {
   padding: 3px 6px !important;
   margin-bottom: 0 !important;
   line-height: 1.35 !important;
-  display: block;
+  /* iOS Safari: block + text-align 만으로 한글 칩이 한쪽으로 치우칠 때 대비 — 좌우 flex 스페이서로 가운데 정렬 */
+  display: flex;
+  flex-direction: row;
+  align-items: center;
   box-sizing: border-box;
   width: 100%;
+  min-width: 0;
   align-self: stretch;
   overflow: visible;
   max-width: 100%;
@@ -549,6 +553,16 @@ tbody tr:last-child td {
   white-space: normal;
   word-break: keep-all;
   text-align: center;
+  text-align-last: center;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.calendar-day-chip::before,
+.calendar-day-chip::after {
+  content: "";
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .calendar-chip-more {
