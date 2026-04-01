@@ -915,21 +915,6 @@ function App() {
     setDayComments((prev) => (Array.isArray(prev) ? prev : []).filter((row) => !(row.id === id && row.userId === auth.userId)));
   }
 
-  function updateWorkScheduleCell(name, monthIndex, value) {
-    const n = String(name ?? "").trim();
-    const idx = Number(monthIndex);
-    if (!n || !Number.isInteger(idx) || idx < 0 || idx >= WORK_SCHEDULE_2026_MONTHS.length) return;
-    const nextValue = String(value ?? "").trim();
-    setWorkScheduleRows((prev) =>
-      (Array.isArray(prev) ? prev : WORK_SCHEDULE_2026_ROWS).map((row) => {
-        if (row.name !== n) return row;
-        const vals = Array.isArray(row.values) ? [...row.values] : Array.from({ length: WORK_SCHEDULE_2026_MONTHS.length }, () => "");
-        vals[idx] = nextValue;
-        return { ...row, values: vals };
-      })
-    );
-  }
-
   async function syncHolidays() {
     try {
       if (serverMode) {
@@ -1048,7 +1033,7 @@ function App() {
               serverMode={serverMode}
               currentRole={currentUser?.role}
               workScheduleRows={workScheduleRows}
-              onChangeWorkScheduleCell={updateWorkScheduleCell}
+              onSaveWorkScheduleRows={setWorkScheduleRows}
             />
           }
         />
@@ -1407,7 +1392,71 @@ const WORK_SCHEDULE_2026_ROWS = [
 ];
 const WORK_SCHEDULE_OPTIONS = ["", "안E", "안D0", "수E", "9-5", "5D2", "3D1", "7D2", "6D2", "6D1", "3D2", "1D2", "7D1", "1D1", "5D1", "PRN"];
 
-function DashboardPage({ dashboard, goldkeys, requests, cancellations, users, serverMode, currentRole, workScheduleRows, onChangeWorkScheduleCell }) {
+function DashboardPage({
+  dashboard,
+  goldkeys,
+  requests,
+  cancellations,
+  users,
+  serverMode,
+  currentRole,
+  workScheduleRows,
+  onSaveWorkScheduleRows,
+}) {
+  const [draftRows, setDraftRows] = useState(Array.isArray(workScheduleRows) ? workScheduleRows : WORK_SCHEDULE_2026_ROWS);
+  const [scheduleMsg, setScheduleMsg] = useState("");
+
+  useEffect(() => {
+    setDraftRows(Array.isArray(workScheduleRows) ? workScheduleRows : WORK_SCHEDULE_2026_ROWS);
+  }, [workScheduleRows]);
+
+  const scheduleChanges = useMemo(() => {
+    const saved = Array.isArray(workScheduleRows) ? workScheduleRows : WORK_SCHEDULE_2026_ROWS;
+    const savedMap = new Map(saved.map((r) => [r.name, r.values || []]));
+    const changes = [];
+    for (const row of draftRows) {
+      const prevVals = savedMap.get(row.name) || [];
+      const nextVals = row.values || [];
+      for (let i = 0; i < WORK_SCHEDULE_2026_MONTHS.length; i += 1) {
+        const before = String(prevVals[i] ?? "");
+        const after = String(nextVals[i] ?? "");
+        if (before !== after) {
+          changes.push({
+            monthLabel: WORK_SCHEDULE_2026_MONTHS[i],
+            name: row.name,
+            before: before || "-",
+            after: after || "-",
+          });
+        }
+      }
+    }
+    return changes;
+  }, [draftRows, workScheduleRows]);
+
+  function onDraftCellChange(name, monthIndex, value) {
+    setScheduleMsg("");
+    setDraftRows((prev) =>
+      (Array.isArray(prev) ? prev : WORK_SCHEDULE_2026_ROWS).map((row) => {
+        if (row.name !== name) return row;
+        const vals = Array.isArray(row.values) ? [...row.values] : Array.from({ length: WORK_SCHEDULE_2026_MONTHS.length }, () => "");
+        vals[monthIndex] = String(value ?? "");
+        return { ...row, values: vals };
+      })
+    );
+  }
+
+  function saveWorkSchedule() {
+    if (scheduleChanges.length === 0) {
+      setScheduleMsg("변경된 항목이 없습니다.");
+      return;
+    }
+    const lines = scheduleChanges.map((c) => `- ${c.monthLabel} ${c.name}: ${c.before} -> ${c.after}`);
+    const ok = window.confirm(`아래 근무표 변경을 저장할까요?\n\n${lines.join("\n")}`);
+    if (!ok) return;
+    onSaveWorkScheduleRows(draftRows);
+    setScheduleMsg("근무표가 저장되었습니다.");
+  }
+
   return (
     <>
       {currentRole !== "ANESTHESIA" ? (
@@ -1462,7 +1511,7 @@ function DashboardPage({ dashboard, goldkeys, requests, cancellations, users, se
               </tr>
             </thead>
             <tbody>
-              {(Array.isArray(workScheduleRows) ? workScheduleRows : WORK_SCHEDULE_2026_ROWS).map((row) => (
+              {(Array.isArray(draftRows) ? draftRows : WORK_SCHEDULE_2026_ROWS).map((row) => (
                 <tr
                   key={row.name}
                   className={
@@ -1476,7 +1525,7 @@ function DashboardPage({ dashboard, goldkeys, requests, cancellations, users, se
                     <td key={`${row.name}-${idx}`}>
                       <select
                         value={row.values?.[idx] ?? ""}
-                        onChange={(e) => onChangeWorkScheduleCell(row.name, idx, e.target.value)}
+                        onChange={(e) => onDraftCellChange(row.name, idx, e.target.value)}
                         aria-label={`${row.name} ${idx + 1}월 근무`}
                       >
                         {WORK_SCHEDULE_OPTIONS.map((opt) => (
@@ -1491,6 +1540,12 @@ function DashboardPage({ dashboard, goldkeys, requests, cancellations, users, se
               ))}
             </tbody>
           </table>
+        </div>
+        <div className="row" style={{ marginTop: 10 }}>
+          <button type="button" onClick={saveWorkSchedule}>
+            근무표 저장
+          </button>
+          {scheduleMsg ? <span className="help">{scheduleMsg}</span> : null}
         </div>
       </section>
     </>
