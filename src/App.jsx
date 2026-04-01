@@ -1661,24 +1661,26 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
       .map((x) => x.userId);
     setLadderSpec({ laneCount, rowCount, links, byStart, laneUsers: [...selectedUserIds], order });
     setPreviewOrder(order);
+    void playLadderAnimation({ laneCount, rowCount, links, byStart, laneUsers: [...selectedUserIds], order });
   }
 
-  async function playLadderAnimation() {
-    if (!ladderSpec || animating) return;
+  async function playLadderAnimation(specArg) {
+    const spec = specArg || ladderSpec;
+    if (!spec || animating) return;
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     setAnimating(true);
     setRunnerState(null);
-    for (const item of ladderSpec.byStart) {
+    for (const item of spec.byStart) {
       let lane = item.startLane;
       setRunnerState({ userId: item.userId, lane, row: 0 });
-      await sleep(260);
-      for (let r = 0; r < ladderSpec.rowCount; r += 1) {
-        if (lane > 0 && ladderSpec.links[r][lane - 1]) lane -= 1;
-        else if (lane < ladderSpec.laneCount - 1 && ladderSpec.links[r][lane]) lane += 1;
+      await sleep(390);
+      for (let r = 0; r < spec.rowCount; r += 1) {
+        if (lane > 0 && spec.links[r][lane - 1]) lane -= 1;
+        else if (lane < spec.laneCount - 1 && spec.links[r][lane]) lane += 1;
         setRunnerState({ userId: item.userId, lane, row: r + 1 });
-        await sleep(140);
+        await sleep(210);
       }
-      await sleep(220);
+      await sleep(330);
     }
     setRunnerState(null);
     setAnimating(false);
@@ -1744,33 +1746,20 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
         </div>
       </div>
 
-      <div className="table-wrap" style={{ marginBottom: 10 }}>
-        <table>
-          <thead>
-            <tr>
-              <th>선택</th>
-              <th>간호사</th>
-            </tr>
-          </thead>
-          <tbody>
-            {nurseUsers.map((u) => (
-              <tr key={u.id}>
-                <td>
-                  <input type="checkbox" checked={selectedUserIds.includes(u.id)} onChange={() => toggleUser(u.id)} />
-                </td>
-                <td>{u.name}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+          {nurseUsers.map((u) => (
+            <label key={u.id} className="row" style={{ border: "1px solid #dbeafe", borderRadius: 10, padding: "8px 10px" }}>
+              <input type="checkbox" checked={selectedUserIds.includes(u.id)} onChange={() => toggleUser(u.id)} />
+              <span>{u.name}</span>
+            </label>
+          ))}
+        </div>
       </div>
 
       <div className="row wrap" style={{ marginBottom: 10 }}>
         <button type="button" onClick={runLadder}>
-          사다리 실행
-        </button>
-        <button type="button" onClick={() => void playLadderAnimation()} disabled={!ladderSpec || animating}>
-          {animating ? "애니메이션 진행중..." : "애니메이션 보기"}
+          {animating ? "사다리 진행중..." : "사다리 실행"}
         </button>
         <button type="button" onClick={() => void saveResult()} disabled={previewOrder.length < 2}>
           결과 저장
@@ -1780,51 +1769,54 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
       {ladderSpec ? (
         <div style={{ marginBottom: 12, overflowX: "auto" }}>
           <svg
-            width={Math.max(360, ladderSpec.laneCount * 90)}
-            height={Math.max(280, ladderSpec.rowCount * 24 + 90)}
+            width={Math.max(620, ladderSpec.laneCount * 140)}
+            height={Math.max(420, ladderSpec.rowCount * 30 + 130)}
             role="img"
             aria-label="사다리 애니메이션"
           >
             {ladderSpec.laneUsers.map((userId, lane) => {
-              const x = 45 + lane * 80;
+              const x = 70 + lane * 120;
               return (
                 <g key={`lane-${userId}`}>
-                  <text x={x} y={16} textAnchor="middle" fontSize="12" fill="#334155">
+                  <text x={x} y={20} textAnchor="middle" fontSize="14" fill="#334155">
                     {idToName.get(userId) ?? userId}
                   </text>
-                  <line x1={x} y1={26} x2={x} y2={26 + ladderSpec.rowCount * 24} stroke="#94a3b8" strokeWidth="2" />
+                  <line x1={x} y1={32} x2={x} y2={32 + ladderSpec.rowCount * 30} stroke="#94a3b8" strokeWidth="2.5" />
                 </g>
               );
             })}
             {ladderSpec.links.map((row, r) =>
               row.map((on, c) => {
                 if (!on) return null;
-                const x1 = 45 + c * 80;
-                const x2 = 45 + (c + 1) * 80;
-                const y = 26 + (r + 1) * 24;
-                return <line key={`link-${r}-${c}`} x1={x1} y1={y} x2={x2} y2={y} stroke="#0ea5e9" strokeWidth="3" />;
+                const x1 = 70 + c * 120;
+                const x2 = 70 + (c + 1) * 120;
+                const y = 32 + (r + 1) * 30;
+                return <line key={`link-${r}-${c}`} x1={x1} y1={y} x2={x2} y2={y} stroke="#0ea5e9" strokeWidth="4" />;
               })
             )}
             {runnerState ? (
               <g>
-                <circle
-                  cx={45 + runnerState.lane * 80}
-                  cy={26 + runnerState.row * 24}
-                  r="7"
-                  fill="#ef4444"
-                  stroke="#b91c1c"
-                  strokeWidth="1.5"
-                />
-                <text x={45 + runnerState.lane * 80} y={26 + runnerState.row * 24 - 10} textAnchor="middle" fontSize="11" fill="#b91c1c">
+                <circle cx={70 + runnerState.lane * 120} cy={32 + runnerState.row * 30} r="15" fill="#e0f2fe" stroke="#0284c7" strokeWidth="2" />
+                <text x={70 + runnerState.lane * 120} y={32 + runnerState.row * 30 + 5} textAnchor="middle" fontSize="14">
+                  🧑‍⚕️
+                </text>
+                <text
+                  x={70 + runnerState.lane * 120}
+                  y={32 + runnerState.row * 30 - 18}
+                  textAnchor="middle"
+                  fontSize="12"
+                  fill="#075985"
+                  fontWeight="700"
+                >
                   {idToName.get(runnerState.userId) ?? runnerState.userId}
                 </text>
               </g>
             ) : null}
             {ladderSpec.order.map((userId, rank) => {
-              const x = 45 + rank * 80;
-              const y = 26 + ladderSpec.rowCount * 24 + 20;
+              const x = 70 + rank * 120;
+              const y = 32 + ladderSpec.rowCount * 30 + 26;
               return (
-                <text key={`rank-${userId}`} x={x} y={y} textAnchor="middle" fontSize="12" fill="#0f172a">
+                <text key={`rank-${userId}`} x={x} y={y} textAnchor="middle" fontSize="13" fill="#0f172a">
                   {rank + 1}순위 {idToName.get(userId) ?? userId}
                 </text>
               );
