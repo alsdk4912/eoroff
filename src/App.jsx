@@ -988,20 +988,20 @@ function App() {
 
   return (
     <div className="app">
-      <header className="top">
-        <h1>EOR 휴가 시스템 (v2 · eoroff)</h1>
-        <div className="row wrap">
-          <span className="help">
-            {currentUser?.name} ({currentUser?.role}) / {serverMode ? "DB 모드" : "로컬 모드"} · Pages: alsdk4912.github.io/eoroff · 빌드{" "}
-            {import.meta.env.VITE_DEPLOY_TAG
-              ? String(import.meta.env.VITE_DEPLOY_TAG).slice(0, 7)
-              : "로컬"}
-          </span>
-          <button onClick={handleLogout}>로그아웃</button>
+      <header className="app-header">
+        <div className="app-header-row">
+          <h1 className="app-header-title">EOR 휴가</h1>
+          <button type="button" className="btn-ghost-header" onClick={handleLogout}>
+            로그아웃
+          </button>
         </div>
+        <p className="app-header-meta">
+          {currentUser?.name} · {currentUser?.role} · {serverMode ? "연동" : "로컬"} · 빌드{" "}
+          {import.meta.env.VITE_DEPLOY_TAG ? String(import.meta.env.VITE_DEPLOY_TAG).slice(0, 7) : "로컬"}
+        </p>
       </header>
 
-      <nav className="card nav">
+      <nav className="app-nav" aria-label="주 메뉴">
         {isAdmin ? (
           <>
             <Link to="/calendar">일정 관리</Link>
@@ -1776,7 +1776,7 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
           ? applicantUserIds.map((id) => idToName.get(id) ?? id).join(", ")
           : "없음"}
       </p>
-      <div className="row wrap" style={{ marginBottom: 10 }}>
+      <div className="row wrap ladder-toolbar">
         <div>
           <label className="field-label">휴가일</label>
           <YmdSplitInput value={leaveDate} onChange={setLeaveDate} />
@@ -1792,10 +1792,10 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
         </div>
       </div>
 
-      <div style={{ marginBottom: 10 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+      <div className="ladder-participant-block">
+        <div className="ladder-participant-grid">
           {nurseUsers.map((u) => (
-            <label key={u.id} className="row" style={{ border: "1px solid #dbeafe", borderRadius: 10, padding: "8px 10px" }}>
+            <label key={u.id} className="row ladder-participant-tile">
               <input type="checkbox" checked={selectedUserIds.includes(u.id)} onChange={() => toggleUser(u.id)} />
               <span>{u.name}</span>
             </label>
@@ -1803,7 +1803,7 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
         </div>
       </div>
 
-      <div className="row wrap" style={{ marginBottom: 10 }}>
+      <div className="row wrap ladder-toolbar">
         <button type="button" onClick={runLadder}>
           {animating ? "사다리 진행중..." : "사다리 실행"}
         </button>
@@ -1813,7 +1813,7 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
       </div>
 
       {ladderSpec ? (
-        <div style={{ marginBottom: 12, overflowX: "auto" }}>
+        <div className="ladder-svg-wrap">
           <svg
             width={Math.max(620, ladderSpec.laneCount * 140)}
             height={Math.max(420, ladderSpec.rowCount * 30 + 130)}
