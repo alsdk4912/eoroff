@@ -2232,15 +2232,19 @@ function CalendarPage({
               <div className={`calendar-date${cell.isOffDay ? " calendar-date--holiday" : ""}`}>{cell.day}</div>
               {cell.inMonth && Array.isArray(cell.displayApplicants) && cell.displayApplicants.length > 0 ? (
                 <div className="calendar-cell-events">
-                  {cell.displayApplicants.slice(0, CALENDAR_DAY_CHIP_MAX).map((a) => (
-                    <span
-                      key={a.id}
-                      className={`calendar-day-chip ${buildLeaveChipClass(a.leaveType, a.status)}`}
-                      title={`${a.name} · ${typeFullLabel(a.leaveType)} · ${statusLabel(a.status)}`}
-                    >
-                      <span className="calendar-day-chip__text">{a.name}</span>
-                    </span>
-                  ))}
+                  {cell.displayApplicants.slice(0, CALENDAR_DAY_CHIP_MAX).map((a) => {
+                    const nameLen = [...String(a.name ?? "")].length;
+                    const name3 = nameLen === 3 ? " calendar-day-chip--name3" : "";
+                    return (
+                      <span
+                        key={a.id}
+                        className={`calendar-day-chip ${buildLeaveChipClass(a.leaveType, a.status)}${name3}`}
+                        title={`${a.name} · ${typeFullLabel(a.leaveType)} · ${statusLabel(a.status)}`}
+                      >
+                        <span className="calendar-day-chip__text">{a.name}</span>
+                      </span>
+                    );
+                  })}
                   {cell.displayApplicants.length > CALENDAR_DAY_CHIP_MAX ? (
                     <span className="calendar-chip-more" title={`외 ${cell.displayApplicants.length - CALENDAR_DAY_CHIP_MAX}명`}>
                       +{cell.displayApplicants.length - CALENDAR_DAY_CHIP_MAX}

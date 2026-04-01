@@ -718,6 +718,16 @@ tbody tr:last-child td {
   text-align-last: center !important;
 }
 
+/* 세 글자 이름만: 두 글자(유진 등)는 그대로 — 모바일 WebKit에서 살짝 오른쪽으로 보이는 보정 */
+.calendar-day-chip--name3 {
+  padding: 3px 6px 3px 4px !important;
+}
+
+.calendar-day-chip--name3 .calendar-day-chip__text {
+  transform: translate3d(-1px, 0, 0);
+  letter-spacing: -0.03em;
+}
+
 .calendar-chip-more {
   font-size: 9px;
   font-weight: 700;
@@ -1393,6 +1403,14 @@ tr.request-cancelled-row td button {
   .calendar-day-chip {
     font-size: 9px !important;
     padding: 1px 5px !important;
+  }
+
+  .calendar-day-chip--name3 {
+    padding: 1px 6px 1px 3px !important;
+  }
+
+  .calendar-day-chip--name3 .calendar-day-chip__text {
+    transform: translate3d(-1.5px, 0, 0);
   }
 
   .calendar-day-chip__text {
