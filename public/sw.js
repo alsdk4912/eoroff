@@ -1,5 +1,5 @@
 /* GitHub Pages: 예전 index.html이 캐시에 남으면 VITE_DEPLOY_TAG(빌드 SHA)가 영원히 안 바뀐 것처럼 보임 → HTML은 네트워크 우선 */
-const CACHE_NAME = "eor-pwa-v9-eoroff-auto-update";
+const CACHE_NAME = "eor-pwa-v10-eoroff-auto-update";
 const APP_SHELL = [
   "./manifest.json",
   "./icon.svg",
