@@ -535,24 +535,32 @@ tbody tr:last-child td {
 
 .calendar-day-chip {
   font-size: 10px !important;
-  padding: 3px 5px !important;
+  padding: 3px 6px !important;
   margin-bottom: 0 !important;
   line-height: 1.35 !important;
   display: block;
+  box-sizing: border-box;
+  width: 100%;
+  align-self: stretch;
   overflow: visible;
   max-width: 100%;
   font-weight: 700 !important;
   border-radius: 6px !important;
   white-space: normal;
   word-break: keep-all;
+  text-align: center;
 }
 
 .calendar-chip-more {
   font-size: 9px;
   font-weight: 700;
   color: var(--text-secondary);
-  padding: 0 2px;
+  padding: 2px 4px;
   line-height: 1.2;
+  display: block;
+  width: 100%;
+  text-align: center;
+  box-sizing: border-box;
 }
 
 .calendar-cell--clickable {
