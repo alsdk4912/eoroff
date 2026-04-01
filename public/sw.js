@@ -1,5 +1,5 @@
 /* GitHub Pages: 예전 index.html이 캐시에 남으면 VITE_DEPLOY_TAG(빌드 SHA)가 영원히 안 바뀐 것처럼 보임 → HTML은 네트워크 우선 */
-const CACHE_NAME = "eor-pwa-v10-eoroff-auto-update";
+const CACHE_NAME = "eor-pwa-v11-eoroff-auto-update";
 const APP_SHELL = [
   "./manifest.json",
   "./icon.svg",
@@ -41,6 +41,25 @@ self.addEventListener("fetch", (event) => {
   }
 
   const path = url.pathname;
+  /** Vite 해시 번들: 캐시 우선이면 재배포 후에도 옛 JS/CSS가 오래 남을 수 있음 → 네트워크 우선 */
+  const isHashedBundle =
+    path.includes("/assets/") && /\.(js|mjs|css)$/i.test(path);
+
+  if (isHashedBundle) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.ok) {
+            const cloned = response.clone();
+            void caches.open(CACHE_NAME).then((cache) => cache.put(event.request, cloned));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
   const isHtmlShell =
     event.request.mode === "navigate" ||
     event.request.destination === "document" ||
