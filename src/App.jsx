@@ -1320,7 +1320,7 @@ function MyRequestsPage({ myRequests, cancelRequest }) {
   );
 }
 
-/** 골드키 신청·사용 = 골드키로 제출한 건수(취소·반려 포함). 취소해도 횟수는 줄지 않음(한 번 신청한 슬롯은 회수 안 함). */
+/** 오프라인 fallback: 골드키 신청 건수 */
 function countGoldkeyApplyUse(requests, userId) {
   return requests.filter((r) => r.userId === userId && r.leaveType === "GOLDKEY").length;
 }
@@ -1362,7 +1362,7 @@ function DashboardPage({ dashboard, goldkeys, requests, cancellations, users, se
         <section className="card">
           <h2>골드키 잔여 내역</h2>
           <p className="help" style={{ marginBottom: 10 }}>
-            <strong>신청·사용</strong>은 골드키로 제출한 누적 건수입니다(취소·반려 포함, 취소해도 숫자는 그대로). 잔여 = 총개수 − 신청·사용.
+            <strong>신청·사용</strong>은 골드키 사용 횟수이며(서버 DB 기준), 장기휴가 모집기간 예외 취소는 차감 복구가 반영됩니다.
           </p>
           <div className="table-wrap">
             <table>
@@ -1381,8 +1381,10 @@ function DashboardPage({ dashboard, goldkeys, requests, cancellations, users, se
                   .map((u) => {
                     const g = goldkeys.find((x) => x.userId === u.id);
                     const quotaTotal = goldkeyQuotaTotalForDisplay(u, g, serverMode);
-                    const applyUse = countGoldkeyApplyUse(requests, u.id);
-                    const remaining = Math.max(0, quotaTotal - applyUse);
+                    const usedFromStore = Number(g?.usedCount ?? g?.used_count);
+                    const remainingFromStore = Number(g?.remainingCount ?? g?.remaining_count);
+                    const applyUse = Number.isFinite(usedFromStore) ? usedFromStore : countGoldkeyApplyUse(requests, u.id);
+                    const remaining = Number.isFinite(remainingFromStore) ? remainingFromStore : Math.max(0, quotaTotal - applyUse);
                     return (
                       <tr key={u.id}>
                         <td>{u.name}</td>
