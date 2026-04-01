@@ -142,15 +142,50 @@ async function upsertKoreanHolidaysFromPublicApi(year, monthOpt) {
 
   const m = monthOpt == null ? null : Number(monthOpt);
   const nowIso = new Date().toISOString();
-  let count = 0;
+  const holidayMap = new Map();
+
   for (const h of rows) {
     const date = String(h?.date ?? "").trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
-    if (m != null) {
-      const mm = Number(date.slice(5, 7));
-      if (mm !== m) continue;
+    holidayMap.set(date, String(h?.localName ?? h?.name ?? "공휴일").trim() || "공휴일");
+  }
+
+  // 2026년 국내 공식 기준 교정(제헌절 복귀/추석 연휴 날짜 보정)
+  if (y === 2026) {
+    holidayMap.set("2026-07-17", "제헌절");
+    holidayMap.set("2026-09-24", "추석 연휴");
+    holidayMap.set("2026-09-25", "추석");
+    holidayMap.set("2026-09-26", "추석 연휴");
+    holidayMap.delete("2026-09-28");
+  }
+
+  const entries = [...holidayMap.entries()].filter(([date]) => {
+    if (m == null) return true;
+    return Number(date.slice(5, 7)) === m;
+  });
+
+  // 월 단위 동기화 시 공식 집합에 없는 날짜는 제거 (잘못 반영된 날짜 정정)
+  if (m != null) {
+    const first = `${y}-${String(m).padStart(2, "0")}-01`;
+    const last = `${y}-${String(m).padStart(2, "0")}-31`;
+    const keep = new Set(entries.map(([date]) => date));
+    const existing = await queryAll(
+      "SELECT holiday_date FROM holidays WHERE holiday_date >= ? AND holiday_date <= ? AND is_holiday = 1",
+      first,
+      last
+    );
+    for (const row of existing) {
+      const date = String(row.holiday_date ?? "");
+      if (!keep.has(date)) {
+        await execute("DELETE FROM holidays WHERE holiday_date = ?", date);
+        // 평일 잘못 지정이었던 경우 당직 데이터도 같이 제거
+        await execute("DELETE FROM holiday_duties WHERE holiday_date = ?", date);
+      }
     }
-    const name = String(h?.localName ?? h?.name ?? "공휴일").trim() || "공휴일";
+  }
+
+  let count = 0;
+  for (const [date, name] of entries) {
     await execute(
       "INSERT INTO holidays (holiday_date, holiday_name, is_holiday, synced_at) VALUES (?, ?, 1, ?) ON CONFLICT(holiday_date) DO UPDATE SET holiday_name = excluded.holiday_name, is_holiday = 1, synced_at = excluded.synced_at",
       date,
