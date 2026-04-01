@@ -683,7 +683,8 @@ tbody tr:last-child td {
 
 .calendar-day-chip {
   font-size: 10px !important;
-  padding: 3px 8px !important;
+  /* 이전 8px 가로패딩·hidden 이 정렬을 악화 → 가로 여백을 약 1/1.5 수준으로 줄이고 overflow 복구 */
+  padding: 3px 5px !important;
   margin-bottom: 0 !important;
   line-height: 1.35 !important;
   display: flex;
@@ -694,7 +695,7 @@ tbody tr:last-child td {
   width: 100%;
   min-width: 0;
   align-self: stretch;
-  overflow: hidden;
+  overflow: visible;
   max-width: 100%;
   font-weight: 700 !important;
   border-radius: 6px !important;
@@ -710,7 +711,7 @@ tbody tr:last-child td {
   min-width: 0;
   max-width: 100%;
   margin: 0;
-  padding: 0 2px;
+  padding: 0;
   box-sizing: border-box;
   word-break: keep-all;
   text-align: center !important;
@@ -1391,11 +1392,11 @@ tr.request-cancelled-row td button {
 
   .calendar-day-chip {
     font-size: 9px !important;
-    padding: 2px 8px !important;
+    padding: 1px 5px !important;
   }
 
   .calendar-day-chip__text {
-    padding: 0 3px;
+    padding: 0;
   }
 
   .calendar-nav-month {
