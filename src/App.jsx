@@ -788,6 +788,26 @@ function App() {
     }
   }
 
+  async function uncancelRequest(requestId) {
+    const target = requests.find((r) => r.id === requestId);
+    if (!target || target.status !== "CANCELLED") return;
+    if (!window.confirm("취소를 복원하고 다시 신청 상태로 되돌릴까요?")) return;
+    const prevSnapshot = requests;
+    const prevCancellations = cancellations;
+    setRequests((prev) => prev.map((r) => (r.id === requestId ? { ...r, status: "APPLIED", cancelLocked: false } : r)));
+    setCancellations((prev) => (Array.isArray(prev) ? prev.filter((c) => c.leaveRequestId !== requestId) : []));
+    if (serverMode) {
+      try {
+        await api.uncancelRequest(requestId, { actorUserId: auth.userId });
+        await bootstrap();
+      } catch (e) {
+        window.alert?.(`취소 복원 실패: ${e?.message || e}`);
+        setRequests(prevSnapshot);
+        setCancellations(prevCancellations);
+      }
+    }
+  }
+
   async function selectRequest(requestId) {
     const payload = {
       selectionId: `ls_${Date.now()}`,
@@ -1020,7 +1040,7 @@ function App() {
             />
           }
         />
-        <Route path="/my" element={<MyRequestsPage myRequests={myRequests} cancelRequest={cancelRequest} />} />
+        <Route path="/my" element={<MyRequestsPage myRequests={myRequests} cancelRequest={cancelRequest} uncancelRequest={uncancelRequest} />} />
         <Route
           path="/dashboard"
           element={
@@ -1243,7 +1263,7 @@ function RequestPage({
   );
 }
 
-function MyRequestsPage({ myRequests, cancelRequest }) {
+function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest }) {
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [search, setSearch] = useState("");
   function matchesStatusFilter(r) {
@@ -1304,15 +1324,21 @@ function MyRequestsPage({ myRequests, cancelRequest }) {
                 <td>
                   {(() => {
                     const isLocked = Boolean(r.cancelLocked);
-                    const showButton = r.status === "APPLIED" || isLocked;
-                    const buttonLabel = isLocked ? "취소 처리됨" : "취소";
-                    return showButton ? (
-                      <button type="button" disabled={isLocked || r.status !== "APPLIED"} onClick={() => void cancelRequest(r.id)}>
-                        {buttonLabel}
-                      </button>
-                    ) : (
-                      "-"
-                    );
+                    if (r.status === "CANCELLED") {
+                      return (
+                        <button type="button" onClick={() => void uncancelRequest(r.id)}>
+                          취소 복원
+                        </button>
+                      );
+                    }
+                    if (r.status === "APPLIED" || isLocked) {
+                      return (
+                        <button type="button" disabled={isLocked || r.status !== "APPLIED"} onClick={() => void cancelRequest(r.id)}>
+                          {isLocked ? "취소 처리됨" : "취소"}
+                        </button>
+                      );
+                    }
+                    return "-";
                   })()}
                 </td>
               </tr>

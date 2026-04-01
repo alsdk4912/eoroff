@@ -79,6 +79,8 @@ export const api = {
     }),
   cancelRequest: (id, payload) =>
     requestJson(`/requests/${id}/cancel`, { method: "POST", body: JSON.stringify(payload) }),
+  uncancelRequest: (id, payload) =>
+    requestJson(`/requests/${id}/uncancel`, { method: "POST", body: JSON.stringify(payload) }),
   selectRequest: (id, payload) =>
     requestJson(`/requests/${id}/select`, { method: "POST", body: JSON.stringify(payload) }),
   rejectRequest: (id) => requestJson(`/requests/${id}/reject`, { method: "POST" }),

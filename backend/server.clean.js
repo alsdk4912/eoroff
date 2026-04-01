@@ -640,6 +640,29 @@ app.post("/api/requests/:id/cancel", async (req, res) => {
   }
 });
 
+app.post("/api/requests/:id/uncancel", async (req, res) => {
+  try {
+    const row = await queryOne(
+      "SELECT id, leave_type, leave_date, requested_at, status FROM requests WHERE id = ?",
+      req.params.id
+    );
+    if (!row) return res.status(404).json({ error: "요청을 찾을 수 없습니다." });
+    if (String(row.status) !== "CANCELLED") {
+      return res.status(400).json({ error: "취소 상태인 신청만 복원할 수 있습니다." });
+    }
+
+    await runTransaction(async (tx) => {
+      await tx.execute("UPDATE requests SET status = 'APPLIED' WHERE id = ?", req.params.id);
+      await tx.execute("DELETE FROM cancellations WHERE leave_request_id = ?", req.params.id);
+    });
+    await reconcileGoldkeyUsageByPolicy(new Date().toISOString());
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /api/requests/:id/uncancel", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
 app.post("/api/requests/:id/select", async (req, res) => {
   await execute("UPDATE requests SET status = 'APPROVED' WHERE id = ?", req.params.id);
   await execute(
