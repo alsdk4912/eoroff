@@ -21,6 +21,42 @@ function resolveEmployeeNo(name, fallback) {
   return EMPLOYEE_NO_BY_NAME[name] || fallback;
 }
 
+function toYmdPartsLoose(dateLike) {
+  const raw = String(dateLike ?? "").trim();
+  const korean = /^(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\./.exec(raw);
+  if (korean) {
+    return { year: Number(korean[1]), month: Number(korean[2]), day: Number(korean[3]) };
+  }
+  const ymd = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(raw);
+  if (ymd) {
+    return { year: Number(ymd[1]), month: Number(ymd[2]), day: Number(ymd[3]) };
+  }
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+  const year = Number(parts.find((p) => p.type === "year")?.value);
+  const month = Number(parts.find((p) => p.type === "month")?.value);
+  const day = Number(parts.find((p) => p.type === "day")?.value);
+  if (!year || !month || !day) return null;
+  return { year, month, day };
+}
+
+function isKstAprilFirstToTenth(dateLike) {
+  const p = toYmdPartsLoose(dateLike);
+  return Boolean(p && p.month === 4 && p.day >= 1 && p.day <= 10);
+}
+
+function parseLeaveYmd(ymd) {
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(String(ymd ?? "").trim());
+  if (!m) return null;
+  return { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) };
+}
+
 let client;
 /** initDb 이후 로컬일 때만 절대경로 (헬스·로그용) */
 let resolvedDbPath = "";
@@ -206,6 +242,7 @@ export async function initDb() {
   await seedDefaultsIfEmpty();
   await ensureAnesthesiaUsers();
   await ensureKnownEmployeeNos();
+  await backfillLongTermGoldkeyCancellationExemptions();
   await ensureGoldkeyDefaults();
   return client;
 }
@@ -372,6 +409,45 @@ async function ensureAnesthesiaUsers() {
 async function ensureKnownEmployeeNos() {
   for (const [name, employeeNo] of Object.entries(EMPLOYEE_NO_BY_NAME)) {
     await execute("UPDATE users SET employee_no = ? WHERE name = ?", employeeNo, name);
+  }
+}
+
+async function backfillLongTermGoldkeyCancellationExemptions() {
+  const rows = await queryAll(
+    `SELECT
+       c.id AS cancellation_id,
+       c.deduction_exempt,
+       c.deduction_note,
+       c.cancelled_at,
+       r.id AS request_id,
+       r.user_id,
+       r.leave_type,
+       r.leave_date,
+       r.requested_at
+     FROM cancellations c
+     JOIN requests r ON r.id = c.leave_request_id`
+  );
+
+  for (const row of rows) {
+    const alreadyExempt = Number(row.deduction_exempt || 0) === 1;
+    if (alreadyExempt) continue;
+    if (String(row.leave_type || "") !== "GOLDKEY") continue;
+    const leave = parseLeaveYmd(row.leave_date);
+    if (!leave || leave.month < 7 || leave.month > 12) continue;
+    if (!isKstAprilFirstToTenth(row.requested_at)) continue;
+    if (!isKstAprilFirstToTenth(row.cancelled_at)) continue;
+
+    await runTransaction(async (tx) => {
+      await tx.execute(
+        "UPDATE goldkeys SET used_count = CASE WHEN used_count > 0 THEN used_count - 1 ELSE 0 END, remaining_count = CASE WHEN remaining_count < quota_total THEN remaining_count + 1 ELSE quota_total END WHERE user_id = ?",
+        row.user_id
+      );
+      await tx.execute(
+        "UPDATE cancellations SET deduction_exempt = 1, deduction_note = ? WHERE id = ?",
+        "차감 제외 처리됨(장기휴가 모집기간)",
+        row.cancellation_id
+      );
+    });
   }
 }
 
