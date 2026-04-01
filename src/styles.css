@@ -1633,7 +1633,10 @@ tr.request-dimmed-row .leave-type-pill.selected-item {
 /* 취소 건: 취소선 (유형 색은 유지) */
 .selected-item.request-cancelled {
   text-decoration: line-through !important;
-  opacity: 0.88;
+  opacity: 0.95;
+  background: #e5e7eb !important;
+  color: #4b5563 !important;
+  border-color: #9ca3af !important;
 }
 
 tr.request-cancelled-row td {
@@ -1644,6 +1647,9 @@ tr.request-cancelled-row td {
 
 tr.request-cancelled-row .leave-type-pill.selected-item {
   text-decoration: line-through !important;
+  background: #e5e7eb !important;
+  color: #4b5563 !important;
+  border-color: #9ca3af !important;
 }
 
 tr.request-dimmed-row td button,
