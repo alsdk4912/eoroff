@@ -1336,10 +1336,10 @@ tr.request-cancelled-row td {
   vertical-align: middle;
 }
 
-/* 칩에도 개별 취소선이 있으면 끊겨 보임 → 부모 한 줄만 적용 */
+/* .selected-item.request-cancelled 의 line-through 와 겹치지 않게 부모 취소선을 물림 — 유형(일반휴가·골드키 등)도 동일하게 줄긋기 */
 .my-requests-table .my-requests-cancelled-strike .leave-type-pill.selected-item.request-cancelled,
 .my-requests-table .my-requests-cancelled-strike .selected-item.request-cancelled {
-  text-decoration: none !important;
+  text-decoration: inherit !important;
 }
 
 /* 취소: 유형 칩에 또 회색 박스 두지 않고, 행 전체가 하나의 회색 블록으로 보이게 */
