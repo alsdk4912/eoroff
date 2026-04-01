@@ -439,6 +439,19 @@ tbody tr:last-child td {
     border-bottom: none;
   }
 
+  /* 취소 건: 한 줄 전체가 회색 박스(유형 칩은 위에서 투명 처리) */
+  .my-requests-table tbody tr.request-cancelled-row {
+    background: #e5e7eb !important;
+    border: 1px solid #d1d5db !important;
+    border-radius: var(--radius-md);
+    border-bottom: none !important;
+    margin-bottom: 10px;
+  }
+
+  .my-requests-table tbody tr.request-cancelled-row td {
+    background: transparent !important;
+  }
+
   .my-requests-table tbody td {
     display: flex;
     align-items: center;
@@ -658,7 +671,7 @@ tbody tr:last-child td {
 
 .calendar-day-chip {
   font-size: 10px !important;
-  padding: 3px 6px !important;
+  padding: 3px 8px !important;
   margin-bottom: 0 !important;
   line-height: 1.35 !important;
   display: flex;
@@ -669,7 +682,7 @@ tbody tr:last-child td {
   width: 100%;
   min-width: 0;
   align-self: stretch;
-  overflow: visible;
+  overflow: hidden;
   max-width: 100%;
   font-weight: 700 !important;
   border-radius: 6px !important;
@@ -685,7 +698,7 @@ tbody tr:last-child td {
   min-width: 0;
   max-width: 100%;
   margin: 0;
-  padding: 0;
+  padding: 0 2px;
   box-sizing: border-box;
   word-break: keep-all;
   text-align: center !important;
@@ -1106,6 +1119,10 @@ tbody tr:last-child td {
   background: #fafafa;
 }
 
+.work-schedule-table thead th:not(:first-child) {
+  text-align: center;
+}
+
 .work-schedule-table th:first-child,
 .work-schedule-table td.work-schedule-name-cell {
   position: sticky;
@@ -1297,11 +1314,15 @@ tr.request-cancelled-row td {
   background: #e5e7eb !important;
 }
 
+/* 취소: 유형 칩에 또 회색 박스 두지 않고, 행 전체가 하나의 회색 블록으로 보이게 */
 tr.request-cancelled-row .leave-type-pill.selected-item {
   text-decoration: line-through !important;
-  background: #e5e7eb !important;
+  background: transparent !important;
   color: #4b5563 !important;
-  border-color: #9ca3af !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
 }
 
 tr.request-dimmed-row td button,
@@ -1343,7 +1364,11 @@ tr.request-cancelled-row td button {
 
   .calendar-day-chip {
     font-size: 9px !important;
-    padding: 1px 4px !important;
+    padding: 2px 8px !important;
+  }
+
+  .calendar-day-chip__text {
+    padding: 0 3px;
   }
 
   .calendar-nav-month {
