@@ -1346,7 +1346,7 @@ function isSpecialLongTermGoldkeyRequestForDashboard(r) {
   return req.month === 4 && req.day >= 1 && req.day <= 10;
 }
 
-/** 종합현황 표시용 신청·사용 집계 (요청 정책: 4/11 전엔 장기모집 특수건 미반영, 4/11 후엔 상태 무관 신청건수 반영) */
+/** 종합현황 표시용 신청 집계 (요청 정책: 4/11 전엔 장기모집 특수건 미반영, 4/11 후엔 상태 무관 신청건수 반영) */
 function countGoldkeyApplyUse(requests, userId, nowLike = new Date().toISOString()) {
   return requests.filter((r) => {
     if (r.userId !== userId || r.leaveType !== "GOLDKEY") return false;
@@ -1394,7 +1394,7 @@ function DashboardPage({ dashboard, goldkeys, requests, cancellations, users, se
         <section className="card">
           <h2>골드키 잔여 내역</h2>
           <p className="help" style={{ marginBottom: 10 }}>
-            <strong>신청·사용</strong>은 골드키 사용 횟수이며(서버 DB 기준), 장기휴가 모집기간 예외 취소는 차감 복구가 반영됩니다.
+            4.1-4.11일 하반기 장기휴가 모집기간동안 신청한 건에 대해서는 4월 11일 이후 일괄적으로 신청건수에서 차감됩니다.
           </p>
           <div className="table-wrap">
             <table>
@@ -1402,7 +1402,7 @@ function DashboardPage({ dashboard, goldkeys, requests, cancellations, users, se
                 <tr>
                   <th>이름</th>
                   <th>골드키 총개수</th>
-                  <th>신청·사용</th>
+                  <th>신청</th>
                   <th>잔여개수</th>
                 </tr>
               </thead>
