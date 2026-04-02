@@ -1,5 +1,5 @@
 /* GitHub Pages: 예전 index.html이 캐시에 남으면 VITE_DEPLOY_TAG(빌드 SHA)가 영원히 안 바뀐 것처럼 보임 → HTML은 네트워크 우선 */
-const CACHE_NAME = "eor-pwa-v37-eoroff-sw-network-first";
+const CACHE_NAME = "eor-pwa-v38-eoroff-sw-network-first";
 const APP_SHELL = [
   "./manifest.json",
   "./icon.svg",
@@ -116,13 +116,22 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const raw = String(event.notification?.data?.url || "#/calendar");
-  const targetUrl = raw.startsWith("http") ? raw : `${self.location.origin}/${raw.replace(/^\/+/, "")}`;
+  const appBaseUrl = new URL(self.registration.scope || `${self.location.origin}/`);
+  let targetUrl = "";
+  if (raw.startsWith("http")) {
+    targetUrl = raw;
+  } else if (raw.startsWith("#")) {
+    appBaseUrl.hash = raw.slice(1);
+    targetUrl = appBaseUrl.toString();
+  } else {
+    targetUrl = new URL(raw.replace(/^\/+/, ""), appBaseUrl).toString();
+  }
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
       for (const client of clients) {
         try {
           const cu = new URL(client.url);
-          if (cu.origin === self.location.origin) {
+          if (cu.origin === appBaseUrl.origin && cu.pathname.startsWith(appBaseUrl.pathname)) {
             client.focus();
             if ("navigate" in client) return client.navigate(targetUrl);
             return client;
