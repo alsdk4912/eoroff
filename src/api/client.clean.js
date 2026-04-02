@@ -113,6 +113,10 @@ export const api = {
     requestJson(`/day-comments/${encodeURIComponent(id)}/update`, { method: "POST", body: JSON.stringify(payload) }),
   deleteDayComment: (id, payload) =>
     requestJson(`/day-comments/${encodeURIComponent(id)}/delete`, { method: "POST", body: JSON.stringify(payload) }),
+  listNotifications: (userId) =>
+    requestJson(`/notifications?userId=${encodeURIComponent(String(userId ?? ""))}`),
+  markAllNotificationsRead: (payload) =>
+    requestJson("/notifications/read-all", { method: "POST", body: JSON.stringify(payload) }),
   bulkSetGoldkeyUsage: (payload) =>
     requestJson("/admin/goldkeys/usage-bulk", { method: "POST", body: JSON.stringify(payload) }),
   downloadBackupSql: async () => {

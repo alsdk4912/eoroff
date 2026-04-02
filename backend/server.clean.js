@@ -101,6 +101,29 @@ function isAfterRecruitWindowKst(nowLike, year) {
   return now.day >= 11;
 }
 
+async function createNotificationsForAllNurses({ type, message, targetDate = "", leaveRequestId = "" }) {
+  const msg = String(message ?? "").trim();
+  if (!msg) return;
+  const nurses = await queryAll("SELECT id FROM users WHERE role = 'NURSE'");
+  if (!Array.isArray(nurses) || nurses.length === 0) return;
+  const nowIso = new Date().toISOString();
+  let i = 0;
+  for (const n of nurses) {
+    const uid = String(n.id ?? "").trim();
+    if (!uid) continue;
+    await execute(
+      "INSERT INTO notifications (id, user_id, type, message, target_date, leave_request_id, created_at, read_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)",
+      `ntf_${Date.now()}_${i++}_${Math.random().toString(36).slice(2, 7)}`,
+      uid,
+      String(type ?? "INFO"),
+      msg,
+      String(targetDate ?? ""),
+      String(leaveRequestId ?? ""),
+      nowIso
+    );
+  }
+}
+
 async function reconcileGoldkeyUsageByPolicy(nowLike = new Date().toISOString()) {
   const reqRows = await queryAll(
     "SELECT user_id, leave_type, leave_date, requested_at, status FROM requests WHERE leave_type = 'GOLDKEY'"
@@ -238,6 +261,41 @@ app.get("/api/bootstrap", async (_, res) => {
   }
 });
 
+app.get("/api/notifications", async (req, res) => {
+  try {
+    const userId = String(req.query.userId ?? "").trim();
+    if (!userId) return res.status(400).json({ error: "userId가 필요합니다." });
+    const actor = await queryOne("SELECT id, role FROM users WHERE id = ?", userId);
+    if (!actor) return res.status(404).json({ error: "사용자를 찾을 수 없습니다." });
+    const rows = await queryAll(
+      "SELECT id, user_id, type, message, target_date, leave_request_id, created_at, read_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 200",
+      userId
+    );
+    return res.json({ ok: true, notifications: rows });
+  } catch (err) {
+    console.error("GET /api/notifications", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
+app.post("/api/notifications/read-all", async (req, res) => {
+  try {
+    const userId = String(req.body?.userId ?? "").trim();
+    if (!userId) return res.status(400).json({ error: "userId가 필요합니다." });
+    const actor = await queryOne("SELECT id, role FROM users WHERE id = ?", userId);
+    if (!actor) return res.status(404).json({ error: "사용자를 찾을 수 없습니다." });
+    await execute(
+      "UPDATE notifications SET read_at = ? WHERE user_id = ? AND (read_at IS NULL OR read_at = '')",
+      new Date().toISOString(),
+      userId
+    );
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /api/notifications/read-all", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
 app.post("/api/login", async (req, res) => {
   const { loginName, password } = req.body ?? {};
   const name = String(loginName ?? "").trim();
@@ -316,6 +374,11 @@ app.post("/api/admin/day-memos", async (req, res) => {
       actorUserId,
       new Date().toISOString()
     );
+    await createNotificationsForAllNurses({
+      type: "ADMIN_MEMO",
+      message: `관리자 메모 등록: ${ymd}`,
+      targetDate: ymd,
+    });
     return res.json({ ok: true });
   } catch (err) {
     console.error("POST /api/admin/day-memos", err);
@@ -699,6 +762,11 @@ app.post("/api/requests/:id/uncancel", async (req, res) => {
 });
 
 app.post("/api/requests/:id/select", async (req, res) => {
+  const row = await queryOne(
+    "SELECT id, leave_date, leave_type FROM requests WHERE id = ?",
+    req.params.id
+  );
+  if (!row) return res.status(404).json({ error: "요청을 찾을 수 없습니다." });
   await execute("UPDATE requests SET status = 'APPROVED' WHERE id = ?", req.params.id);
   await execute(
     "INSERT INTO selections (id, leave_request_id, selected_by, selected_at) VALUES (?, ?, ?, ?)",
@@ -707,11 +775,28 @@ app.post("/api/requests/:id/select", async (req, res) => {
     req.body.selectedBy,
     req.body.selectedAt
   );
+  await createNotificationsForAllNurses({
+    type: "REQUEST_APPROVED",
+    message: `휴가 승인: ${row.leave_date} ${row.leave_type}`,
+    targetDate: row.leave_date,
+    leaveRequestId: row.id,
+  });
   res.json({ ok: true });
 });
 
 app.post("/api/requests/:id/reject", async (req, res) => {
+  const row = await queryOne(
+    "SELECT id, leave_date, leave_type FROM requests WHERE id = ?",
+    req.params.id
+  );
+  if (!row) return res.status(404).json({ error: "요청을 찾을 수 없습니다." });
   await execute("UPDATE requests SET status = 'REJECTED' WHERE id = ?", req.params.id);
+  await createNotificationsForAllNurses({
+    type: "REQUEST_REJECTED",
+    message: `휴가 거절: ${row.leave_date} ${row.leave_type}`,
+    targetDate: row.leave_date,
+    leaveRequestId: row.id,
+  });
   res.json({ ok: true });
 });
 

@@ -246,6 +246,7 @@ function App() {
   const [dayComments, setDayComments] = useLocalStorage(LS_DAY_COMMENTS, []);
   const [workScheduleRows, setWorkScheduleRows] = useLocalStorage(LS_WORK_SCHEDULE_2026, WORK_SCHEDULE_2026_ROWS);
   const [notifications, setNotifications] = useLocalStorage(LS_NOTIFICATIONS, []);
+  const [serverNotifications, setServerNotifications] = useState([]);
 
   useEffect(() => {
     dropStaleOfflineLeaveKeys();
@@ -292,12 +293,13 @@ function App() {
   const canEditHolidayDuty = currentUser?.role === "NURSE" || currentUser?.role === "ADMIN" || currentUser?.role === "ANESTHESIA";
   const myGoldkey = goldkeys.find((g) => g.userId === auth?.userId);
   const isLoggedIn = Boolean(auth?.userId);
+  const notificationsSource = serverMode ? serverNotifications : notifications;
   const myNotifications = useMemo(
     () =>
-      (Array.isArray(notifications) ? notifications : [])
+      (Array.isArray(notificationsSource) ? notificationsSource : [])
         .filter((n) => n.userId === auth?.userId)
         .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))),
-    [notifications, auth?.userId]
+    [notificationsSource, auth?.userId]
   );
   const unreadNotificationCount = useMemo(
     () => myNotifications.filter((n) => !n.readAt).length,
@@ -305,6 +307,9 @@ function App() {
   );
 
   function createNotificationForNurses(message, payload = {}) {
+    // 2단계: 서버 모드에서는 백엔드가 알림을 생성/동기화하므로
+    // 프런트 로컬 알림을 추가로 만들지 않음(중복 방지)
+    if (serverMode) return;
     const nurseIds = users.filter((u) => u.role === "NURSE").map((u) => u.id);
     if (nurseIds.length === 0) return;
     const nowIso = new Date().toISOString();
@@ -323,8 +328,30 @@ function App() {
     setNotifications((prev) => [...rows, ...(Array.isArray(prev) ? prev : [])].slice(0, 800));
   }
 
-  function markAllNotificationsRead() {
+  async function markAllNotificationsRead() {
     if (!auth?.userId) return;
+    if (serverMode) {
+      try {
+        await api.markAllNotificationsRead({ userId: auth.userId });
+        const result = await api.listNotifications(auth.userId);
+        const rows = Array.isArray(result?.notifications) ? result.notifications : [];
+        setServerNotifications(
+          rows.map((n) => ({
+            id: n.id,
+            userId: n.user_id ?? n.userId,
+            message: String(n.message ?? ""),
+            type: String(n.type ?? "INFO"),
+            targetDate: String(n.target_date ?? n.targetDate ?? ""),
+            leaveRequestId: String(n.leave_request_id ?? n.leaveRequestId ?? ""),
+            createdAt: String(n.created_at ?? n.createdAt ?? ""),
+            readAt: String(n.read_at ?? n.readAt ?? ""),
+          }))
+        );
+      } catch {
+        // ignore
+      }
+      return;
+    }
     const nowIso = new Date().toISOString();
     setNotifications((prev) =>
       (Array.isArray(prev) ? prev : []).map((n) =>
@@ -449,6 +476,43 @@ function App() {
       }
     })();
   }, [isLoggedIn, isAdmin]);
+
+  useEffect(() => {
+    if (!isLoggedIn || currentUser?.role !== "NURSE" || !serverMode) {
+      setServerNotifications([]);
+      return;
+    }
+    let cancelled = false;
+    let timerId;
+    const load = async () => {
+      try {
+        const result = await api.listNotifications(auth?.userId);
+        if (cancelled) return;
+        const rows = Array.isArray(result?.notifications) ? result.notifications : [];
+        setServerNotifications(
+          rows.map((n) => ({
+            id: n.id,
+            userId: n.user_id ?? n.userId,
+            message: String(n.message ?? ""),
+            type: String(n.type ?? "INFO"),
+            targetDate: String(n.target_date ?? n.targetDate ?? ""),
+            leaveRequestId: String(n.leave_request_id ?? n.leaveRequestId ?? ""),
+            createdAt: String(n.created_at ?? n.createdAt ?? ""),
+            readAt: String(n.read_at ?? n.readAt ?? ""),
+          }))
+        );
+      } catch {
+        // ignore polling failure
+      } finally {
+        if (!cancelled) timerId = window.setTimeout(load, 20000);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+      if (timerId) window.clearTimeout(timerId);
+    };
+  }, [isLoggedIn, serverMode, currentUser?.role, auth?.userId]);
 
   async function bootstrap() {
     try {

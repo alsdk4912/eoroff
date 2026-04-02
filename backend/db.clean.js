@@ -209,6 +209,21 @@ CREATE TABLE IF NOT EXISTS day_comments (
   content TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+
+-- 앱 내 알림 (2단계: 서버 동기화 + 추후 푸시 확장 기반)
+CREATE TABLE IF NOT EXISTS notifications (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  message TEXT NOT NULL,
+  target_date TEXT,
+  leave_request_id TEXT,
+  created_at TEXT NOT NULL,
+  read_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user_created
+  ON notifications(user_id, created_at DESC);
 `;
 
 export async function initDb() {
