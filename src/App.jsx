@@ -36,6 +36,7 @@ const LS_LADDER_RESULTS = "or.ladderResults.v1";
 const LS_ADMIN_DAY_MEMOS = "or.adminDayMemos.v1";
 const LS_DAY_COMMENTS = "or.dayComments.v1";
 const LS_WORK_SCHEDULE_2026 = "or.workSchedule2026.v1";
+const LS_NOTIFICATIONS = "or.notifications.v1";
 
 /** 이전 버전 키는 남아 있으면 혼동만 되므로 제거(현재 키는 유지) */
 function dropStaleOfflineLeaveKeys() {
@@ -244,6 +245,7 @@ function App() {
   const [adminDayMemos, setAdminDayMemos] = useLocalStorage(LS_ADMIN_DAY_MEMOS, {});
   const [dayComments, setDayComments] = useLocalStorage(LS_DAY_COMMENTS, []);
   const [workScheduleRows, setWorkScheduleRows] = useLocalStorage(LS_WORK_SCHEDULE_2026, WORK_SCHEDULE_2026_ROWS);
+  const [notifications, setNotifications] = useLocalStorage(LS_NOTIFICATIONS, []);
 
   useEffect(() => {
     dropStaleOfflineLeaveKeys();
@@ -290,6 +292,46 @@ function App() {
   const canEditHolidayDuty = currentUser?.role === "NURSE" || currentUser?.role === "ADMIN" || currentUser?.role === "ANESTHESIA";
   const myGoldkey = goldkeys.find((g) => g.userId === auth?.userId);
   const isLoggedIn = Boolean(auth?.userId);
+  const myNotifications = useMemo(
+    () =>
+      (Array.isArray(notifications) ? notifications : [])
+        .filter((n) => n.userId === auth?.userId)
+        .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))),
+    [notifications, auth?.userId]
+  );
+  const unreadNotificationCount = useMemo(
+    () => myNotifications.filter((n) => !n.readAt).length,
+    [myNotifications]
+  );
+
+  function createNotificationForNurses(message, payload = {}) {
+    const nurseIds = users.filter((u) => u.role === "NURSE").map((u) => u.id);
+    if (nurseIds.length === 0) return;
+    const nowIso = new Date().toISOString();
+    const msg = String(message ?? "").trim();
+    if (!msg) return;
+    const rows = nurseIds.map((uid, idx) => ({
+      id: `ntf_${Date.now()}_${idx}`,
+      userId: uid,
+      message: msg,
+      type: String(payload.type ?? "INFO"),
+      targetDate: payload.targetDate ? String(payload.targetDate) : "",
+      leaveRequestId: payload.leaveRequestId ? String(payload.leaveRequestId) : "",
+      createdAt: nowIso,
+      readAt: "",
+    }));
+    setNotifications((prev) => [...rows, ...(Array.isArray(prev) ? prev : [])].slice(0, 800));
+  }
+
+  function markAllNotificationsRead() {
+    if (!auth?.userId) return;
+    const nowIso = new Date().toISOString();
+    setNotifications((prev) =>
+      (Array.isArray(prev) ? prev : []).map((n) =>
+        n.userId === auth.userId && !n.readAt ? { ...n, readAt: nowIso } : n
+      )
+    );
+  }
 
   function applyBootstrapPayload(data) {
     setUsers(data.users.map((u) => ({ id: u.id, name: u.name, role: u.role, employeeNo: u.employee_no })));
@@ -861,6 +903,7 @@ function App() {
   }
 
   async function selectRequest(requestId) {
+    const target = requests.find((r) => r.id === requestId);
     const payload = {
       selectionId: `ls_${Date.now()}`,
       selectedBy: auth.userId,
@@ -872,21 +915,44 @@ function App() {
       try {
         await api.selectRequest(requestId, payload);
         await bootstrap();
+        if (target) {
+          createNotificationForNurses(
+            `휴가 승인: ${target.leaveDate} ${leaveTypeLabel(target.leaveType)}`,
+            { type: "REQUEST_APPROVED", targetDate: target.leaveDate, leaveRequestId: target.id }
+          );
+        }
       } catch (e) {
         window.alert?.(`선정 반영 실패: ${e?.message || e}`);
       }
+    } else if (target) {
+      createNotificationForNurses(
+        `휴가 승인: ${target.leaveDate} ${leaveTypeLabel(target.leaveType)}`,
+        { type: "REQUEST_APPROVED", targetDate: target.leaveDate, leaveRequestId: target.id }
+      );
     }
   }
 
   async function rejectRequest(requestId) {
+    const target = requests.find((r) => r.id === requestId);
     setRequests((prev) => prev.map((r) => (r.id === requestId ? { ...r, status: "REJECTED" } : r)));
     if (serverMode) {
       try {
         await api.rejectRequest(requestId);
         await bootstrap();
+        if (target) {
+          createNotificationForNurses(
+            `휴가 거절: ${target.leaveDate} ${leaveTypeLabel(target.leaveType)}`,
+            { type: "REQUEST_REJECTED", targetDate: target.leaveDate, leaveRequestId: target.id }
+          );
+        }
       } catch (e) {
         window.alert?.(`미선정 반영 실패: ${e?.message || e}`);
       }
+    } else if (target) {
+      createNotificationForNurses(
+        `휴가 거절: ${target.leaveDate} ${leaveTypeLabel(target.leaveType)}`,
+        { type: "REQUEST_REJECTED", targetDate: target.leaveDate, leaveRequestId: target.id }
+      );
     }
   }
 
@@ -912,6 +978,9 @@ function App() {
         });
         await bootstrap();
         notifyDone("저장되었습니다.");
+        if (currentUser?.role === "ADMIN") {
+          createNotificationForNurses(`관리자 메모 등록: ${ymd}`, { type: "ADMIN_MEMO", targetDate: ymd });
+        }
       } catch (e) {
         window.alert?.(`관리자 메모 저장 실패: ${e?.message || e}`);
       }
@@ -922,6 +991,9 @@ function App() {
       [ymd]: txt,
     }));
     notifyDone("저장되었습니다.");
+    if (currentUser?.role === "ADMIN") {
+      createNotificationForNurses(`관리자 메모 등록: ${ymd}`, { type: "ADMIN_MEMO", targetDate: ymd });
+    }
   }
 
   async function createDayComment(targetDate, content) {
@@ -1083,6 +1155,29 @@ function App() {
           </>
         )}
       </nav>
+
+      {currentUser?.role === "NURSE" ? (
+        <section className="card notification-card">
+          <div className="notification-head">
+            <h3>알림 {unreadNotificationCount > 0 ? <span className="notification-badge">{unreadNotificationCount}</span> : null}</h3>
+            <button type="button" className="notification-readall-btn" onClick={markAllNotificationsRead}>
+              모두 읽음
+            </button>
+          </div>
+          {myNotifications.length === 0 ? (
+            <p className="help">새 알림이 없습니다.</p>
+          ) : (
+            <ul className="notification-list">
+              {myNotifications.slice(0, 8).map((n) => (
+                <li key={n.id} className={`notification-item${n.readAt ? "" : " notification-item--unread"}`}>
+                  <p>{n.message}</p>
+                  <span>{new Date(n.createdAt).toLocaleString("ko-KR")}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
 
       <Routes>
         <Route

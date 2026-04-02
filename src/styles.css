@@ -153,6 +153,76 @@ body::before {
   transform: scale(0.98);
 }
 
+.notification-card {
+  padding-top: 14px;
+}
+
+.notification-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.notification-head h3 {
+  margin: 0;
+  font-size: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.notification-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: #dc2626;
+}
+
+.notification-readall-btn {
+  padding: 6px 10px !important;
+  font-size: 12px !important;
+}
+
+.notification-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.notification-item {
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  background: #fafafa;
+}
+
+.notification-item--unread {
+  background: #eff6ff;
+  border-color: rgba(37, 99, 235, 0.35);
+}
+
+.notification-item p {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.notification-item span {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
 /* ----- Cards ----- */
 .card {
   background: var(--surface);
