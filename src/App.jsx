@@ -294,12 +294,21 @@ function App() {
   const location = useLocation();
   useEffect(() => {
     if (location?.pathname !== "/calendar") return;
+    const sp = new URLSearchParams(location?.search ?? "");
+    const ymdFromQuery = String(sp.get("ymd") ?? "").trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(ymdFromQuery)) {
+      setCalendarSelectedYmd(ymdFromQuery);
+      setCalendarMonth(ymdFromQuery.slice(0, 7));
+      setLeaveDate(ymdFromQuery);
+      return;
+    }
+
     const n = new Date();
     const nextMonth = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`;
     setCalendarMonth(nextMonth);
     setCalendarSelectedYmd(null);
     setLeaveDate(toLocalYMD(n));
-  }, [location?.pathname]);
+  }, [location?.pathname, location?.search]);
 
   const currentUser = users.find((u) => u.id === auth?.userId);
   const isAdmin = currentUser?.role === "ADMIN";
@@ -1067,7 +1076,7 @@ function App() {
         await bootstrap();
         if (target) {
           createNotificationForNurses(
-            `휴가 승인: ${target.leaveDate} ${leaveTypeLabel(target.leaveType)}`,
+            `휴가 처리 결과 안내: 승인 ${target.leaveDate} · ${leaveTypeLabel(target.leaveType)}`,
             { type: "REQUEST_APPROVED", targetDate: target.leaveDate, leaveRequestId: target.id }
           );
         }
@@ -1076,7 +1085,7 @@ function App() {
       }
     } else if (target) {
       createNotificationForNurses(
-        `휴가 승인: ${target.leaveDate} ${leaveTypeLabel(target.leaveType)}`,
+        `휴가 처리 결과 안내: 승인 ${target.leaveDate} · ${leaveTypeLabel(target.leaveType)}`,
         { type: "REQUEST_APPROVED", targetDate: target.leaveDate, leaveRequestId: target.id }
       );
     }
@@ -1091,7 +1100,7 @@ function App() {
         await bootstrap();
         if (target) {
           createNotificationForNurses(
-            `휴가 거절: ${target.leaveDate} ${leaveTypeLabel(target.leaveType)}`,
+            `휴가 처리 결과 안내: 거절 ${target.leaveDate} · ${leaveTypeLabel(target.leaveType)}`,
             { type: "REQUEST_REJECTED", targetDate: target.leaveDate, leaveRequestId: target.id }
           );
         }
@@ -1100,7 +1109,7 @@ function App() {
       }
     } else if (target) {
       createNotificationForNurses(
-        `휴가 거절: ${target.leaveDate} ${leaveTypeLabel(target.leaveType)}`,
+        `휴가 처리 결과 안내: 거절 ${target.leaveDate} · ${leaveTypeLabel(target.leaveType)}`,
         { type: "REQUEST_REJECTED", targetDate: target.leaveDate, leaveRequestId: target.id }
       );
     }
@@ -1129,7 +1138,7 @@ function App() {
         await bootstrap();
         notifyDone("저장되었습니다.");
         if (currentUser?.role === "ADMIN") {
-          createNotificationForNurses(`관리자 메모 등록: ${ymd}`, { type: "ADMIN_MEMO", targetDate: ymd });
+          createNotificationForNurses(`새 메모 등록: ${ymd}`, { type: "ADMIN_MEMO", targetDate: ymd });
         }
       } catch (e) {
         window.alert?.(`관리자 메모 저장 실패: ${e?.message || e}`);
@@ -1142,7 +1151,7 @@ function App() {
     }));
     notifyDone("저장되었습니다.");
     if (currentUser?.role === "ADMIN") {
-      createNotificationForNurses(`관리자 메모 등록: ${ymd}`, { type: "ADMIN_MEMO", targetDate: ymd });
+      createNotificationForNurses(`새 메모 등록: ${ymd}`, { type: "ADMIN_MEMO", targetDate: ymd });
     }
   }
 
@@ -1172,6 +1181,9 @@ function App() {
       createdAt: new Date().toISOString(),
     };
     setDayComments((prev) => [newRow, ...(Array.isArray(prev) ? prev : [])]);
+    if (currentUser?.role === "ADMIN") {
+      createNotificationForNurses(`새 댓글 등록: ${ymd}`, { type: "DAY_COMMENT", targetDate: ymd });
+    }
     notifyDone("댓글이 등록되었습니다.");
   }
 
@@ -1326,7 +1338,24 @@ function App() {
           ) : (
             <ul className="notification-list">
               {myNotifications.slice(0, 8).map((n) => (
-                <li key={n.id} className={`notification-item${n.readAt ? "" : " notification-item--unread"}`}>
+                <li
+                  key={n.id}
+                  className={`notification-item${n.readAt ? "" : " notification-item--unread"}`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
+                    const td = String(n.targetDate ?? n.target_date ?? "").trim();
+                    if (!/^\d{4}-\d{2}-\d{2}$/.test(td)) return;
+                    window.location.hash = `#/calendar?ymd=${td}`;
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter" && e.key !== " ") return;
+                    e.preventDefault();
+                    const td = String(n.targetDate ?? n.target_date ?? "").trim();
+                    if (!/^\d{4}-\d{2}-\d{2}$/.test(td)) return;
+                    window.location.hash = `#/calendar?ymd=${td}`;
+                  }}
+                >
                   <p>{n.message}</p>
                   <span>{new Date(n.createdAt).toLocaleString("ko-KR")}</span>
                 </li>

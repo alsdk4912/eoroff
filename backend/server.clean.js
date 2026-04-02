@@ -112,6 +112,14 @@ function isAfterRecruitWindowKst(nowLike, year) {
   return now.day >= 11;
 }
 
+function leaveTypeLabel(leaveType) {
+  if (leaveType === "GOLDKEY") return "골드키";
+  if (leaveType === "GENERAL_PRIORITY") return "일반휴가-우선순위";
+  if (leaveType === "GENERAL_NORMAL") return "일반휴가-후순위";
+  if (leaveType === "HALF_DAY") return "반차";
+  return String(leaveType ?? "");
+}
+
 async function createNotificationsForAllNurses({ type, message, targetDate = "", leaveRequestId = "" }) {
   const msg = String(message ?? "").trim();
   if (!msg) return;
@@ -477,13 +485,13 @@ app.post("/api/admin/day-memos", async (req, res) => {
     );
     await createNotificationsForAllNurses({
       type: "ADMIN_MEMO",
-      message: `관리자 메모 등록: ${ymd}`,
+      message: `새 메모 등록: ${ymd}`,
       targetDate: ymd,
     });
     await sendPushToAllNurses({
-      title: "관리자 메모 알림",
-      body: `관리자 메모 등록: ${ymd}`,
-      url: `#/calendar`,
+      title: "새 메모 등록",
+      body: `새 메모 등록: ${ymd}`,
+      url: `#/calendar?ymd=${encodeURIComponent(ymd)}`,
     });
     return res.json({ ok: true });
   } catch (err) {
@@ -514,6 +522,16 @@ app.post("/api/day-comments", async (req, res) => {
       txt,
       new Date().toISOString()
     );
+    await createNotificationsForAllNurses({
+      type: "DAY_COMMENT",
+      message: `새 댓글 등록: ${ymd}`,
+      targetDate: ymd,
+    });
+    await sendPushToAllNurses({
+      title: "새 댓글 등록",
+      body: `새 댓글 등록: ${ymd}`,
+      url: `#/calendar?ymd=${encodeURIComponent(ymd)}`,
+    });
     return res.json({ ok: true, id });
   } catch (err) {
     console.error("POST /api/day-comments", err);
@@ -883,14 +901,14 @@ app.post("/api/requests/:id/select", async (req, res) => {
   );
   await createNotificationsForAllNurses({
     type: "REQUEST_APPROVED",
-    message: `휴가 승인: ${row.leave_date} ${row.leave_type}`,
+    message: `휴가 처리 결과 안내: 승인 ${row.leave_date} · ${leaveTypeLabel(row.leave_type)}`,
     targetDate: row.leave_date,
     leaveRequestId: row.id,
   });
   await sendPushToAllNurses({
-    title: "휴가 승인 알림",
-    body: `휴가 승인: ${row.leave_date} ${row.leave_type}`,
-    url: "#/my",
+    title: "휴가 처리 결과 안내",
+    body: `휴가 처리 결과 안내: 승인 ${row.leave_date} · ${leaveTypeLabel(row.leave_type)}`,
+    url: `#/calendar?ymd=${encodeURIComponent(row.leave_date)}`,
   });
   res.json({ ok: true });
 });
@@ -904,14 +922,14 @@ app.post("/api/requests/:id/reject", async (req, res) => {
   await execute("UPDATE requests SET status = 'REJECTED' WHERE id = ?", req.params.id);
   await createNotificationsForAllNurses({
     type: "REQUEST_REJECTED",
-    message: `휴가 거절: ${row.leave_date} ${row.leave_type}`,
+    message: `휴가 처리 결과 안내: 거절 ${row.leave_date} · ${leaveTypeLabel(row.leave_type)}`,
     targetDate: row.leave_date,
     leaveRequestId: row.id,
   });
   await sendPushToAllNurses({
-    title: "휴가 거절 알림",
-    body: `휴가 거절: ${row.leave_date} ${row.leave_type}`,
-    url: "#/my",
+    title: "휴가 처리 결과 안내",
+    body: `휴가 처리 결과 안내: 거절 ${row.leave_date} · ${leaveTypeLabel(row.leave_type)}`,
+    url: `#/calendar?ymd=${encodeURIComponent(row.leave_date)}`,
   });
   res.json({ ok: true });
 });
