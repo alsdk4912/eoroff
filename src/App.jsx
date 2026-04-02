@@ -143,6 +143,12 @@ function isKstAprilFirstToTenth(dateLike) {
   return Boolean(p && p.month === 4 && p.day >= 1 && p.day <= 10);
 }
 
+function notifyDone(message) {
+  const msg = String(message ?? "").trim();
+  if (!msg) return;
+  window.alert?.(msg);
+}
+
 function isLongTermGoldkeyDeductionExempt(requestRow, cancelledAt) {
   if (!requestRow || requestRow.leaveType !== "GOLDKEY") return false;
   const leave = parseYmdParts(requestRow.leaveDate);
@@ -582,6 +588,7 @@ function App() {
       try {
         await api.patchNegotiationOrder(requestId, { negotiationOrder });
         await bootstrap();
+        notifyDone("저장되었습니다.");
       } catch (e) {
         window.alert?.(`저장 실패: ${e?.message || e}`);
       }
@@ -595,6 +602,7 @@ function App() {
         }
         return next;
       });
+      notifyDone("저장되었습니다.");
     }
   }
 
@@ -765,6 +773,7 @@ function App() {
     }
 
     setMessage(doneNote);
+    notifyDone(doneNote);
     setLeaveDate(calendarSelectedYmd ?? toLocalYMD(new Date()));
     setMemo("");
   }
@@ -902,6 +911,7 @@ function App() {
           content: txt,
         });
         await bootstrap();
+        notifyDone("저장되었습니다.");
       } catch (e) {
         window.alert?.(`관리자 메모 저장 실패: ${e?.message || e}`);
       }
@@ -911,6 +921,7 @@ function App() {
       ...(prev ?? {}),
       [ymd]: txt,
     }));
+    notifyDone("저장되었습니다.");
   }
 
   async function createDayComment(targetDate, content) {
@@ -925,6 +936,7 @@ function App() {
           content: txt,
         });
         await bootstrap();
+        notifyDone("댓글이 등록되었습니다.");
       } catch (e) {
         window.alert?.(`추가 메모 저장 실패: ${e?.message || e}`);
       }
@@ -938,6 +950,7 @@ function App() {
       createdAt: new Date().toISOString(),
     };
     setDayComments((prev) => [newRow, ...(Array.isArray(prev) ? prev : [])]);
+    notifyDone("댓글이 등록되었습니다.");
   }
 
   async function updateDayComment(commentId, content) {
@@ -951,6 +964,7 @@ function App() {
           content: txt,
         });
         await bootstrap();
+        notifyDone("댓글이 수정되었습니다.");
       } catch (e) {
         window.alert?.(`댓글 수정 실패: ${e?.message || e}`);
       }
@@ -959,6 +973,7 @@ function App() {
     setDayComments((prev) =>
       (Array.isArray(prev) ? prev : []).map((row) => (row.id === id && row.userId === auth.userId ? { ...row, content: txt } : row))
     );
+    notifyDone("댓글이 수정되었습니다.");
   }
 
   async function deleteDayComment(commentId) {
@@ -970,12 +985,14 @@ function App() {
           actorUserId: auth.userId,
         });
         await bootstrap();
+        notifyDone("댓글이 삭제되었습니다.");
       } catch (e) {
         window.alert?.(`댓글 삭제 실패: ${e?.message || e}`);
       }
       return;
     }
     setDayComments((prev) => (Array.isArray(prev) ? prev : []).filter((row) => !(row.id === id && row.userId === auth.userId)));
+    notifyDone("댓글이 삭제되었습니다.");
   }
 
   async function syncHolidays() {
@@ -1581,6 +1598,7 @@ function DashboardPage({
     if (!ok) return;
     onSaveWorkScheduleRows(draftRows);
     setScheduleMsg("근무표가 저장되었습니다.");
+    notifyDone("저장되었습니다.");
   }
 
   return (
@@ -1874,6 +1892,7 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
       orderUserIds: previewOrder,
     });
     setLadderMsg("사다리 결과를 저장하고 달력 협의 순번에 자동 반영했습니다.");
+    notifyDone("결과가 저장되었습니다.");
   }
 
   return (
