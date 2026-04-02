@@ -1465,6 +1465,33 @@ tr.request-cancelled-row td button {
 }
 
 @media (max-width: 768px) {
+  .app-nav {
+    flex-wrap: nowrap;
+    gap: 6px;
+    overflow-x: auto;
+  }
+
+  .app-nav a {
+    font-size: 12px;
+    padding: 8px 10px;
+    white-space: nowrap;
+  }
+
+  /* 관리자 메뉴는 4개 탭을 한 줄로 보이도록 더 컴팩트하게 */
+  .app-nav--admin {
+    justify-content: space-between;
+    overflow-x: hidden;
+  }
+
+  .app-nav--admin a {
+    flex: 1 1 0;
+    min-width: 0;
+    text-align: center;
+    font-size: 11px;
+    padding: 7px 4px;
+    letter-spacing: -0.02em;
+  }
+
   .app {
     padding: 12px 12px 24px;
   }

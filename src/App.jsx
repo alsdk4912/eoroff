@@ -1445,7 +1445,7 @@ function App() {
         </p>
       </header>
 
-      <nav className="app-nav" aria-label="주 메뉴">
+      <nav className={`app-nav${isAdmin ? " app-nav--admin" : ""}`} aria-label="주 메뉴">
         {isAdmin ? (
           <>
             <Link to="/calendar">일정 관리</Link>
