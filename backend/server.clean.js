@@ -450,6 +450,28 @@ app.post("/api/notifications/read-all", async (req, res) => {
   }
 });
 
+app.post("/api/notifications/:id/read", async (req, res) => {
+  try {
+    const userId = String(req.body?.userId ?? "").trim();
+    const notificationId = String(req.params?.id ?? "").trim();
+    if (!userId) return res.status(400).json({ error: "userId가 필요합니다." });
+    if (!notificationId) return res.status(400).json({ error: "notification id가 필요합니다." });
+    const actor = await queryOne("SELECT id FROM users WHERE id = ?", userId);
+    if (!actor) return res.status(404).json({ error: "사용자를 찾을 수 없습니다." });
+
+    await execute(
+      "UPDATE notifications SET read_at = ? WHERE id = ? AND user_id = ? AND (read_at IS NULL OR read_at = '')",
+      new Date().toISOString(),
+      notificationId,
+      userId
+    );
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /api/notifications/:id/read", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
 app.post("/api/login", async (req, res) => {
   const { loginName, password } = req.body ?? {};
   const name = String(loginName ?? "").trim();

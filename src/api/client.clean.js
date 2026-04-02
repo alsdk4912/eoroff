@@ -117,6 +117,11 @@ export const api = {
     requestJson(`/notifications?userId=${encodeURIComponent(String(userId ?? ""))}`),
   markAllNotificationsRead: (payload) =>
     requestJson("/notifications/read-all", { method: "POST", body: JSON.stringify(payload) }),
+  markNotificationRead: (notificationId, payload) =>
+    requestJson(`/notifications/${encodeURIComponent(String(notificationId ?? ""))}/read`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   getPushVapidPublicKey: () => requestJson("/push/vapid-public-key"),
   savePushSubscription: (payload) =>
     requestJson("/push-subscriptions", { method: "POST", body: JSON.stringify(payload) }),

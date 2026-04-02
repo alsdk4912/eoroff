@@ -330,13 +330,11 @@ function App() {
     () =>
       (Array.isArray(notificationsSource) ? notificationsSource : [])
         .filter((n) => n.userId === auth?.userId)
+        .filter((n) => !n.readAt)
         .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))),
     [notificationsSource, auth?.userId]
   );
-  const unreadNotificationCount = useMemo(
-    () => myNotifications.filter((n) => !n.readAt).length,
-    [myNotifications]
-  );
+  const unreadNotificationCount = myNotifications.length;
 
   useEffect(() => {
     let cancelled = false;
@@ -413,6 +411,29 @@ function App() {
     setNotifications((prev) =>
       (Array.isArray(prev) ? prev : []).map((n) =>
         n.userId === auth.userId && !n.readAt ? { ...n, readAt: nowIso } : n
+      )
+    );
+  }
+
+  async function markNotificationRead(notificationId) {
+    const id = String(notificationId ?? "").trim();
+    if (!id || !auth?.userId) return;
+    if (serverMode) {
+      try {
+        await api.markNotificationRead(id, { userId: auth.userId });
+        setServerNotifications((prev) =>
+          (Array.isArray(prev) ? prev : []).map((n) =>
+            n.id === id ? { ...n, readAt: new Date().toISOString() } : n
+          )
+        );
+      } catch {
+        // ignore
+      }
+      return;
+    }
+    setNotifications((prev) =>
+      (Array.isArray(prev) ? prev : []).map((n) =>
+        n.id === id && n.userId === auth.userId ? { ...n, readAt: new Date().toISOString() } : n
       )
     );
   }
@@ -1464,10 +1485,11 @@ function App() {
               {myNotifications.slice(0, 8).map((n) => (
                 <li
                   key={n.id}
-                  className={`notification-item${n.readAt ? "" : " notification-item--unread"}`}
+                  className="notification-item notification-item--unread"
                   role="button"
                   tabIndex={0}
                   onClick={() => {
+                    void markNotificationRead(n.id);
                     const td = String(n.targetDate ?? n.target_date ?? "").trim();
                     if (!/^\d{4}-\d{2}-\d{2}$/.test(td)) return;
                     window.location.hash = `#/calendar?ymd=${td}`;
@@ -1475,6 +1497,7 @@ function App() {
                   onKeyDown={(e) => {
                     if (e.key !== "Enter" && e.key !== " ") return;
                     e.preventDefault();
+                    void markNotificationRead(n.id);
                     const td = String(n.targetDate ?? n.target_date ?? "").trim();
                     if (!/^\d{4}-\d{2}-\d{2}$/.test(td)) return;
                     window.location.hash = `#/calendar?ymd=${td}`;
