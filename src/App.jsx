@@ -1155,7 +1155,9 @@ function App() {
     const ymd = String(targetDate ?? "").trim();
     if (!ymd) return;
     const txt = String(content ?? "");
-    if (serverMode) {
+
+    // serverMode가 일시적으로 false여도, 서버가 살아 있으면 서버 저장/푸시를 우선 시도
+    if (auth?.userId) {
       try {
         await api.upsertAdminDayMemo({
           actorUserId: auth.userId,
@@ -1167,11 +1169,16 @@ function App() {
         if (currentUser?.role === "ADMIN") {
           createNotificationForNurses(`새 메모 등록: ${ymd}`, { type: "ADMIN_MEMO", targetDate: ymd });
         }
+        return;
       } catch (e) {
-        window.alert?.(`관리자 메모 저장 실패: ${e?.message || e}`);
+        if (serverMode) {
+          window.alert?.(`관리자 메모 저장 실패: ${e?.message || e}`);
+          return;
+        }
+        window.alert?.("서버 저장에 실패해 현재 기기에만 저장합니다. (이 경우 푸시 알림은 전송되지 않습니다.)");
       }
-      return;
     }
+
     setAdminDayMemos((prev) => ({
       ...(prev ?? {}),
       [ymd]: txt,
