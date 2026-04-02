@@ -1164,7 +1164,15 @@ function App() {
           targetDate: ymd,
           content: txt,
         });
-        await bootstrap();
+        // 저장 성공 후 목록 재조회가 실패해도 "저장 실패"로 오인하지 않도록 분리 처리
+        try {
+          await bootstrap();
+        } catch {
+          setAdminDayMemos((prev) => ({
+            ...(prev ?? {}),
+            [ymd]: txt,
+          }));
+        }
         notifyDone("저장되었습니다.");
         if (currentUser?.role === "ADMIN") {
           createNotificationForNurses(`새 메모 등록: ${ymd}`, { type: "ADMIN_MEMO", targetDate: ymd });
