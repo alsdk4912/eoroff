@@ -117,25 +117,25 @@ function parseYmdParts(ymd) {
 }
 
 /**
- * 일반휴가 우선순위 기간(4/1 00:00 ~ 4/2 09:00, KST)
- * - 이 구간에는 GENERAL_NORMAL(후순위)이 저장되면 안 됨
- * - 저장되었더라도 GENERAL_PRIORITY(우선순위)로 보정 처리
+ * 일반휴가 우선순위 모집기간(KST):
+ * - 4/1 00:00 ~ 4/2 09:00
+ *
+ * 이 구간에는 GENERAL_NORMAL(후순위) 중에서도 "다음달(5월) 후순위"는 신청이 막혀야 합니다.
  */
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 function isKstAprilGeneralPriorityWindow(dateLike) {
   const d = new Date(dateLike);
   if (Number.isNaN(d.getTime())) return false;
 
-  // KST 기준 year/month/day/hour 비교를 위해 time 값을 KST로 환산 후 UTC 컴포넌트 사용
-  const kstNow = new Date(d.getTime() + KST_OFFSET_MS);
-  const year = kstNow.getUTCFullYear();
-  const month = kstNow.getUTCMonth() + 1; // 1~12
+  // "KST clock"의 UTC 컴포넌트를 기준으로 비교
+  const kst = new Date(d.getTime() + KST_OFFSET_MS);
+  const year = kst.getUTCFullYear();
+  const month = kst.getUTCMonth() + 1; // 1~12
   if (month !== 4) return false;
 
-  // "KST clock" 기준 instant를 UTC ms로 변환해 비교 (UTC = KST - 9h)
-  const startUtcMs = Date.UTC(year, 3, 1, 0, 0, 0) - KST_OFFSET_MS; // 4/1 00:00 KST
-  const endUtcMs = Date.UTC(year, 3, 2, 9, 0, 0) - KST_OFFSET_MS; // 4/2 09:00 KST
-  return d.getTime() >= startUtcMs && d.getTime() <= endUtcMs;
+  const startKstMs = Date.UTC(year, 3, 1, 0, 0, 0); // 4/1 00:00 KST
+  const endKstMs = Date.UTC(year, 3, 2, 9, 0, 0); // 4/2 09:00 KST
+  return kst.getTime() >= startKstMs && kst.getTime() <= endKstMs;
 }
 
 function isKstAprilFirstToTenth(dateLike) {
@@ -674,16 +674,17 @@ function App() {
       setMessage("데이터를 불러오는 중입니다. 잠시 후 다시 시도해 주세요.");
       return;
     }
-    // 4/1~4/2 09:00(KST) 일반휴가 우선순위 기간에는 GENERAL_NORMAL(후순위)이 저장되면 안 되므로
-    // 선택 값이 후순위여도 우선순위로 보정합니다.
-    let effectiveLeaveType = leaveType;
+
+    // 우선순위 모집기간(4/1~4/2 09:00 KST)에는 '다음달(5월) 후순위'가 들어가지 않게 막기
+    // (4/1 신청 → 4/13(당월) 후순위는 허용)
     const nowForValidation = new Date();
-    if (effectiveLeaveType === "GENERAL_NORMAL" && isKstAprilGeneralPriorityWindow(nowForValidation)) {
-      effectiveLeaveType = "GENERAL_PRIORITY";
-      setLeaveType("GENERAL_PRIORITY");
+    const targetParts = parseYmdParts(leaveDate);
+    if (leaveType === "GENERAL_NORMAL" && isKstAprilGeneralPriorityWindow(nowForValidation) && targetParts?.month === 5) {
+      return setMessage("4월 일반-후순위(다음달)는 4/2 09:00 ~ 4/30에만 신청 가능합니다.");
     }
+
     const error = validateRequest({
-      leaveType: effectiveLeaveType,
+      leaveType,
       leaveDate,
       leaveNature,
       now: nowForValidation,
@@ -701,7 +702,7 @@ function App() {
       id: `lr_${Date.now()}`,
       userId: auth.userId,
       leaveDate,
-      leaveType: effectiveLeaveType,
+      leaveType,
       leaveNature,
       status: "APPLIED",
       requestedAt: new Date().toISOString(),
@@ -2824,21 +2825,14 @@ function mapRequestRow(r) {
   const ld = r.leave_date ?? r.leaveDate;
   const lt = String(r.leave_type ?? r.leaveType ?? "").trim();
   const ln = String(r.leave_nature ?? r.leaveNature ?? "PERSONAL").trim();
-  const status = String(r.status ?? "").trim();
-  let normalizedLeaveType = lt;
-  // 과거에 잘못 저장된 경우 보정: 4/1~4/2 09:00(KST) 우선순위 기간엔 후순위가 저장되면 안 됨
-  if (normalizedLeaveType === "GENERAL_NORMAL" && status !== "CANCELLED" && status !== "REJECTED") {
-    const requestedAt = r.requested_at ?? r.requestedAt;
-    if (isKstAprilGeneralPriorityWindow(requestedAt)) normalizedLeaveType = "GENERAL_PRIORITY";
-  }
   return {
     id: r.id,
     userId: r.user_id ?? r.userId,
     leaveDate: normalizeLeaveDateStr(ld),
-    leaveType: normalizedLeaveType,
+    leaveType: lt,
     leaveNature: ln || "PERSONAL",
     negotiationOrder: parseNegotiationOrder(r.negotiation_order ?? r.negotiationOrder),
-    status,
+    status: String(r.status ?? "").trim(),
     requestedAt: r.requested_at ?? r.requestedAt,
     memo: r.memo ?? "",
     cancelLocked: Boolean(r.cancel_locked ?? r.cancelLocked),
