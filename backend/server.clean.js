@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import webpush from "web-push";
 import {
   execute,
   initDb,
@@ -19,6 +20,16 @@ app.use(express.json());
 // v1과 동시 실행 시 포트 분리(로컬 4015). Render 등은 PORT 환경변수 사용.
 const PORT = Number(process.env.PORT) || 4015;
 const HOST = process.env.HOST || "0.0.0.0";
+
+const VAPID_PUBLIC_KEY = String(process.env.VAPID_PUBLIC_KEY || "").trim();
+const VAPID_PRIVATE_KEY = String(process.env.VAPID_PRIVATE_KEY || "").trim();
+const VAPID_SUBJECT = String(process.env.VAPID_SUBJECT || "mailto:admin@example.com").trim();
+const PUSH_ENABLED = Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
+if (PUSH_ENABLED) {
+  webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+} else {
+  console.warn("[push] VAPID 키가 없어 Web Push 발송은 비활성화됩니다.");
+}
 
 function toKstParts(dateLike) {
   const raw = String(dateLike ?? "").trim();
@@ -121,6 +132,38 @@ async function createNotificationsForAllNurses({ type, message, targetDate = "",
       String(leaveRequestId ?? ""),
       nowIso
     );
+  }
+}
+
+async function sendPushToAllNurses({ title, body, url = "#/calendar" }) {
+  if (!PUSH_ENABLED) return;
+  const rows = await queryAll(
+    `SELECT ps.id, ps.endpoint, ps.p256dh, ps.auth
+     FROM push_subscriptions ps
+     JOIN users u ON u.id = ps.user_id
+     WHERE u.role = 'NURSE'`
+  );
+  const payload = JSON.stringify({
+    title: String(title || "EOR 알림"),
+    body: String(body || ""),
+    url: String(url || "#/calendar"),
+  });
+  for (const r of rows) {
+    const sub = {
+      endpoint: String(r.endpoint || ""),
+      keys: {
+        p256dh: String(r.p256dh || ""),
+        auth: String(r.auth || ""),
+      },
+    };
+    try {
+      await webpush.sendNotification(sub, payload);
+    } catch (err) {
+      const statusCode = Number(err?.statusCode || 0);
+      if (statusCode === 404 || statusCode === 410) {
+        await execute("DELETE FROM push_subscriptions WHERE id = ?", r.id);
+      }
+    }
   }
 }
 
@@ -261,6 +304,64 @@ app.get("/api/bootstrap", async (_, res) => {
   }
 });
 
+app.get("/api/push/vapid-public-key", async (_, res) => {
+  if (!PUSH_ENABLED) return res.status(503).json({ error: "VAPID 키가 설정되지 않았습니다." });
+  return res.json({ ok: true, publicKey: VAPID_PUBLIC_KEY });
+});
+
+app.post("/api/push-subscriptions", async (req, res) => {
+  try {
+    const { userId, subscription } = req.body ?? {};
+    const uid = String(userId ?? "").trim();
+    if (!uid) return res.status(400).json({ error: "userId가 필요합니다." });
+    const user = await queryOne("SELECT id, role FROM users WHERE id = ?", uid);
+    if (!user || user.role !== "NURSE") return res.status(403).json({ error: "간호사만 푸시 구독할 수 있습니다." });
+    const endpoint = String(subscription?.endpoint ?? "").trim();
+    const p256dh = String(subscription?.keys?.p256dh ?? "").trim();
+    const auth = String(subscription?.keys?.auth ?? "").trim();
+    if (!endpoint || !p256dh || !auth) return res.status(400).json({ error: "subscription 형식이 올바르지 않습니다." });
+    const nowIso = new Date().toISOString();
+    const existing = await queryOne("SELECT id FROM push_subscriptions WHERE endpoint = ?", endpoint);
+    if (existing?.id) {
+      await execute(
+        "UPDATE push_subscriptions SET user_id = ?, p256dh = ?, auth = ?, updated_at = ? WHERE id = ?",
+        uid,
+        p256dh,
+        auth,
+        nowIso,
+        existing.id
+      );
+      return res.json({ ok: true });
+    }
+    await execute(
+      "INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      `ps_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      uid,
+      endpoint,
+      p256dh,
+      auth,
+      nowIso,
+      nowIso
+    );
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /api/push-subscriptions", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
+app.post("/api/push-subscriptions/remove", async (req, res) => {
+  try {
+    const endpoint = String(req.body?.endpoint ?? "").trim();
+    if (!endpoint) return res.status(400).json({ error: "endpoint가 필요합니다." });
+    await execute("DELETE FROM push_subscriptions WHERE endpoint = ?", endpoint);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /api/push-subscriptions/remove", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
 app.get("/api/notifications", async (req, res) => {
   try {
     const userId = String(req.query.userId ?? "").trim();
@@ -378,6 +479,11 @@ app.post("/api/admin/day-memos", async (req, res) => {
       type: "ADMIN_MEMO",
       message: `관리자 메모 등록: ${ymd}`,
       targetDate: ymd,
+    });
+    await sendPushToAllNurses({
+      title: "관리자 메모 알림",
+      body: `관리자 메모 등록: ${ymd}`,
+      url: `#/calendar`,
     });
     return res.json({ ok: true });
   } catch (err) {
@@ -781,6 +887,11 @@ app.post("/api/requests/:id/select", async (req, res) => {
     targetDate: row.leave_date,
     leaveRequestId: row.id,
   });
+  await sendPushToAllNurses({
+    title: "휴가 승인 알림",
+    body: `휴가 승인: ${row.leave_date} ${row.leave_type}`,
+    url: "#/my",
+  });
   res.json({ ok: true });
 });
 
@@ -796,6 +907,11 @@ app.post("/api/requests/:id/reject", async (req, res) => {
     message: `휴가 거절: ${row.leave_date} ${row.leave_type}`,
     targetDate: row.leave_date,
     leaveRequestId: row.id,
+  });
+  await sendPushToAllNurses({
+    title: "휴가 거절 알림",
+    body: `휴가 거절: ${row.leave_date} ${row.leave_type}`,
+    url: "#/my",
   });
   res.json({ ok: true });
 });

@@ -117,6 +117,11 @@ export const api = {
     requestJson(`/notifications?userId=${encodeURIComponent(String(userId ?? ""))}`),
   markAllNotificationsRead: (payload) =>
     requestJson("/notifications/read-all", { method: "POST", body: JSON.stringify(payload) }),
+  getPushVapidPublicKey: () => requestJson("/push/vapid-public-key"),
+  savePushSubscription: (payload) =>
+    requestJson("/push-subscriptions", { method: "POST", body: JSON.stringify(payload) }),
+  removePushSubscription: (payload) =>
+    requestJson("/push-subscriptions/remove", { method: "POST", body: JSON.stringify(payload) }),
   bulkSetGoldkeyUsage: (payload) =>
     requestJson("/admin/goldkeys/usage-bulk", { method: "POST", body: JSON.stringify(payload) }),
   downloadBackupSql: async () => {

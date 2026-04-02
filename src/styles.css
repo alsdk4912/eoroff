@@ -165,6 +165,14 @@ body::before {
   margin-bottom: 8px;
 }
 
+.notification-head-actions {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .notification-head h3 {
   margin: 0;
   font-size: 16px;

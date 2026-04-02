@@ -150,6 +150,17 @@ function notifyDone(message) {
   window.alert?.(msg);
 }
 
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
 function isLongTermGoldkeyDeductionExempt(requestRow, cancelledAt) {
   if (!requestRow || requestRow.leaveType !== "GOLDKEY") return false;
   const leave = parseYmdParts(requestRow.leaveDate);
@@ -247,6 +258,8 @@ function App() {
   const [workScheduleRows, setWorkScheduleRows] = useLocalStorage(LS_WORK_SCHEDULE_2026, WORK_SCHEDULE_2026_ROWS);
   const [notifications, setNotifications] = useLocalStorage(LS_NOTIFICATIONS, []);
   const [serverNotifications, setServerNotifications] = useState([]);
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
 
   useEffect(() => {
     dropStaleOfflineLeaveKeys();
@@ -306,6 +319,31 @@ function App() {
     [myNotifications]
   );
 
+  useEffect(() => {
+    let cancelled = false;
+    const checkPush = async () => {
+      if (!isLoggedIn || currentUser?.role !== "NURSE" || !serverMode) {
+        if (!cancelled) setPushEnabled(false);
+        return;
+      }
+      try {
+        if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+          if (!cancelled) setPushEnabled(false);
+          return;
+        }
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (!cancelled) setPushEnabled(Boolean(sub));
+      } catch {
+        if (!cancelled) setPushEnabled(false);
+      }
+    };
+    void checkPush();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn, currentUser?.role, serverMode]);
+
   function createNotificationForNurses(message, payload = {}) {
     // 2단계: 서버 모드에서는 백엔드가 알림을 생성/동기화하므로
     // 프런트 로컬 알림을 추가로 만들지 않음(중복 방지)
@@ -358,6 +396,54 @@ function App() {
         n.userId === auth.userId && !n.readAt ? { ...n, readAt: nowIso } : n
       )
     );
+  }
+
+  async function enablePushNotifications() {
+    if (pushBusy) return;
+    setPushBusy(true);
+    try {
+      if (!isLoggedIn || currentUser?.role !== "NURSE") {
+        window.alert?.("간호사 계정에서만 푸시 알림을 사용할 수 있습니다.");
+        return;
+      }
+      if (!serverMode) {
+        window.alert?.("서버 연결 모드에서만 푸시 알림을 설정할 수 있습니다.");
+        return;
+      }
+      if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+        window.alert?.("이 기기/브라우저는 Web Push를 지원하지 않습니다.");
+        return;
+      }
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") {
+        window.alert?.("알림 권한이 허용되지 않았습니다.");
+        return;
+      }
+      const reg = await navigator.serviceWorker.ready;
+      const keyResp = await api.getPushVapidPublicKey();
+      const publicKey = String(keyResp?.publicKey ?? "");
+      if (!publicKey) {
+        window.alert?.("서버 VAPID 설정이 없어 푸시를 사용할 수 없습니다.");
+        return;
+      }
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey),
+        });
+      }
+      await api.savePushSubscription({
+        userId: auth?.userId,
+        subscription: sub.toJSON(),
+      });
+      setPushEnabled(true);
+      notifyDone("푸시 알림이 활성화되었습니다.");
+    } catch (e) {
+      window.alert?.(`푸시 설정 실패: ${e?.message || e}`);
+    } finally {
+      setPushBusy(false);
+    }
   }
 
   function applyBootstrapPayload(data) {
@@ -1224,9 +1310,16 @@ function App() {
         <section className="card notification-card">
           <div className="notification-head">
             <h3>알림 {unreadNotificationCount > 0 ? <span className="notification-badge">{unreadNotificationCount}</span> : null}</h3>
-            <button type="button" className="notification-readall-btn" onClick={markAllNotificationsRead}>
-              모두 읽음
-            </button>
+            <div className="notification-head-actions">
+              {serverMode ? (
+                <button type="button" className="notification-readall-btn" onClick={() => void enablePushNotifications()} disabled={pushBusy || pushEnabled}>
+                  {pushEnabled ? "푸시 켜짐" : pushBusy ? "설정 중..." : "푸시 알림 켜기"}
+                </button>
+              ) : null}
+              <button type="button" className="notification-readall-btn" onClick={markAllNotificationsRead}>
+                모두 읽음
+              </button>
+            </div>
           </div>
           {myNotifications.length === 0 ? (
             <p className="help">새 알림이 없습니다.</p>
