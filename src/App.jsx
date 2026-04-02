@@ -1925,8 +1925,11 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
       {ladderSpec ? (
         <div className="ladder-svg-wrap">
           <svg
-            width={Math.max(620, ladderSpec.laneCount * 140)}
-            height={Math.max(420, ladderSpec.rowCount * 30 + 130)}
+            className="ladder-svg"
+            width="100%"
+            height="100%"
+            viewBox={`0 0 ${140 + (ladderSpec.laneCount - 1) * 120} ${Math.max(420, ladderSpec.rowCount * 30 + 130)}`}
+            preserveAspectRatio="xMidYMid meet"
             role="img"
             aria-label="사다리 애니메이션"
           >
