@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import {
   holidaysCache as seedHolidays,
@@ -269,6 +269,7 @@ function App() {
   const [serverNotifications, setServerNotifications] = useState([]);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
+  const refreshBusyRef = useRef(false);
 
   useEffect(() => {
     dropStaleOfflineLeaveKeys();
@@ -645,6 +646,87 @@ function App() {
       setServerMode(false);
     }
   }
+
+  async function refreshServerData(options = {}) {
+    const showToast = Boolean(options?.showToast);
+    if (!isLoggedIn || refreshBusyRef.current) return false;
+    refreshBusyRef.current = true;
+    try {
+      const data = await api.bootstrap();
+      applyBootstrapPayload(data);
+      setServerMode(true);
+      if (showToast) notifyDone("최신 내용으로 갱신되었습니다.");
+      return true;
+    } catch {
+      if (showToast) {
+        window.alert?.("새로고침에 실패했습니다. 네트워크를 확인 후 다시 시도해 주세요.");
+      }
+      return false;
+    } finally {
+      refreshBusyRef.current = false;
+    }
+  }
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    const onResumeRefresh = () => {
+      if (document.visibilityState === "visible") {
+        void refreshServerData();
+      }
+    };
+    const timerId = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void refreshServerData();
+      }
+    }, 45000);
+    window.addEventListener("focus", onResumeRefresh);
+    document.addEventListener("visibilitychange", onResumeRefresh);
+    return () => {
+      window.clearInterval(timerId);
+      window.removeEventListener("focus", onResumeRefresh);
+      document.removeEventListener("visibilitychange", onResumeRefresh);
+    };
+  }, [isLoggedIn, auth?.userId]);
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    let pulling = false;
+    let startY = 0;
+    let maxDelta = 0;
+    const threshold = 95;
+
+    const onTouchStart = (e) => {
+      if (window.scrollY > 0) {
+        pulling = false;
+        return;
+      }
+      startY = Number(e.touches?.[0]?.clientY ?? 0);
+      maxDelta = 0;
+      pulling = true;
+    };
+    const onTouchMove = (e) => {
+      if (!pulling) return;
+      const y = Number(e.touches?.[0]?.clientY ?? 0);
+      maxDelta = Math.max(maxDelta, y - startY);
+    };
+    const onTouchEnd = () => {
+      if (!pulling) return;
+      pulling = false;
+      if (window.scrollY === 0 && maxDelta >= threshold) {
+        void refreshServerData({ showToast: true });
+      }
+      maxDelta = 0;
+    };
+
+    window.addEventListener("touchstart", onTouchStart, { passive: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: true });
+    window.addEventListener("touchend", onTouchEnd, { passive: true });
+    return () => {
+      window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", onTouchEnd);
+    };
+  }, [isLoggedIn, auth?.userId]);
 
   async function handleResetLeaveData() {
     if (
