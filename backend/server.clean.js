@@ -168,6 +168,7 @@ async function sendPushToAllNurses({ title, body, url = "#/calendar" }) {
       await webpush.sendNotification(sub, payload);
     } catch (err) {
       const statusCode = Number(err?.statusCode || 0);
+      console.error("[push] send failure", statusCode || "-", String(err?.message || err));
       if (statusCode === 404 || statusCode === 410) {
         await execute("DELETE FROM push_subscriptions WHERE id = ?", r.id);
       }
@@ -366,6 +367,50 @@ app.post("/api/push-subscriptions/remove", async (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     console.error("POST /api/push-subscriptions/remove", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
+app.post("/api/push/test-self", async (req, res) => {
+  try {
+    if (!PUSH_ENABLED) return res.status(503).json({ error: "VAPID 키가 설정되지 않았습니다." });
+    const userId = String(req.body?.userId ?? "").trim();
+    if (!userId) return res.status(400).json({ error: "userId가 필요합니다." });
+    const actor = await queryOne("SELECT id, role FROM users WHERE id = ?", userId);
+    if (!actor || actor.role !== "NURSE") return res.status(403).json({ error: "간호사만 테스트할 수 있습니다." });
+
+    const rows = await queryAll("SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?", userId);
+    if (!rows.length) return res.status(404).json({ error: "저장된 푸시 구독이 없습니다." });
+
+    const payload = JSON.stringify({
+      title: "푸시 테스트",
+      body: "푸시 알림 설정이 완료되었습니다.",
+      url: "#/calendar",
+    });
+    let sent = 0;
+    for (const r of rows) {
+      const sub = {
+        endpoint: String(r.endpoint || ""),
+        keys: {
+          p256dh: String(r.p256dh || ""),
+          auth: String(r.auth || ""),
+        },
+      };
+      try {
+        await webpush.sendNotification(sub, payload);
+        sent += 1;
+      } catch (err) {
+        const statusCode = Number(err?.statusCode || 0);
+        console.error("[push] test-self failure", statusCode || "-", String(err?.message || err));
+        if (statusCode === 404 || statusCode === 410) {
+          await execute("DELETE FROM push_subscriptions WHERE id = ?", r.id);
+        }
+      }
+    }
+    if (sent === 0) return res.status(502).json({ error: "푸시 전송에 실패했습니다. 구독을 다시 설정해 주세요." });
+    return res.json({ ok: true, sent });
+  } catch (err) {
+    console.error("POST /api/push/test-self", err);
     return res.status(500).json({ error: String(err?.message || err) });
   }
 });

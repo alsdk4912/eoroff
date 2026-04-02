@@ -161,6 +161,15 @@ function urlBase64ToUint8Array(base64String) {
   return outputArray;
 }
 
+function withTimeout(promise, ms, message) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      window.setTimeout(() => reject(new Error(message)), ms);
+    }),
+  ]);
+}
+
 function isLongTermGoldkeyDeductionExempt(requestRow, cancelledAt) {
   if (!requestRow || requestRow.leaveType !== "GOLDKEY") return false;
   const leave = parseYmdParts(requestRow.leaveDate);
@@ -428,26 +437,44 @@ function App() {
         window.alert?.("알림 권한이 허용되지 않았습니다.");
         return;
       }
-      const reg = await navigator.serviceWorker.ready;
+      const scope = import.meta.env.BASE_URL || "/";
+      let reg = await navigator.serviceWorker.getRegistration(scope);
+      if (!reg) {
+        reg = await withTimeout(
+          navigator.serviceWorker.register(`${scope}sw.js`, { scope, updateViaCache: "none" }),
+          8000,
+          "서비스 워커 등록 시간이 초과되었습니다."
+        );
+      }
+      const readyReg = await withTimeout(
+        navigator.serviceWorker.ready,
+        8000,
+        "서비스 워커 준비 시간이 초과되었습니다."
+      );
       const keyResp = await api.getPushVapidPublicKey();
       const publicKey = String(keyResp?.publicKey ?? "");
       if (!publicKey) {
         window.alert?.("서버 VAPID 설정이 없어 푸시를 사용할 수 없습니다.");
         return;
       }
-      let sub = await reg.pushManager.getSubscription();
+      let sub = await readyReg.pushManager.getSubscription();
       if (!sub) {
-        sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(publicKey),
-        });
+        sub = await withTimeout(
+          readyReg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(publicKey),
+          }),
+          12000,
+          "푸시 구독 시간이 초과되었습니다. 다시 시도해 주세요."
+        );
       }
       await api.savePushSubscription({
         userId: auth?.userId,
         subscription: sub.toJSON(),
       });
+      await api.sendPushTestToSelf({ userId: auth?.userId });
       setPushEnabled(true);
-      notifyDone("푸시 알림이 활성화되었습니다.");
+      notifyDone("푸시 알림이 활성화되었습니다. 테스트 알림을 확인해 주세요.");
     } catch (e) {
       window.alert?.(`푸시 설정 실패: ${e?.message || e}`);
     } finally {

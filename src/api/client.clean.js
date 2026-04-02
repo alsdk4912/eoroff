@@ -122,6 +122,8 @@ export const api = {
     requestJson("/push-subscriptions", { method: "POST", body: JSON.stringify(payload) }),
   removePushSubscription: (payload) =>
     requestJson("/push-subscriptions/remove", { method: "POST", body: JSON.stringify(payload) }),
+  sendPushTestToSelf: (payload) =>
+    requestJson("/push/test-self", { method: "POST", body: JSON.stringify(payload) }),
   bulkSetGoldkeyUsage: (payload) =>
     requestJson("/admin/goldkeys/usage-bulk", { method: "POST", body: JSON.stringify(payload) }),
   downloadBackupSql: async () => {
