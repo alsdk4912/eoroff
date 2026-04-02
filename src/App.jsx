@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, Navigate, Route, Routes } from "react-router-dom";
+import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import {
   holidaysCache as seedHolidays,
   initialAdjustmentLogs,
@@ -266,6 +266,18 @@ function App() {
   const [managedUsers, setManagedUsers] = useState([]);
   /** 달력에서 선택한 날짜(YYYY-MM-DD) — 상세 패널·신청 탭에 사용 */
   const [calendarSelectedYmd, setCalendarSelectedYmd] = useState(null);
+
+  // 탭 이동(라우트 전환) 후 다시 "/calendar"로 돌아올 때는
+  // "오늘"이 속한 월을 보여주도록 강제합니다.
+  const location = useLocation();
+  useEffect(() => {
+    if (location?.pathname !== "/calendar") return;
+    const n = new Date();
+    const nextMonth = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`;
+    setCalendarMonth(nextMonth);
+    setCalendarSelectedYmd(null);
+    setLeaveDate(toLocalYMD(n));
+  }, [location?.pathname]);
 
   const currentUser = users.find((u) => u.id === auth?.userId);
   const isAdmin = currentUser?.role === "ADMIN";
