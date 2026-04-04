@@ -1795,6 +1795,65 @@ button.calendar-nav-today:hover {
   font-weight: 700 !important;
 }
 
+/* 추첨: 휴가일 + 휴가 유형 한 줄·컴팩트 */
+.ladder-date-type-row--inline {
+  display: flex !important;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: flex-end;
+  gap: 8px 10px;
+  margin-bottom: 8px;
+}
+
+.ladder-date-type-row--inline .ladder-field {
+  flex: 1 1 0;
+  min-width: 0;
+  gap: 4px;
+}
+
+.ladder-date-type-row--inline .ladder-field-label {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  line-height: 1.2 !important;
+}
+
+.ladder-date-type-row--inline .ladder-field--date {
+  flex: 1.2 1 0;
+}
+
+.ladder-date-type-row--inline .ladder-field--type {
+  flex: 0.9 1 0;
+  min-width: min(48%, 11rem);
+}
+
+.ladder-date-type-row--inline .ladder-field--date .ymd-split {
+  flex-wrap: nowrap !important;
+  gap: 4px !important;
+}
+
+.ladder-date-type-row--inline .ymd-select {
+  font-size: 12px !important;
+  padding: 4px 4px !important;
+  min-height: 32px !important;
+}
+
+.ladder-date-type-row--inline .ladder-field--type select {
+  font-size: 12px !important;
+  padding: 5px 8px !important;
+  min-height: 32px !important;
+  font-weight: 500;
+}
+
+@media (max-width: 360px) {
+  .ladder-date-type-row--inline {
+    flex-wrap: wrap;
+  }
+
+  .ladder-date-type-row--inline .ladder-field--type {
+    min-width: 100%;
+  }
+}
+
 .ladder-participant-block--compact {
   margin-bottom: 6px;
 }
@@ -1802,6 +1861,16 @@ button.calendar-nav-today:hover {
 .ladder-participant-grid--two {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
+}
+
+.ladder-participant-grid--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px 6px;
+}
+
+.ladder-participant-grid--three .ladder-participant-tile--compact {
+  padding: 5px 6px !important;
+  font-size: 12px !important;
 }
 
 .ladder-participant-tile--compact {
@@ -1959,7 +2028,7 @@ button.calendar-nav-today:hover {
   .ladder-page--fit .ladder-participant-block {
     flex: 0 1 auto;
     min-height: 0;
-    max-height: 22vh;
+    max-height: 26vh;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     margin-bottom: 4px !important;

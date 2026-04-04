@@ -3297,13 +3297,13 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
           ? applicantUserIds.map((id) => idToName.get(id) ?? id).join(", ")
           : "없음"}
       </p>
-      <div className="ladder-date-type-row ladder-date-type-row--compact">
+      <div className="ladder-date-type-row ladder-date-type-row--compact ladder-date-type-row--inline">
         <label className="ladder-field ladder-field--date">
           <span className="field-label ladder-field-label">휴가일</span>
           <YmdSplitInput value={leaveDate} onChange={setLeaveDate} />
         </label>
         <label className="ladder-field ladder-field--type">
-          <span className="field-label ladder-field-label">유형</span>
+          <span className="field-label ladder-field-label">휴가 유형</span>
           <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)}>
             <option value="GENERAL_PRIORITY">일반휴가-우선순위</option>
             <option value="GENERAL_NORMAL">일반휴가-후순위</option>
@@ -3314,7 +3314,7 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
       </div>
 
       <div className="ladder-participant-block ladder-participant-block--compact">
-        <div className="ladder-participant-grid ladder-participant-grid--two">
+        <div className="ladder-participant-grid ladder-participant-grid--three">
           {nurseUsers.map((u) => (
             <label key={u.id} className="row ladder-participant-tile ladder-participant-tile--compact">
               <input type="checkbox" checked={selectedUserIds.includes(u.id)} onChange={() => toggleUser(u.id)} />
