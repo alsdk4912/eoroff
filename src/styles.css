@@ -715,51 +715,59 @@ button.calendar-nav-today:hover {
 }
 
 .calendar {
-  margin-top: 8px;
+  margin-top: 4px;
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 5px;
+  gap: 0;
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  overflow: hidden;
 }
 
 .calendar-head {
   text-align: center;
   font-weight: 600;
   font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 8px 4px;
+  letter-spacing: 0.02em;
+  padding: 6px 2px 8px;
   color: var(--text-secondary);
   background: transparent;
   border: none;
 }
 
 .calendar-cell {
-  min-height: 88px;
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  padding: 6px 6px 5px;
-  border: 1px solid var(--separator);
+  min-height: 76px;
+  border-radius: 0;
+  background: transparent;
+  padding: 4px 3px 5px;
+  border: none;
   /* 이름 전체 표시: 셀 높이는 해당 주 행에서 가장 긴 셀에 맞춰 늘어남 */
   max-height: none;
   overflow: visible;
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
 }
 
 .calendar-cell.muted {
-  background: rgba(255, 255, 255, 0.45);
+  background: transparent;
   color: var(--text-tertiary);
   box-shadow: none;
 }
 
+.calendar-cell.muted .calendar-date {
+  opacity: 0.45;
+}
+
 .calendar-date {
   font-size: 13px;
-  font-weight: 700;
-  margin-bottom: 4px;
+  font-weight: 600;
+  margin-bottom: 3px;
   flex-shrink: 0;
   letter-spacing: -0.2px;
+  line-height: 1.2;
+  padding: 2px 0;
 }
 
 .calendar-date--holiday {
@@ -840,24 +848,24 @@ button.calendar-nav-today:hover {
 }
 
 .calendar-cell--clickable:hover {
-  background: #fafafa;
+  background: rgba(0, 0, 0, 0.03);
 }
 
 .calendar-cell--clickable:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
 .calendar-cell--selected {
-  background: var(--accent-muted) !important;
-  border-color: var(--accent) !important;
-  box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.2);
+  background: rgba(37, 99, 235, 0.08) !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 
 .calendar-cell--my-duty {
-  background: #fffbeb;
-  border-color: #fbbf24;
-  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.08);
+  border: none;
+  box-shadow: none;
 }
 
 .calendar-detail {

@@ -2698,7 +2698,7 @@ function CalendarPage({
           ›
         </button>
         <button type="button" className="calendar-nav-today" onClick={goToToday} aria-label="오늘 날짜로 이동">
-          오늘
+          today
         </button>
       </div>
       <div className="calendar">
