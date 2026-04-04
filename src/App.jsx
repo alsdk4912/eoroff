@@ -3159,6 +3159,25 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
   const [narrowUi, setNarrowUi] = useState(() =>
     typeof window !== "undefined" ? window.matchMedia("(max-width: 768px)").matches : false
   );
+  const [ladderModalOpen, setLadderModalOpen] = useState(false);
+
+  useEffect(() => {
+    if (!ladderModalOpen) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape") setLadderModalOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [ladderModalOpen]);
+
+  useEffect(() => {
+    if (!ladderModalOpen) return undefined;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [ladderModalOpen]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -3216,6 +3235,7 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
     setAnimating(false);
     setActiveRunnerId("");
     setActivePathKeys({});
+    setLadderModalOpen(true);
   }
 
   async function playLadderAnimation(targetUserId, specArg) {
@@ -3287,8 +3307,91 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
 
   const svgMinH = narrowUi ? 260 : 420;
 
+  function renderLadderSvg(spec) {
+    if (!spec) return null;
+    return (
+      <svg
+        className="ladder-svg"
+        width="100%"
+        height="100%"
+        viewBox={`0 0 ${140 + (spec.laneCount - 1) * 120} ${Math.max(svgMinH, spec.rowCount * 30 + 130)}`}
+        preserveAspectRatio="xMidYMid meet"
+        role="img"
+        aria-label="사다리 애니메이션"
+      >
+        {spec.laneUsers.map((userId, lane) => {
+          const x = 70 + lane * 120;
+          const isActiveName = activeRunnerId === userId;
+          return (
+            <g
+              key={`lane-${userId}`}
+              onClick={() => void playLadderAnimation(userId, spec)}
+              className={`ladder-name-chip${isActiveName ? " ladder-name-chip--active" : ""}`}
+              style={{ cursor: animating ? "not-allowed" : "pointer", pointerEvents: animating ? "none" : "auto" }}
+            >
+              <rect className="ladder-name-chip-rect" x={x - 56} y={2} rx={10} ry={10} width={112} height={24} fill={isActiveName ? "#fee2e2" : "#f8fafc"} stroke="#111827" strokeWidth="1.5" />
+              <text x={x} y={18} textAnchor="middle" fontSize="13" fill="#0f172a" fontWeight="700">
+                {idToName.get(userId) ?? userId}
+              </text>
+            </g>
+          );
+        })}
+        {Array.from({ length: spec.rowCount }, (_, r) =>
+          spec.laneUsers.map((_, lane) => {
+            const x = 70 + lane * 120;
+            const y1 = 32 + r * 30;
+            const y2 = y1 + 30;
+            const k = `v-${r}-${lane}`;
+            const active = Boolean(activePathKeys[k]);
+            return <line key={`v-${r}-${lane}`} x1={x} y1={y1} x2={x} y2={y2} stroke={active ? "#dc2626" : "#111827"} strokeWidth={active ? 5 : 3} />;
+          })
+        )}
+        {spec.links.map((row, r) =>
+          row.map((on, c) => {
+            if (!on) return null;
+            const x1 = 70 + c * 120;
+            const x2 = 70 + (c + 1) * 120;
+            const y = 32 + (r + 1) * 30;
+            const k = `h-${r}-${c}`;
+            const active = Boolean(activePathKeys[k]);
+            return <line key={`link-${r}-${c}`} x1={x1} y1={y} x2={x2} y2={y} stroke={active ? "#dc2626" : "#111827"} strokeWidth={active ? 5 : 3} />;
+          })
+        )}
+        {runnerState ? (
+          <g>
+            <text x={70 + runnerState.lane * 120} y={32 + runnerState.row * 30 + 8} textAnchor="middle" fontSize="30" fill="#dc2626">
+              ❤
+            </text>
+            <text
+              x={70 + runnerState.lane * 120}
+              y={32 + runnerState.row * 30 - 18}
+              textAnchor="middle"
+              fontSize="12"
+              fill="#075985"
+              fontWeight="700"
+            >
+              {idToName.get(runnerState.userId) ?? runnerState.userId}
+            </text>
+          </g>
+        ) : null}
+        {spec.order.map((userId, rank) => {
+          const x = 70 + rank * 120;
+          const y = 32 + spec.rowCount * 30 + 26;
+          return (
+            <g key={`rank-${userId}`}>
+              <rect x={x - 58} y={y - 16} rx={10} ry={10} width={116} height={22} fill="#ffffff" stroke="#111827" strokeWidth="1.5" />
+              <text x={x} y={y - 1} textAnchor="middle" fontSize="12.5" fill="#0f172a" fontWeight="700">
+                {rank + 1}순위 {idToName.get(userId) ?? userId}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    );
+  }
+
   return (
-    <section className="card ladder-page ladder-page--fit">
+    <section className="card ladder-page">
       <h2 className="screen-title">순서 추첨</h2>
       <p className="help page-lead ladder-page-lead">같은 날·같은 유형 신청자에게 사다리로 순서를 정합니다.</p>
       <p className="help ladder-applicant-line">
@@ -3324,102 +3427,51 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
         </div>
       </div>
 
-      <div className="row wrap ladder-toolbar ladder-toolbar--sticky-tools">
-        <button type="button" onClick={runLadder}>
+      <div className="ladder-toolbar ladder-toolbar--split">
+        <button type="button" className="ladder-btn-run" onClick={runLadder}>
           {animating ? "사다리 진행중..." : "사다리 실행"}
         </button>
-        <button type="button" onClick={() => void saveResult()} disabled={previewOrder.length < 2}>
+        <button type="button" className="ladder-btn-save" onClick={() => void saveResult()} disabled={previewOrder.length < 2}>
           결과 저장
         </button>
       </div>
 
-      {ladderSpec ? (
-        <div className="ladder-svg-wrap">
-          <svg
-            className="ladder-svg"
-            width="100%"
-            height="100%"
-            viewBox={`0 0 ${140 + (ladderSpec.laneCount - 1) * 120} ${Math.max(svgMinH, ladderSpec.rowCount * 30 + 130)}`}
-            preserveAspectRatio="xMidYMid meet"
-            role="img"
-            aria-label="사다리 애니메이션"
+      {ladderModalOpen && ladderSpec ? (
+        <div
+          className="ladder-modal-backdrop"
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setLadderModalOpen(false);
+          }}
+        >
+          <div
+            className="ladder-modal-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ladder-modal-title"
+            onClick={(e) => e.stopPropagation()}
           >
-            {ladderSpec.laneUsers.map((userId, lane) => {
-              const x = 70 + lane * 120;
-              const isActiveName = activeRunnerId === userId;
-              return (
-                <g
-                  key={`lane-${userId}`}
-                  onClick={() => void playLadderAnimation(userId, ladderSpec)}
-                  className={`ladder-name-chip${isActiveName ? " ladder-name-chip--active" : ""}`}
-                  style={{ cursor: animating ? "not-allowed" : "pointer", pointerEvents: animating ? "none" : "auto" }}
-                >
-                  <rect className="ladder-name-chip-rect" x={x - 56} y={2} rx={10} ry={10} width={112} height={24} fill={isActiveName ? "#fee2e2" : "#f8fafc"} stroke="#111827" strokeWidth="1.5" />
-                  <text x={x} y={18} textAnchor="middle" fontSize="13" fill="#0f172a" fontWeight="700">
-                    {idToName.get(userId) ?? userId}
-                  </text>
-                </g>
-              );
-            })}
-            {Array.from({ length: ladderSpec.rowCount }, (_, r) =>
-              ladderSpec.laneUsers.map((_, lane) => {
-                const x = 70 + lane * 120;
-                const y1 = 32 + r * 30;
-                const y2 = y1 + 30;
-                const k = `v-${r}-${lane}`;
-                const active = Boolean(activePathKeys[k]);
-                return <line key={`v-${r}-${lane}`} x1={x} y1={y1} x2={x} y2={y2} stroke={active ? "#dc2626" : "#111827"} strokeWidth={active ? 5 : 3} />;
-              })
-            )}
-            {ladderSpec.links.map((row, r) =>
-              row.map((on, c) => {
-                if (!on) return null;
-                const x1 = 70 + c * 120;
-                const x2 = 70 + (c + 1) * 120;
-                const y = 32 + (r + 1) * 30;
-                const k = `h-${r}-${c}`;
-                const active = Boolean(activePathKeys[k]);
-                return <line key={`link-${r}-${c}`} x1={x1} y1={y} x2={x2} y2={y} stroke={active ? "#dc2626" : "#111827"} strokeWidth={active ? 5 : 3} />;
-              })
-            )}
-            {runnerState ? (
-              <g>
-                <text x={70 + runnerState.lane * 120} y={32 + runnerState.row * 30 + 8} textAnchor="middle" fontSize="30" fill="#dc2626">
-                  ❤
-                </text>
-                <text
-                  x={70 + runnerState.lane * 120}
-                  y={32 + runnerState.row * 30 - 18}
-                  textAnchor="middle"
-                  fontSize="12"
-                  fill="#075985"
-                  fontWeight="700"
-                >
-                  {idToName.get(runnerState.userId) ?? runnerState.userId}
-                </text>
-              </g>
-            ) : null}
-            {ladderSpec.order.map((userId, rank) => {
-              const x = 70 + rank * 120;
-              const y = 32 + ladderSpec.rowCount * 30 + 26;
-              return (
-                <g key={`rank-${userId}`}>
-                  <rect x={x - 58} y={y - 16} rx={10} ry={10} width={116} height={22} fill="#ffffff" stroke="#111827" strokeWidth="1.5" />
-                  <text x={x} y={y - 1} textAnchor="middle" fontSize="12.5" fill="#0f172a" fontWeight="700">
-                    {rank + 1}순위 {idToName.get(userId) ?? userId}
-                  </text>
-                </g>
-              );
-            })}
-          </svg>
+            <div className="ladder-modal-header">
+              <h3 id="ladder-modal-title" className="ladder-modal-title">
+                사다리 추첨
+              </h3>
+              <button type="button" className="ladder-modal-close" onClick={() => setLadderModalOpen(false)} aria-label="닫기">
+                닫기
+              </button>
+            </div>
+            <div className="ladder-modal-body">
+              <p className="help ladder-modal-hint">위 이름을 누르면 해당 참가자의 사다리 이동 애니메이션이 재생됩니다.</p>
+              <div className="ladder-svg-wrap ladder-svg-wrap--modal">{renderLadderSvg(ladderSpec)}</div>
+              {previewOrder.length > 0 ? (
+                <p className="help ladder-preview-line ladder-preview-line--modal">
+                  순서: {previewOrder.map((id, idx) => `${idx + 1}.${idToName.get(id) ?? id}`).join(" → ")}
+                </p>
+              ) : null}
+            </div>
+          </div>
         </div>
       ) : null}
 
-      {previewOrder.length > 0 ? (
-        <p className="help ladder-preview-line">
-          순서: {previewOrder.map((id, idx) => `${idx + 1}.${idToName.get(id) ?? id}`).join(" → ")}
-        </p>
-      ) : null}
       {ladderMsg ? <p className="msg ladder-msg-inline">{ladderMsg}</p> : null}
 
       <details className="ladder-saved-details">

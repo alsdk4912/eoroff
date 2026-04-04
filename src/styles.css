@@ -1985,91 +1985,113 @@ button.calendar-nav-today:hover {
   max-height: 100%;
 }
 
+/* 추첨 본문: 간호사 목록 내부 스크롤 없이 전체 표시 */
+.ladder-page .ladder-participant-block {
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+.ladder-toolbar--split {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 12px;
+  width: 100%;
+  margin: 12px 0 10px;
+  box-sizing: border-box;
+}
+
+.ladder-toolbar--split .ladder-btn-run,
+.ladder-toolbar--split .ladder-btn-save {
+  min-height: 44px;
+  padding: 10px 16px;
+  font-weight: 700;
+  border-radius: var(--radius-sm);
+}
+
+.ladder-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(15, 23, 42, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(12px, env(safe-area-inset-top)) 16px max(12px, env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+.ladder-modal-dialog {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  width: min(720px, 100%);
+  max-height: min(92dvh, 92vh);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--separator);
+  overflow: hidden;
+}
+
+.ladder-modal-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--separator);
+  background: var(--surface);
+}
+
+.ladder-modal-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.ladder-modal-close {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--separator);
+  background: var(--fill-secondary);
+  cursor: pointer;
+}
+
+.ladder-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 14px 16px;
+}
+
+.ladder-modal-hint {
+  margin: 0 0 8px !important;
+  font-size: 12px !important;
+}
+
+.ladder-svg-wrap--modal {
+  margin: 0 0 10px !important;
+  min-height: 220px;
+  max-height: min(55vh, 420px);
+}
+
+.ladder-preview-line--modal {
+  margin: 8px 0 0 !important;
+  white-space: normal !important;
+  font-size: 12px !important;
+  line-height: 1.4 !important;
+}
+
 @media (max-width: 768px) {
-  /* 추첨: 입력·사다리·버튼을 한 화면에 최대한 맞춤(본문 스크롤 최소화) */
-  .ladder-page--fit {
-    display: flex;
-    flex-direction: column;
-    max-height: min(calc(100dvh - 132px), calc(100vh - 132px));
-    overflow: hidden;
-    box-sizing: border-box;
-    margin-bottom: 8px;
-    padding-top: 12px;
-    padding-bottom: 8px;
-  }
-
-  .ladder-page--fit .screen-title {
-    margin-bottom: 6px !important;
+  .ladder-page .screen-title {
     font-size: 17px !important;
-    flex-shrink: 0;
-  }
-
-  .ladder-page--fit .ladder-page-lead {
-    margin-bottom: 4px !important;
-    font-size: 12px !important;
-    line-height: 1.3 !important;
-    flex-shrink: 0;
-  }
-
-  .ladder-page--fit .ladder-applicant-line {
-    max-height: 1.35em !important;
-    margin-bottom: 4px !important;
-    -webkit-line-clamp: 1 !important;
-    display: -webkit-box !important;
-    -webkit-box-orient: vertical !important;
-    overflow: hidden !important;
-  }
-
-  .ladder-page--fit .ladder-date-type-row {
-    margin-bottom: 6px !important;
-    flex-shrink: 0;
-  }
-
-  .ladder-page--fit .ladder-participant-block {
-    flex: 0 1 auto;
-    min-height: 0;
-    max-height: 26vh;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    margin-bottom: 4px !important;
-  }
-
-  .ladder-page--fit .ladder-toolbar--sticky-tools {
-    margin-top: 4px !important;
-    margin-bottom: 4px !important;
-    flex-shrink: 0;
-  }
-
-  .ladder-page--fit .ladder-preview-line {
-    margin: 2px 0 4px !important;
-    flex-shrink: 0;
-    font-size: 11px !important;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .ladder-page--fit .ladder-msg-inline {
-    margin: 2px 0 4px !important;
-    flex-shrink: 0;
-    font-size: 12px !important;
-  }
-
-  .ladder-page--fit .ladder-saved-details {
-    flex-shrink: 0;
-    margin-top: 4px !important;
-    max-height: 20vh;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  /* iOS: 사다리 영역이 남는 세로 공간을 채움 */
-  .ladder-page--fit .ladder-svg-wrap {
-    flex: 1 1 auto;
-    min-height: 0;
-    height: auto !important;
-    max-height: none;
-    margin: 4px 0 !important;
   }
 
   .ladder-page .page-lead {
