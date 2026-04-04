@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import {
   holidaysCache as seedHolidays,
   initialAdjustmentLogs,
@@ -1431,92 +1431,34 @@ function App() {
   }
 
   return (
-    <div className="app">
-      <header className="app-header">
+    <div className="app app-shell">
+      <header className="app-header app-header--shell">
         <div className="app-header-row">
-          <h1 className="app-header-title">EOROFF</h1>
-          <div className="app-header-actions">
-            <button type="button" className="btn-ghost-header" onClick={handleLogout}>
-              로그아웃
-            </button>
-            <Link to="/account" className="btn-ghost-header app-header-account-btn">
-              비밀번호 변경
+          <div className="app-header-brand">
+            <h1 className="app-header-title">EOROFF</h1>
+            <p className="app-header-userline" aria-hidden={false}>
+              {currentUser?.name}
+              {currentUser?.role === "ADMIN"
+                ? " · 관리자"
+                : currentUser?.role === "NURSE"
+                  ? " · 간호사"
+                  : currentUser?.role === "ANESTHESIA"
+                    ? " · 마취"
+                    : ""}
+            </p>
+          </div>
+          <div className="app-header-actions app-header-actions--inline">
+            <Link to="/account" className="btn-ghost-header btn-ghost-header--compact app-header-account-btn">
+              계정
             </Link>
+            <button type="button" className="btn-ghost-header btn-ghost-header--compact" onClick={handleLogout}>
+              나가기
+            </button>
           </div>
         </div>
-        <p className="app-header-meta">
-          {currentUser?.name} · {currentUser?.role} · {serverMode ? "연동" : "로컬"} · 빌드{" "}
-          {import.meta.env.VITE_DEPLOY_TAG ? String(import.meta.env.VITE_DEPLOY_TAG).slice(0, 7) : "로컬"}
-        </p>
       </header>
 
-      <nav className={`app-nav${isAdmin ? " app-nav--admin" : ""}`} aria-label="주 메뉴">
-        {isAdmin ? (
-          <>
-            <Link to="/calendar">캘린더</Link>
-            <Link to="/dashboard">통합 현황</Link>
-            <Link to="/admin">휴가 배정 내역</Link>
-            <Link to="/ladder">추첨 배정</Link>
-          </>
-        ) : (
-          <>
-            <Link to="/calendar">캘린더</Link>
-            {currentUser?.role === "NURSE" ? <Link to="/my">신청 내역</Link> : null}
-            <Link to="/dashboard">종합 현황</Link>
-            {currentUser?.role !== "ANESTHESIA" ? <Link to="/ladder">추첨 배정</Link> : null}
-          </>
-        )}
-      </nav>
-
-      {currentUser?.role === "NURSE" ? (
-        <section className="card notification-card">
-          <div className="notification-head">
-            <h3>알림 {unreadNotificationCount > 0 ? <span className="notification-badge">{unreadNotificationCount}</span> : null}</h3>
-            <div className="notification-head-actions">
-              {serverMode ? (
-                <button type="button" className="notification-readall-btn" onClick={() => void enablePushNotifications()} disabled={pushBusy || pushEnabled}>
-                  {pushEnabled ? "푸시 켜짐" : pushBusy ? "설정 중..." : "푸시 알림 켜기"}
-                </button>
-              ) : null}
-              <button type="button" className="notification-readall-btn" onClick={markAllNotificationsRead}>
-                모두 읽음
-              </button>
-            </div>
-          </div>
-          {myNotifications.length === 0 ? (
-            <p className="help">새 알림이 없습니다.</p>
-          ) : (
-            <ul className="notification-list">
-              {myNotifications.slice(0, 8).map((n) => (
-                <li
-                  key={n.id}
-                  className="notification-item notification-item--unread"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => {
-                    void markNotificationRead(n.id);
-                    const td = String(n.targetDate ?? n.target_date ?? "").trim();
-                    if (!/^\d{4}-\d{2}-\d{2}$/.test(td)) return;
-                    window.location.hash = `#/calendar?ymd=${td}`;
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key !== "Enter" && e.key !== " ") return;
-                    e.preventDefault();
-                    void markNotificationRead(n.id);
-                    const td = String(n.targetDate ?? n.target_date ?? "").trim();
-                    if (!/^\d{4}-\d{2}-\d{2}$/.test(td)) return;
-                    window.location.hash = `#/calendar?ymd=${td}`;
-                  }}
-                >
-                  <p>{n.message}</p>
-                  <span>{new Date(n.createdAt).toLocaleString("ko-KR")}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      ) : null}
-
+      <main className="app-main">
       <Routes>
         <Route
           path="/request"
@@ -1659,8 +1601,32 @@ function App() {
             )
           }
         />
+        <Route
+          path="/more"
+          element={
+            isAdmin ? (
+              <Navigate to="/settings" replace />
+            ) : (
+              <MorePage
+                currentUser={currentUser}
+                serverMode={serverMode}
+                myNotifications={myNotifications}
+                unreadNotificationCount={unreadNotificationCount}
+                markAllNotificationsRead={markAllNotificationsRead}
+                markNotificationRead={markNotificationRead}
+                enablePushNotifications={enablePushNotifications}
+                pushBusy={pushBusy}
+                pushEnabled={pushEnabled}
+                onLogout={handleLogout}
+              />
+            )
+          }
+        />
         <Route path="*" element={<Navigate to="/calendar" />} />
       </Routes>
+      </main>
+
+      <AppBottomNav isAdmin={isAdmin} role={currentUser?.role} />
     </div>
   );
 }
@@ -1738,7 +1704,8 @@ function RequestPage({
 }) {
   return (
     <section className="card">
-      <h2>간호사 신청 화면</h2>
+      <h2 className="screen-title">휴가 신청</h2>
+      <p className="help page-lead">날짜와 종류를 고른 뒤 제출합니다. 캘린더에서도 같은 신청을 할 수 있습니다.</p>
       <form className="grid" onSubmit={submitRequest}>
         <label className="field-label">휴가 종류</label>
         <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)} aria-label="휴가 종류">
@@ -1812,7 +1779,10 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
     });
   return (
     <section className="card my-requests-card">
-      <h2 id="my-requests-heading">내 신청내역</h2>
+      <h2 id="my-requests-heading" className="screen-title">
+        내 신청
+      </h2>
+      <p className="help page-lead">필터와 검색으로 내 휴가 신청을 찾을 수 있습니다.</p>
       <div className="row wrap my-requests-toolbar">
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="ALL">전체 상태</option>
@@ -1985,6 +1955,7 @@ function DashboardPage({
   workScheduleRows,
   onSaveWorkScheduleRows,
 }) {
+  const [dashTab, setDashTab] = useState(() => (currentRole === "ANESTHESIA" ? "schedule" : "summary"));
   const [draftRows, setDraftRows] = useState(Array.isArray(workScheduleRows) ? workScheduleRows : WORK_SCHEDULE_2026_ROWS);
   const [scheduleMsg, setScheduleMsg] = useState("");
 
@@ -2043,10 +2014,32 @@ function DashboardPage({
   return (
     <>
       {currentRole !== "ANESTHESIA" ? (
+        <div className="segmented-wrap" role="tablist" aria-label="현황 구분">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={dashTab === "summary"}
+            className={`segmented-btn${dashTab === "summary" ? " segmented-btn--active" : ""}`}
+            onClick={() => setDashTab("summary")}
+          >
+            골드키
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={dashTab === "schedule"}
+            className={`segmented-btn${dashTab === "schedule" ? " segmented-btn--active" : ""}`}
+            onClick={() => setDashTab("schedule")}
+          >
+            근무표
+          </button>
+        </div>
+      ) : null}
+      {currentRole !== "ANESTHESIA" && dashTab === "summary" ? (
         <section className="card">
-          <h2>골드키 잔여 내역</h2>
-          <p className="help" style={{ marginBottom: 10 }}>
-            4.1-4.11일 하반기 장기휴가 모집기간동안 신청한 건에 대해서는 4월 11일 이후 일괄적으로 신청건수에서 차감됩니다.
+          <h2 className="screen-title">골드키 잔여</h2>
+          <p className="help page-lead">
+            4.1-4.11 하반기 모집 기간 신청분은 4/11 이후 일괄 차감됩니다.
           </p>
           <div className="table-wrap">
             <table>
@@ -2081,8 +2074,10 @@ function DashboardPage({
           </div>
         </section>
       ) : null}
+      {(dashTab === "schedule" || currentRole === "ANESTHESIA") ? (
       <section className="card work-schedule-card">
-        <h2>2026년 근무표</h2>
+        <h2 className="screen-title">2026년 근무표</h2>
+        <p className="help page-lead">월별 근무 코드를 선택해 저장합니다.</p>
         <div className="table-wrap work-schedule-wrap">
           <table className="work-schedule-table">
             <thead>
@@ -2141,6 +2136,7 @@ function DashboardPage({
           {scheduleMsg ? <span className="help">{scheduleMsg}</span> : null}
         </div>
       </section>
+      ) : null}
     </>
   );
 }
@@ -2163,15 +2159,180 @@ function AccountPage({ onChangePassword, message }) {
   }
   return (
     <section className="card">
-      <h2>계정 관리</h2>
+      <h2>계정</h2>
+      <p className="help page-lead">비밀번호를 바꿀 수 있습니다.</p>
       <form className="login-form" onSubmit={submit}>
         <input type="password" placeholder="현재 비밀번호" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
         <input type="password" placeholder="새 비밀번호 (4자 이상)" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
-        <button type="submit">비밀번호 변경</button>
+        <button type="submit">비밀번호 저장</button>
       </form>
       {localMsg ? <p className="msg">{localMsg}</p> : null}
       {message ? <p className="help">{message}</p> : null}
     </section>
+  );
+}
+
+function navLinkClass({ isActive }) {
+  return `app-bottom-nav__link${isActive ? " app-bottom-nav__link--active" : ""}`;
+}
+
+/** 하단 고정 탭 — 한 손 엄지로 주요 화면 전환 */
+function AppBottomNav({ isAdmin, role }) {
+  const showLadder = role !== "ANESTHESIA";
+  const showMy = role === "NURSE";
+
+  if (isAdmin) {
+    return (
+      <nav className="app-bottom-nav" aria-label="주 메뉴">
+        <NavLink to="/calendar" className={navLinkClass} end>
+          캘린더
+        </NavLink>
+        <NavLink to="/dashboard" className={navLinkClass}>
+          현황
+        </NavLink>
+        <NavLink to="/admin" className={navLinkClass}>
+          배정
+        </NavLink>
+        <NavLink to="/ladder" className={navLinkClass}>
+          추첨
+        </NavLink>
+        <NavLink to="/settings" className={navLinkClass}>
+          설정
+        </NavLink>
+      </nav>
+    );
+  }
+
+  return (
+    <nav className="app-bottom-nav" aria-label="주 메뉴">
+      <NavLink to="/calendar" className={navLinkClass} end>
+        캘린더
+      </NavLink>
+      {showMy ? (
+        <NavLink to="/my" className={navLinkClass}>
+          내 신청
+        </NavLink>
+      ) : null}
+      <NavLink to="/dashboard" className={navLinkClass}>
+        현황
+      </NavLink>
+      {showLadder ? (
+        <NavLink to="/ladder" className={navLinkClass}>
+          추첨
+        </NavLink>
+      ) : null}
+      <NavLink to="/more" className={navLinkClass}>
+        더보기
+      </NavLink>
+    </nav>
+  );
+}
+
+/** 알림·계정·부가 정보 — 본문 스크롤을 줄이기 위해 상단 카드에서 분리 */
+function MorePage({
+  currentUser,
+  serverMode,
+  myNotifications,
+  unreadNotificationCount,
+  markAllNotificationsRead,
+  markNotificationRead,
+  enablePushNotifications,
+  pushBusy,
+  pushEnabled,
+  onLogout,
+}) {
+  const roleKo =
+    currentUser?.role === "ADMIN"
+      ? "관리자"
+      : currentUser?.role === "NURSE"
+        ? "간호사"
+        : currentUser?.role === "ANESTHESIA"
+          ? "마취"
+          : currentUser?.role ?? "";
+  const buildTag = import.meta.env.VITE_DEPLOY_TAG ? String(import.meta.env.VITE_DEPLOY_TAG).slice(0, 7) : "로컬";
+
+  return (
+    <div className="more-page">
+      <section className="card more-hero-card">
+        <h2 className="more-hero-title">더보기</h2>
+        <p className="more-hero-meta">
+          {currentUser?.name} · {roleKo}
+        </p>
+        <p className="help more-hero-build">
+          {serverMode ? "서버 연동" : "로컬 저장"} · 빌드 {buildTag}
+        </p>
+      </section>
+
+      <section className="card more-actions-card">
+        <h3 className="more-section-title">바로 가기</h3>
+        <div className="more-link-grid">
+          <Link to="/account" className="more-link-tile">
+            <span className="more-link-tile__title">비밀번호</span>
+            <span className="more-link-tile__sub">계정 설정</span>
+          </Link>
+          {currentUser?.role === "NURSE" ? (
+            <Link to="/request" className="more-link-tile">
+              <span className="more-link-tile__title">신청 화면</span>
+              <span className="more-link-tile__sub">날짜만 바꿔 신청</span>
+            </Link>
+          ) : null}
+        </div>
+        <button type="button" className="more-logout-btn" onClick={onLogout}>
+          로그아웃
+        </button>
+      </section>
+
+      {currentUser?.role === "NURSE" ? (
+        <section className="card notification-card">
+          <div className="notification-head">
+            <h3>
+              알림 {unreadNotificationCount > 0 ? <span className="notification-badge">{unreadNotificationCount}</span> : null}
+            </h3>
+            <div className="notification-head-actions">
+              {serverMode ? (
+                <button type="button" className="notification-readall-btn" onClick={() => void enablePushNotifications()} disabled={pushBusy || pushEnabled}>
+                  {pushEnabled ? "푸시 켜짐" : pushBusy ? "설정 중..." : "푸시 켜기"}
+                </button>
+              ) : null}
+              <button type="button" className="notification-readall-btn" onClick={markAllNotificationsRead}>
+                모두 읽음
+              </button>
+            </div>
+          </div>
+          {myNotifications.length === 0 ? (
+            <p className="help">새 알림이 없습니다.</p>
+          ) : (
+            <ul className="notification-list">
+              {myNotifications.slice(0, 12).map((n) => (
+                <li
+                  key={n.id}
+                  className="notification-item notification-item--unread"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
+                    void markNotificationRead(n.id);
+                    const td = String(n.targetDate ?? n.target_date ?? "").trim();
+                    if (!/^\d{4}-\d{2}-\d{2}$/.test(td)) return;
+                    window.location.hash = `#/calendar?ymd=${td}`;
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter" && e.key !== " ") return;
+                    e.preventDefault();
+                    void markNotificationRead(n.id);
+                    const td = String(n.targetDate ?? n.target_date ?? "").trim();
+                    if (!/^\d{4}-\d{2}-\d{2}$/.test(td)) return;
+                    window.location.hash = `#/calendar?ymd=${td}`;
+                  }}
+                >
+                  <p>{n.message}</p>
+                  <span>{new Date(n.createdAt).toLocaleString("ko-KR")}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
+    </div>
   );
 }
 
@@ -2336,8 +2497,8 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
 
   return (
     <section className="card">
-      <h2>휴가 추첨 배정</h2>
-      <p className="help">동일 조건 신청자 간 공정한 기준에 따라 휴가의 순위를 자동 배정합니다.</p>
+      <h2 className="screen-title">순서 추첨</h2>
+      <p className="help page-lead">같은 날·같은 유형 신청자에게 사다리로 순서를 정합니다.</p>
       <p className="help">
         해당일 협의 신청자:{" "}
         {applicantUserIds.length > 0
@@ -2682,12 +2843,14 @@ function CalendarPage({
   }
 
   return (
-    <section className="card">
-      <h2>캘린더</h2>
-      <p className="help">
+    <section className="card calendar-page-card">
+      <div className="calendar-page">
+        <div className="calendar-page__top">
+      <h2 className="screen-title">캘린더</h2>
+      <p className="help page-lead">
         {isAdmin
-          ? "날짜를 누르면 아래에서 신청 현황을 보고 같은 화면에서 승인/거절, 승인된 휴가자, 듀티 메모를 확인할 수 있습니다."
-          : "날짜를 누르면 아래에서 신청 인원·이름을 확인하고, 같은 화면에서 휴가를 신청할 수 있습니다."}
+          ? "날짜를 탭하면 아래에서 승인·메모를 처리할 수 있습니다."
+          : "날짜를 탭하면 신청·현황을 확인할 수 있습니다."}
       </p>
       <div className="calendar-nav" role="navigation" aria-label="달력 월 이동">
         <button type="button" className="calendar-nav-btn" onClick={() => moveCalendarMonth(-1)} aria-label="이전 달">
@@ -2777,7 +2940,9 @@ function CalendarPage({
           );
         })}
       </div>
+        </div>
 
+        <div className="calendar-page__detail">
       <div className="calendar-detail">
         {!selectedYmd ? (
           <p className="help calendar-detail-placeholder">달력에서 날짜를 선택하세요.</p>
@@ -3098,6 +3263,8 @@ function CalendarPage({
           </div>
         </section>
       ) : null}
+        </div>
+      </div>
     </section>
   );
 }
@@ -3134,10 +3301,8 @@ function AdminPage({ allRequests, users, notes, goldkeys, cancellations, serverM
   return (
     <>
       <section className="card">
-        <h2>휴가선정내역</h2>
-        <p className="help" style={{ marginBottom: 10 }}>
-          승인/거절 이력은 신청일이 아니라 휴가일 기준으로 정렬됩니다.
-        </p>
+        <h2 className="screen-title">승인·거절 기록</h2>
+        <p className="help page-lead">휴가일 기준으로 정렬됩니다. 이름·유형으로 좁힐 수 있습니다.</p>
         <div className="row wrap">
           <input placeholder="간호사 이름 검색" value={nameSearch} onChange={(e) => setNameSearch(e.target.value)} />
           <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
@@ -3245,7 +3410,9 @@ function SettingsPage({
 }) {
   return (
     <section className="card">
-      <h2>공휴일 API 동기화</h2>
+      <h2 className="screen-title">설정</h2>
+      <p className="help page-lead">공휴일 동기화, 백업·복구, 데이터 초기화, 계정 초기화를 처리합니다.</p>
+      <h3 className="settings-subheading">공휴일 API 동기화</h3>
       <div className="grid-api">
         <input type="password" placeholder="(옵션) 서비스키 - 현재는 미사용" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
         <input type="number" placeholder="연도" value={syncYear} onChange={(e) => setSyncYear(e.target.value)} />
@@ -3255,13 +3422,13 @@ function SettingsPage({
       <p className="help">현재 저장된 공휴일 수: {holidays.length}건</p>
       {apiMessage ? <p className="msg">{apiMessage}</p> : null}
       <hr className="divider" />
-      <h2>SQLite 백업/복구</h2>
+      <h3 className="settings-subheading">SQLite 백업/복구</h3>
       <div className="row"><button onClick={onBackup}>백업 SQL 다운로드</button></div>
       <textarea className="sql-textarea" placeholder="복구할 SQL을 여기에 붙여넣고 복구 실행" value={restoreSqlText} onChange={(e) => setRestoreSqlText(e.target.value)} />
       <div className="row"><button onClick={onRestore}>복구 실행</button></div>
       {backupMessage ? <p className="msg">{backupMessage}</p> : null}
       <hr className="divider" />
-      <h2>휴가·골드키 데이터 초기화 (관리자)</h2>
+      <h3 className="settings-subheading">휴가·골드키 데이터 초기화</h3>
       <p className="help" style={{ marginBottom: 10 }}>
         신청된 휴가 전부, 협의 메모·선정·취소 기록, 조정 로그를 지우고 간호사 골드키를 이름별 기본 총량·미사용으로 되돌립니다. 공휴일 캐시는 그대로입니다.
         {serverMode
@@ -3275,7 +3442,7 @@ function SettingsPage({
       </div>
       {resetDataMessage ? <p className="msg">{resetDataMessage}</p> : null}
       <hr className="divider" />
-      <h2>사용자 비밀번호 초기화 (관리자)</h2>
+      <h3 className="settings-subheading">사용자 비밀번호 초기화</h3>
       <div className="table-wrap">
         <table>
           <thead><tr><th>이름</th><th>사번</th><th>권한</th><th>액션</th></tr></thead>
