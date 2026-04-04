@@ -343,6 +343,28 @@ body::before {
   border-radius: var(--radius-sm);
 }
 
+.weekly-table-footer {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--separator);
+}
+
+.weekly-save-confirm-hint {
+  margin: 0 0 12px !important;
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+  color: var(--text-secondary) !important;
+}
+
+.weekly-footer-actions {
+  align-items: center;
+  gap: 10px;
+}
+
+.weekly-save-btn--footer {
+  min-width: 7rem;
+}
+
 .weekly-cell-select {
   width: 100%;
   max-width: 100%;

@@ -2178,7 +2178,7 @@ function effectiveWeeklyCell(userId, nurseName, ymd, workScheduleRows, requests,
     if (duties.has(String(userId))) {
       return { kind: "duty", main: "당직", sub: "" };
     }
-    return { kind: "leave", main: "휴가", sub: "주말·공휴·명절" };
+    return { kind: "leave", main: "휴가", sub: "" };
   }
   return { kind: "base", main: baseMonthCodeForNurseName(nurseName, ld, workScheduleRows), sub: "" };
 }
@@ -2207,6 +2207,14 @@ function weeklyOverrideSelectValue(ov) {
   if (ov.kind === "sub") return `__sub__:${ov.main}`;
   if (ov.kind === "base") return `__base__:${ov.main}`;
   return "__auto__";
+}
+
+/** 월간·승인·대체·달력 당직을 반영한 표시용 한 줄 (select 첫 옵션 등) — '자동' 접두어 없음 */
+function weeklyCellDisplayLine(cell) {
+  if (!cell) return "—";
+  const m = String(cell.main ?? "").trim() || "—";
+  const s = String(cell.sub ?? "").trim();
+  return s ? `${m} (${s})` : m;
 }
 
 function escapeHtmlForWeeklyExport(s) {
@@ -2368,7 +2376,12 @@ function WeeklyScheduleTab({
   }
 
   function saveWeeklyDraft() {
-    if (!window.confirm("주간 번표 셀 표시를 저장할까요? (이 기기 브라우저에만 저장됩니다.)")) return;
+    const ok = window.confirm(
+      "저장하시겠습니까?\n\n" +
+        "· 수동으로 바꾼 셀만 이 브라우저에 저장됩니다.\n" +
+        "· 근무 칸은 월간 근무표·승인 휴가·대체 근무·달력 당직(토·일·공휴·명절)을 반영해 채워집니다."
+    );
+    if (!ok) return;
     setWeeklyCellOverrides(draftOverrides);
     setWeeklyMsg("저장했습니다.");
     notifyDone("저장되었습니다.");
@@ -2381,11 +2394,11 @@ function WeeklyScheduleTab({
     <section className="card weekly-schedule-card">
       <h2 className="screen-title">주간 번표</h2>
       <p className="help page-lead">
-        월간 근무·승인 휴가·대체 근무를 반영합니다. 토·일·공휴일·명절에는 당직으로 지정된 간호사만 「당직」으로 보이고, 나머지는 휴가로 표시합니다.
+        월간 근무표를 기준으로 요일별 근무가 채워지며, 승인 휴가·대체 근무를 반영합니다. 토·일·공휴일·명절에는 달력에 지정한 당직자만 「당직」, 나머지 간호사는 「휴가」로 표시됩니다.
       </p>
       {isAdmin ? (
         <p className="help weekly-official-hint">
-          관리자: <strong>셀 표시 저장</strong> 시 현재 표와 동일한 내용의 <strong>인쇄용 HTML 파일</strong>이 함께 내려받아집니다. 저장 없이 파일만 받으려면 「인쇄용 HTML 저장」을 누르세요. 파일을 연 뒤 브라우저에서 인쇄하거나 PDF로 저장할 수 있습니다.
+          관리자: 표 하단 <strong>저장</strong> 시 현재 표와 동일한 <strong>인쇄용 HTML 파일</strong>이 함께 내려받아집니다. 저장 없이 파일만 받으려면 「인쇄용 HTML 저장」을 누르세요.
         </p>
       ) : null}
       <div className="weekly-toolbar row wrap">
@@ -2393,19 +2406,6 @@ function WeeklyScheduleTab({
           기준 날짜
           <input type="date" value={weekAnchor} onChange={(e) => setWeekAnchor(e.target.value)} />
         </label>
-        {canEditWeekly ? (
-          <div className="weekly-edit-actions row wrap">
-            <button type="button" className="weekly-save-btn" onClick={saveWeeklyDraft} disabled={!dirty}>
-              셀 표시 저장
-            </button>
-            {isAdmin ? (
-              <button type="button" className="weekly-official-export-btn" onClick={exportOfficialWeeklyDocument}>
-                인쇄용 HTML 저장
-              </button>
-            ) : null}
-            {weeklyMsg ? <span className="help weekly-save-msg">{weeklyMsg}</span> : null}
-          </div>
-        ) : null}
       </div>
       <div className="table-wrap weekly-table-wrap">
         <table className="weekly-schedule-table">
@@ -2438,10 +2438,7 @@ function WeeklyScheduleTab({
                           onChange={(e) => onCellOverrideChange(u.id, d, e.target.value)}
                           aria-label={`${u.name} ${d} 표시`}
                         >
-                          <option value="__auto__">
-                            자동 ({auto.main}
-                            {auto.sub ? ` · ${auto.sub}` : ""})
-                          </option>
+                          <option value="__auto__">{weeklyCellDisplayLine(auto)}</option>
                           <option value="__leave__">휴가(고정)</option>
                           {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
                             <option key={`base-${opt}`} value={`__base__:${opt}`}>
@@ -2468,6 +2465,28 @@ function WeeklyScheduleTab({
           </tbody>
         </table>
       </div>
+      {canEditWeekly ? (
+        <div className="weekly-table-footer">
+          <p className="help weekly-save-confirm-hint">
+            저장 시 수동으로 변경한 셀만 이 기기 브라우저에 보관됩니다. 저장하시겠습니까? 아래 버튼을 누르면 확인 창이 열립니다.
+          </p>
+          <div className="weekly-footer-actions row wrap">
+            <button type="button" className="weekly-save-btn weekly-save-btn--footer" onClick={saveWeeklyDraft} disabled={!dirty}>
+              저장
+            </button>
+            {isAdmin ? (
+              <button type="button" className="weekly-official-export-btn" onClick={exportOfficialWeeklyDocument}>
+                인쇄용 HTML 저장
+              </button>
+            ) : null}
+            {weeklyMsg ? (
+              <span className="help weekly-save-msg" role="status">
+                {weeklyMsg}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
