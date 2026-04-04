@@ -2174,9 +2174,9 @@ function effectiveWeeklyCell(userId, nurseName, ymd, workScheduleRows, requests,
   if (offLike) {
     const duties = dutyNurseIdSet(ld, holidayDuties);
     if (duties.has(String(userId))) {
-      return { kind: "base", main: baseMonthCodeForNurseName(nurseName, ld, workScheduleRows), sub: "" };
+      return { kind: "duty", main: "당직", sub: "" };
     }
-    return { kind: "leave", main: "휴가", sub: "주말·공휴" };
+    return { kind: "leave", main: "휴가", sub: "주말·공휴·명절" };
   }
   return { kind: "base", main: baseMonthCodeForNurseName(nurseName, ld, workScheduleRows), sub: "" };
 }
@@ -2272,7 +2272,7 @@ function WeeklyScheduleTab({
     <section className="card weekly-schedule-card">
       <h2 className="screen-title">주간 번표</h2>
       <p className="help page-lead">
-        월간 근무·승인 휴가·대체 근무를 반영합니다. 토·일·공휴일에는 휴일 당직자(달력에 저장된 당직 1·2)만 근무로 보이고 나머지는 휴가로 표시합니다.
+        월간 근무·승인 휴가·대체 근무를 반영합니다. 토·일·공휴일·명절에는 당직으로 지정된 간호사만 「당직」으로 보이고, 나머지는 휴가로 표시합니다.
       </p>
       <div className="weekly-toolbar row wrap">
         <label className="weekly-date-label">
@@ -2693,7 +2693,7 @@ function DashboardPage({
         </section>
       ) : null}
       {dashTab === "schedule" ? (
-      <section className="card work-schedule-card">
+      <section className={`card work-schedule-card${isAdmin ? " work-schedule-card--admin" : ""}`}>
         <h2 className="screen-title">2026년 근무표</h2>
         <p className="help page-lead">월별 근무 코드를 선택해 저장합니다.</p>
         <div className="table-wrap work-schedule-wrap">
@@ -3023,6 +3023,17 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
   const [runnerState, setRunnerState] = useState(null);
   const [activeRunnerId, setActiveRunnerId] = useState("");
   const [activePathKeys, setActivePathKeys] = useState({});
+  const [narrowUi, setNarrowUi] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia("(max-width: 768px)").matches : false
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const mq = window.matchMedia("(max-width: 768px)");
+    const onChange = () => setNarrowUi(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
 
   const nurseUsers = useMemo(
     () => users.filter((u) => u.role === "NURSE").sort((a, b) => a.name.localeCompare(b.name, "ko")),
@@ -3050,7 +3061,7 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
       return;
     }
     const laneCount = selectedUserIds.length;
-    const rowCount = Math.max(5, laneCount * 3);
+    const rowCount = narrowUi ? Math.max(4, laneCount * 2) : Math.max(5, laneCount * 3);
     const links = buildRandomLadderLinks(laneCount, rowCount);
     const byStart = selectedUserIds.map((userId, startLane) => ({
       userId,
@@ -3136,8 +3147,10 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
     notifyDone("결과가 저장되었습니다.");
   }
 
+  const svgMinH = narrowUi ? 260 : 420;
+
   return (
-    <section className="card ladder-page">
+    <section className="card ladder-page ladder-page--fit">
       <h2 className="screen-title">순서 추첨</h2>
       <p className="help page-lead ladder-page-lead">같은 날·같은 유형 신청자에게 사다리로 순서를 정합니다.</p>
       <p className="help ladder-applicant-line">
@@ -3188,7 +3201,7 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
             className="ladder-svg"
             width="100%"
             height="100%"
-            viewBox={`0 0 ${140 + (ladderSpec.laneCount - 1) * 120} ${Math.max(420, ladderSpec.rowCount * 30 + 130)}`}
+            viewBox={`0 0 ${140 + (ladderSpec.laneCount - 1) * 120} ${Math.max(svgMinH, ladderSpec.rowCount * 30 + 130)}`}
             preserveAspectRatio="xMidYMid meet"
             role="img"
             aria-label="사다리 애니메이션"

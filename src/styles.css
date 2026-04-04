@@ -194,8 +194,8 @@ body::before {
   gap: 6px;
 }
 
-/* 가로(landscape): 탭이 두 줄로 줄바꿈되지 않도록 한 줄 + 필요 시 가로 스크롤 */
-@media (orientation: landscape) {
+/* 좁은 화면·가로모드: 탭(골드키/월간/주간/승인 등) 한 줄 + 가로 스크롤 — 관리자 4탭 줄바꿈 방지 */
+@media (max-width: 768px), (orientation: landscape) {
   .segmented-wrap--multi {
     flex-wrap: nowrap;
     overflow-x: auto;
@@ -298,6 +298,11 @@ body::before {
 
 .weekly-cell--sub .weekly-cell-main {
   color: var(--accent);
+}
+
+.weekly-cell--duty .weekly-cell-main {
+  color: #1d4ed8;
+  font-weight: 800;
 }
 
 .weekly-edit-actions {
@@ -1841,9 +1846,90 @@ button.calendar-nav-today:hover {
 }
 
 @media (max-width: 768px) {
-  /* iOS: 사다리·툴바·참가자와 한 화면에 맞추기 위해 SVG 높이 축소 */
-  .ladder-svg-wrap {
-    height: min(28vh, 260px);
+  /* 추첨: 입력·사다리·버튼을 한 화면에 최대한 맞춤(본문 스크롤 최소화) */
+  .ladder-page--fit {
+    display: flex;
+    flex-direction: column;
+    max-height: min(calc(100dvh - 132px), calc(100vh - 132px));
+    overflow: hidden;
+    box-sizing: border-box;
+    margin-bottom: 8px;
+    padding-top: 12px;
+    padding-bottom: 8px;
+  }
+
+  .ladder-page--fit .screen-title {
+    margin-bottom: 6px !important;
+    font-size: 17px !important;
+    flex-shrink: 0;
+  }
+
+  .ladder-page--fit .ladder-page-lead {
+    margin-bottom: 4px !important;
+    font-size: 12px !important;
+    line-height: 1.3 !important;
+    flex-shrink: 0;
+  }
+
+  .ladder-page--fit .ladder-applicant-line {
+    max-height: 1.35em !important;
+    margin-bottom: 4px !important;
+    -webkit-line-clamp: 1 !important;
+    display: -webkit-box !important;
+    -webkit-box-orient: vertical !important;
+    overflow: hidden !important;
+  }
+
+  .ladder-page--fit .ladder-date-type-row {
+    margin-bottom: 6px !important;
+    flex-shrink: 0;
+  }
+
+  .ladder-page--fit .ladder-participant-block {
+    flex: 0 1 auto;
+    min-height: 0;
+    max-height: 22vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    margin-bottom: 4px !important;
+  }
+
+  .ladder-page--fit .ladder-toolbar--sticky-tools {
+    margin-top: 4px !important;
+    margin-bottom: 4px !important;
+    flex-shrink: 0;
+  }
+
+  .ladder-page--fit .ladder-preview-line {
+    margin: 2px 0 4px !important;
+    flex-shrink: 0;
+    font-size: 11px !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ladder-page--fit .ladder-msg-inline {
+    margin: 2px 0 4px !important;
+    flex-shrink: 0;
+    font-size: 12px !important;
+  }
+
+  .ladder-page--fit .ladder-saved-details {
+    flex-shrink: 0;
+    margin-top: 4px !important;
+    max-height: 20vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* iOS: 사다리 영역이 남는 세로 공간을 채움 */
+  .ladder-page--fit .ladder-svg-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto !important;
+    max-height: none;
+    margin: 4px 0 !important;
   }
 
   .ladder-page .page-lead {
@@ -2102,6 +2188,14 @@ button.calendar-nav-today:hover {
 
 .work-schedule-table tbody tr:last-child td {
   border-bottom: 1px solid var(--separator);
+}
+
+/* 관리자 현황: 월간 근무 셀을 한 줄(말줄임)으로 표시 */
+.work-schedule-card--admin .work-schedule-picker-face {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
 }
 
 @media (max-width: 768px) {
