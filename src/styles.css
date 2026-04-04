@@ -194,6 +194,21 @@ body::before {
   gap: 6px;
 }
 
+/* 가로(landscape): 탭이 두 줄로 줄바꿈되지 않도록 한 줄 + 필요 시 가로 스크롤 */
+@media (orientation: landscape) {
+  .segmented-wrap--multi {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .segmented-wrap--multi .segmented-btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+}
+
 /* ----- 주간 번표 ----- */
 .weekly-toolbar {
   margin-bottom: 12px;
@@ -283,6 +298,35 @@ body::before {
 
 .weekly-cell--sub .weekly-cell-main {
   color: var(--accent);
+}
+
+.weekly-edit-actions {
+  align-items: center;
+  gap: 10px;
+}
+
+.weekly-save-btn {
+  min-height: 44px;
+  padding: 10px 16px;
+  font-weight: 700;
+  border-radius: var(--radius-sm);
+}
+
+.weekly-cell-select {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 650;
+  padding: 6px 4px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--separator);
+  background: var(--surface);
+  line-height: 1.2;
+}
+
+.weekly-save-msg {
+  margin: 0 !important;
 }
 
 /* ----- 관리자 승인·대체 ----- */
@@ -437,15 +481,26 @@ body::before {
 }
 
 @media (max-width: 768px) {
+  /* 관리자 승인/거절도 신청자당 한 줄(가로 스크롤) — 일반 행과 동일하게 유지 */
   .calendar-applicant-item--admin.calendar-applicant-item--row {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    align-items: center;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+  }
+
+  .calendar-applicant-item--admin.calendar-applicant-item--row .calendar-applicant-name {
+    white-space: nowrap;
+    flex: 0 1 auto;
+    min-width: 0;
   }
 
   .admin-calendar-applicant-actions {
-    width: 100%;
-    justify-content: flex-end;
-    margin-left: 0;
-    padding-top: 4px;
+    flex-shrink: 0;
+    width: auto;
+    margin-left: auto;
+    padding-top: 0;
   }
 }
 
@@ -1464,6 +1519,20 @@ button.calendar-nav-today:hover {
   margin-bottom: 12px;
 }
 
+@media (orientation: landscape) {
+  .calendar-detail-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .calendar-detail-tabs .calendar-tab {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+}
+
 .calendar-tab {
   cursor: pointer;
   padding: 10px 16px;
@@ -1590,9 +1659,46 @@ button.calendar-nav-today:hover {
 }
 
 .ladder-applicant-line {
-  font-size: 13px !important;
-  margin: 0 0 10px !important;
+  font-size: 12px !important;
+  margin: 0 0 6px !important;
+  line-height: 1.3 !important;
+  max-height: 2.6em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.ladder-preview-line {
+  font-size: 12px !important;
+  margin: 4px 0 6px !important;
   line-height: 1.35 !important;
+}
+
+.ladder-msg-inline {
+  margin: 4px 0 8px !important;
+  font-size: 13px !important;
+}
+
+.ladder-saved-details {
+  margin-top: 8px;
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-md);
+  padding: 0 10px 8px;
+  background: var(--fill-secondary);
+}
+
+.ladder-saved-summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 14px;
+  padding: 10px 0;
+  list-style: none;
+}
+
+.ladder-saved-details[open] .ladder-saved-summary {
+  padding-bottom: 6px;
 }
 
 .ladder-date-type-row {
@@ -1737,7 +1843,7 @@ button.calendar-nav-today:hover {
 @media (max-width: 768px) {
   /* iOS: 사다리·툴바·참가자와 한 화면에 맞추기 위해 SVG 높이 축소 */
   .ladder-svg-wrap {
-    height: min(36vh, 340px);
+    height: min(28vh, 260px);
   }
 
   .ladder-page .page-lead {

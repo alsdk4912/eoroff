@@ -1273,6 +1273,7 @@ function App() {
     const sc = String(shiftCode ?? "").trim();
     if (!su && !sc) {
       setSubstituteAssignments((prev) => (Array.isArray(prev) ? prev : []).filter((x) => x.requestId !== requestId));
+      notifyDone("대체 근무 지정을 삭제했습니다.");
       return;
     }
     const err = validateSubstitutePayload({
@@ -1304,6 +1305,7 @@ function App() {
         },
       ];
     });
+    notifyDone("대체 근무가 저장되었습니다.");
   }
 
   async function rejectRequest(requestId) {
@@ -2870,7 +2872,7 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
       return;
     }
     const laneCount = selectedUserIds.length;
-    const rowCount = Math.max(8, laneCount * 4);
+    const rowCount = Math.max(5, laneCount * 3);
     const links = buildRandomLadderLinks(laneCount, rowCount);
     const byStart = selectedUserIds.map((userId, startLane) => ({
       userId,
