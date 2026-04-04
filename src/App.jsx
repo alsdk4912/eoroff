@@ -2613,7 +2613,8 @@ function CalendarPage({
   /**
    * 같은 휴가일·같은 유형 기준으로, 신청(제출)일이 같은 사람끼리만 묶음.
    * 하반기 골드키(같은 해 7~12월)를 4/1~4/10에 제출한 건은 항상 협의(자동 신청순 없음).
-   * 그 외: 묶음에 2명 이상이면 협의, 제출일이 겹치지 않으면 신청순 자동.
+   * 일반휴가-후순위: 같은 날 2명 이상이면 항상 협의(일반-우선과 동일하게 수동 순번).
+   * 그 외 유형: 묶음에 2명 이상이면 협의, 제출일이 겹치지 않으면 신청순 자동.
    */
   const negotiationMetaByRequestId = useMemo(() => {
     const map = new Map();
@@ -2636,6 +2637,10 @@ function CalendarPage({
       }
       const sortedAll = [...list].sort((a, b) => a.requestedAt.localeCompare(b.requestedAt));
       for (const r of list) {
+        if (r.leaveType === "GENERAL_NORMAL") {
+          map.set(r.id, { mode: "negotiate" });
+          continue;
+        }
         if (r.leaveType === "GOLDKEY" && isSecondHalfGoldkeyAprilConsultationRequest(r)) {
           map.set(r.id, { mode: "negotiate" });
           continue;

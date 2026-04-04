@@ -235,6 +235,10 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS app_migrations (
+  id TEXT PRIMARY KEY
+);
 `;
 
 export async function initDb() {
@@ -281,6 +285,7 @@ export async function initDb() {
   await ensureHolidayDutyBackfill2026();
   await backfillLongTermGoldkeyCancellationExemptions();
   await ensureGoldkeyDefaults();
+  await backfillGeneralNormalNegotiationOrderFromAppliedOrder();
   return client;
 }
 
@@ -318,6 +323,47 @@ async function ensureCancellationsDeductionColumns() {
   if (!names.has("deduction_note")) {
     await execute("ALTER TABLE cancellations ADD COLUMN deduction_note TEXT");
   }
+}
+
+/**
+ * 일반휴가-후순위를 전부 협의제로 전환하면서, 기존에 DB에 순번이 없던 동일일·다인 건에는
+ * 신청 시각 순(기존 화면의 신청순)을 negotiation_order에 한 번만 백필한다.
+ */
+async function backfillGeneralNormalNegotiationOrderFromAppliedOrder() {
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", "general_normal_all_negotiate_v1");
+  if (done) return;
+
+  const all = await queryAll(
+    "SELECT id, leave_date, requested_at, negotiation_order, status, leave_type FROM requests WHERE leave_type = ?",
+    "GENERAL_NORMAL"
+  );
+  const active = (all || []).filter((r) => {
+    const st = String(r.status ?? "");
+    return st !== "CANCELLED" && st !== "REJECTED";
+  });
+  const byDate = new Map();
+  for (const r of active) {
+    const ld = String(r.leave_date ?? "").trim();
+    if (!ld) continue;
+    if (!byDate.has(ld)) byDate.set(ld, []);
+    byDate.get(ld).push(r);
+  }
+
+  await runTransaction(async (tx) => {
+    for (const [, list] of byDate) {
+      if (list.length < 2) continue;
+      const allNull = list.every((r) => r.negotiation_order == null || r.negotiation_order === "");
+      if (!allNull) continue;
+      const sorted = [...list].sort((a, b) => String(a.requested_at ?? "").localeCompare(String(b.requested_at ?? "")));
+      let i = 1;
+      for (const r of sorted) {
+        await tx.execute("UPDATE requests SET negotiation_order = ? WHERE id = ?", i, r.id);
+        i += 1;
+      }
+    }
+    await tx.execute("INSERT INTO app_migrations (id) VALUES (?)", "general_normal_all_negotiate_v1");
+  });
+  console.log("[db] migration general_normal_all_negotiate_v1 applied (일반-후순위 협의 순번 백필)");
 }
 
 async function seedDefaultsIfEmpty() {
