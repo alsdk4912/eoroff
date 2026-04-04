@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import {
   holidaysCache as seedHolidays,
@@ -36,6 +36,8 @@ const LS_LADDER_RESULTS = "or.ladderResults.v1";
 const LS_ADMIN_DAY_MEMOS = "or.adminDayMemos.v1";
 const LS_DAY_COMMENTS = "or.dayComments.v1";
 const LS_WORK_SCHEDULE_2026 = "or.workSchedule2026.v1";
+/** 승인 시 지정하는 대체 근무(로컬). 서버 API 없음 — 주간 최종 번표 반영용 */
+const LS_SUBSTITUTE_ASSIGNMENTS = "or.substituteAssignments.v1";
 const LS_NOTIFICATIONS = "or.notifications.v1";
 
 /** 이전 버전 키는 남아 있으면 혼동만 되므로 제거(현재 키는 유지) */
@@ -266,6 +268,7 @@ function App() {
   const [adminDayMemos, setAdminDayMemos] = useLocalStorage(LS_ADMIN_DAY_MEMOS, {});
   const [dayComments, setDayComments] = useLocalStorage(LS_DAY_COMMENTS, []);
   const [workScheduleRows, setWorkScheduleRows] = useLocalStorage(LS_WORK_SCHEDULE_2026, WORK_SCHEDULE_2026_ROWS);
+  const [substituteAssignments, setSubstituteAssignments] = useLocalStorage(LS_SUBSTITUTE_ASSIGNMENTS, []);
   const [notifications, setNotifications] = useLocalStorage(LS_NOTIFICATIONS, []);
   const [serverNotifications, setServerNotifications] = useState([]);
   const [pushEnabled, setPushEnabled] = useState(false);
@@ -1196,8 +1199,26 @@ function App() {
     }
   }
 
-  async function selectRequest(requestId) {
+  async function selectRequest(requestId, substituteOpts = null) {
     const target = requests.find((r) => r.id === requestId);
+    if (!target) return;
+    const subUid = substituteOpts?.substituteUserId ? String(substituteOpts.substituteUserId).trim() : "";
+    const subCode = substituteOpts?.shiftCode ? String(substituteOpts.shiftCode).trim() : "";
+    if (subUid || subCode) {
+      const err = validateSubstitutePayload({
+        leaveDate: target.leaveDate,
+        leaveUserId: target.userId,
+        substituteUserId: subUid,
+        shiftCode: subCode,
+        requests,
+        substituteAssignments,
+        excludeRequestId: requestId,
+      });
+      if (err) {
+        window.alert?.(err);
+        return;
+      }
+    }
     const payload = {
       selectionId: `ls_${Date.now()}`,
       selectedBy: auth.userId,
@@ -1205,6 +1226,22 @@ function App() {
     };
     setRequests((prev) => prev.map((r) => (r.id === requestId ? { ...r, status: "APPROVED" } : r)));
     setSelections((prev) => [...prev, { id: payload.selectionId, leaveRequestId: requestId, ...payload }]);
+    setSubstituteAssignments((prev) => {
+      const rest = (Array.isArray(prev) ? prev : []).filter((x) => x.requestId !== requestId);
+      if (!subUid || !subCode) return rest;
+      const existing = (Array.isArray(prev) ? prev : []).find((x) => x.requestId === requestId);
+      return [
+        ...rest,
+        {
+          id: existing?.id ?? `sub_${Date.now()}`,
+          requestId,
+          leaveDate: target.leaveDate,
+          leaveUserId: target.userId,
+          substituteUserId: subUid,
+          shiftCode: subCode,
+        },
+      ];
+    });
     if (serverMode) {
       try {
         await api.selectRequest(requestId, payload);
@@ -1226,8 +1263,52 @@ function App() {
     }
   }
 
+  function saveSubstituteForApprovedRequest(requestId, { substituteUserId, shiftCode }) {
+    const target = requests.find((r) => r.id === requestId);
+    if (!target || !isWinnerStatus(target.status)) {
+      window.alert?.("승인된 신청만 대체 근무를 저장할 수 있습니다.");
+      return;
+    }
+    const su = String(substituteUserId ?? "").trim();
+    const sc = String(shiftCode ?? "").trim();
+    if (!su && !sc) {
+      setSubstituteAssignments((prev) => (Array.isArray(prev) ? prev : []).filter((x) => x.requestId !== requestId));
+      return;
+    }
+    const err = validateSubstitutePayload({
+      leaveDate: target.leaveDate,
+      leaveUserId: target.userId,
+      substituteUserId: su,
+      shiftCode: sc,
+      requests,
+      substituteAssignments,
+      excludeRequestId: requestId,
+    });
+    if (err) {
+      window.alert?.(err);
+      return;
+    }
+    setSubstituteAssignments((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const rest = list.filter((x) => x.requestId !== requestId);
+      const existing = list.find((x) => x.requestId === requestId);
+      return [
+        ...rest,
+        {
+          id: existing?.id ?? `sub_${Date.now()}`,
+          requestId,
+          leaveDate: target.leaveDate,
+          leaveUserId: target.userId,
+          substituteUserId: su,
+          shiftCode: sc,
+        },
+      ];
+    });
+  }
+
   async function rejectRequest(requestId) {
     const target = requests.find((r) => r.id === requestId);
+    setSubstituteAssignments((prev) => (Array.isArray(prev) ? prev : []).filter((x) => x.requestId !== requestId));
     setRequests((prev) => prev.map((r) => (r.id === requestId ? { ...r, status: "REJECTED" } : r)));
     if (serverMode) {
       try {
@@ -1497,6 +1578,11 @@ function App() {
               currentRole={currentUser?.role}
               workScheduleRows={workScheduleRows}
               onSaveWorkScheduleRows={setWorkScheduleRows}
+              isAdmin={isAdmin}
+              substituteAssignments={substituteAssignments}
+              selectRequest={selectRequest}
+              rejectRequest={rejectRequest}
+              saveSubstituteForApprovedRequest={saveSubstituteForApprovedRequest}
             />
           }
         />
@@ -1543,6 +1629,8 @@ function App() {
               saveHolidayDuty={saveHolidayDuty}
               selectRequest={selectRequest}
               rejectRequest={rejectRequest}
+              substituteAssignments={substituteAssignments}
+              saveSubstituteForApprovedRequest={saveSubstituteForApprovedRequest}
               adminDayMemos={adminDayMemos}
               saveAdminDayMemo={saveAdminDayMemo}
               dayComments={dayComments}
@@ -1944,6 +2032,292 @@ const WORK_SCHEDULE_2026_ROWS = [
 ];
 const WORK_SCHEDULE_OPTIONS = ["", "안E", "안D0", "수E", "9-5", "5D2", "3D1", "7D2", "6D2", "6D1", "3D2", "1D2", "7D1", "1D1", "5D1", "PRN"];
 
+function parseYmdToLocalDate(ymd) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd ?? "").trim());
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+/** 해당 주의 월요일 YYYY-MM-DD (로컬) */
+function mondayOfWeekContaining(ymd) {
+  const d = parseYmdToLocalDate(ymd);
+  if (!d || Number.isNaN(d.getTime())) return toLocalYMD(new Date());
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return toLocalYMD(d);
+}
+
+function addDaysToYmd(ymd, deltaDays) {
+  const d = parseYmdToLocalDate(ymd);
+  if (!d || Number.isNaN(d.getTime())) return ymd;
+  d.setDate(d.getDate() + deltaDays);
+  return toLocalYMD(d);
+}
+
+/** 2026 근무표 월 컬럼 인덱스 0~8 (1~9월), 범위 밖이면 -1 */
+function scheduleMonthIndexFromYmd(ymd) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd ?? "").trim());
+  if (!m) return -1;
+  const month = Number(m[2]);
+  if (month < 1 || month > WORK_SCHEDULE_2026_MONTHS.length) return -1;
+  return month - 1;
+}
+
+function baseMonthCodeForNurseName(name, ymd, workRows) {
+  const mi = scheduleMonthIndexFromYmd(ymd);
+  if (mi < 0) return "—";
+  const row = (Array.isArray(workRows) ? workRows : []).find((r) => r.name === name);
+  const v = row?.values?.[mi];
+  return v != null && String(v).trim() !== "" ? String(v).trim() : "—";
+}
+
+function getSubstituteRecordForRequest(substituteAssignments, requestId) {
+  return (Array.isArray(substituteAssignments) ? substituteAssignments : []).find((x) => x.requestId === requestId) ?? null;
+}
+
+/**
+ * 대체 근무 지정 검증. substituteUserId·shiftCode 둘 다 있거나 둘 다 없어야 함.
+ */
+function validateSubstitutePayload({
+  leaveDate,
+  leaveUserId,
+  substituteUserId,
+  shiftCode,
+  requests,
+  substituteAssignments,
+  excludeRequestId,
+}) {
+  const hasSub = Boolean(substituteUserId) || Boolean(shiftCode);
+  if (!hasSub) return null;
+  if (!substituteUserId || !shiftCode) return "대체 근무를 쓰려면 간호사와 근무 코드를 모두 선택하세요.";
+  if (substituteUserId === leaveUserId) return "휴가자 본인을 대체 인력으로 지정할 수 없습니다.";
+  const ld = String(leaveDate ?? "").slice(0, 10);
+  const others = (Array.isArray(substituteAssignments) ? substituteAssignments : []).filter((s) => s.requestId !== excludeRequestId);
+  if (others.some((s) => s.leaveDate === ld && s.substituteUserId === substituteUserId)) {
+    return "선택한 간호사는 같은 날 이미 다른 대체 근무가 지정되어 있습니다.";
+  }
+  const reqs = Array.isArray(requests) ? requests : [];
+  const blocking = reqs.some(
+    (r) =>
+      r.userId === substituteUserId &&
+      String(r.leaveDate ?? "").slice(0, 10) === ld &&
+      r.status !== "CANCELLED" &&
+      r.status !== "REJECTED" &&
+      (r.status === "APPLIED" || isWinnerStatus(r.status))
+  );
+  if (blocking) return "선택한 간호사는 해당 날짜에 휴가 신청·승인이 있어 대체 근무를 맡기 어렵습니다. 다른 사람을 선택하세요.";
+  return null;
+}
+
+function effectiveScheduleCell(userId, nurseName, ymd, workScheduleRows, requests, substituteAssignments) {
+  const ld = String(ymd).slice(0, 10);
+  const approvedLeave = (requests || []).find(
+    (r) =>
+      r.userId === userId &&
+      String(r.leaveDate ?? "").slice(0, 10) === ld &&
+      isWinnerStatus(r.status)
+  );
+  if (approvedLeave) {
+    return { kind: "leave", main: "휴가", sub: typeFullLabel(approvedLeave.leaveType) };
+  }
+  const sub = (substituteAssignments || []).find((s) => s.substituteUserId === userId && String(s.leaveDate ?? "").slice(0, 10) === ld);
+  if (sub) {
+    return { kind: "sub", main: sub.shiftCode, sub: "대체" };
+  }
+  return { kind: "base", main: baseMonthCodeForNurseName(nurseName, ld, workScheduleRows), sub: "" };
+}
+
+function WeeklyScheduleTab({ workScheduleRows, requests, substituteAssignments, users }) {
+  const [weekAnchor, setWeekAnchor] = useState(() => toLocalYMD(new Date()));
+  const mon = mondayOfWeekContaining(weekAnchor);
+  const days = Array.from({ length: 7 }, (_, i) => addDaysToYmd(mon, i));
+  const dayLabels = ["월", "화", "수", "목", "금", "토", "일"];
+  const nurses = users.filter((u) => u.role === "NURSE").sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  return (
+    <section className="card weekly-schedule-card">
+      <h2 className="screen-title">주간 번표</h2>
+      <p className="help page-lead">월간 기본 근무에 승인 휴가·대체 근무를 반영한 최종 표입니다. (1~9월 월간 근무표 기준)</p>
+      <div className="weekly-toolbar row wrap">
+        <label className="weekly-date-label">
+          기준 날짜
+          <input type="date" value={weekAnchor} onChange={(e) => setWeekAnchor(e.target.value)} />
+        </label>
+        <button type="button" className="btn-ghost-header btn-ghost-header--compact" onClick={() => setWeekAnchor(mon)}>
+          이번 주 월요일로
+        </button>
+      </div>
+      <div className="table-wrap weekly-table-wrap">
+        <table className="weekly-schedule-table">
+          <thead>
+            <tr>
+              <th className="weekly-th-name">간호사</th>
+              {days.map((d, i) => (
+                <th key={d} className="weekly-th-day">
+                  <div>{dayLabels[i]}</div>
+                  <div className="weekly-th-date">{d.slice(5).replace("-", "/")}</div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {nurses.map((u) => (
+              <tr key={u.id}>
+                <td className="weekly-name">{u.name}</td>
+                {days.map((d) => {
+                  const cell = effectiveScheduleCell(u.id, u.name, d, workScheduleRows, requests, substituteAssignments);
+                  return (
+                    <td key={d} className={`weekly-cell weekly-cell--${cell.kind}`}>
+                      <div className="weekly-cell-main">{cell.main}</div>
+                      {cell.sub ? <div className="weekly-cell-sub">{cell.sub}</div> : null}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function AdminDayRequestCard({ requestRow, nurseUsers, users, substituteRec, selectRequest, rejectRequest, saveSubstituteForApprovedRequest }) {
+  const [subId, setSubId] = useState(substituteRec?.substituteUserId ?? "");
+  const [code, setCode] = useState(substituteRec?.shiftCode ?? "");
+  useEffect(() => {
+    setSubId(substituteRec?.substituteUserId ?? "");
+    setCode(substituteRec?.shiftCode ?? "");
+  }, [requestRow.id, substituteRec?.substituteUserId, substituteRec?.shiftCode]);
+  const nm = users.find((u) => u.id === requestRow.userId)?.name ?? requestRow.userId;
+  const approved = isWinnerStatus(requestRow.status);
+  return (
+    <div className="admin-day-request-item">
+      <div className="admin-day-request-head">
+        <strong>{nm}</strong>
+        <span className="admin-day-meta">
+          {typeFullLabel(requestRow.leaveType)} · {leaveNatureLabel(requestRow.leaveNature)} · {statusLabel(requestRow.status)}
+        </span>
+      </div>
+      {requestRow.status === "APPLIED" ? (
+        <div className="admin-day-sub-grid">
+          <label className="admin-day-field">
+            <span className="field-label">대체 인력</span>
+            <select value={subId} onChange={(e) => setSubId(e.target.value)}>
+              <option value="">(선택 없이 승인 가능)</option>
+              {nurseUsers.map((u) => (
+                <option key={u.id} value={u.id} disabled={u.id === requestRow.userId}>
+                  {u.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="admin-day-field">
+            <span className="field-label">대체 근무 코드</span>
+            <select value={code} onChange={(e) => setCode(e.target.value)}>
+              <option value="">—</option>
+              {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="admin-day-actions">
+            <button type="button" className="admin-day-primary-btn" onClick={() => void selectRequest(requestRow.id, { substituteUserId: subId, shiftCode: code })}>
+              승인 후 저장
+            </button>
+            <button type="button" onClick={() => void rejectRequest(requestRow.id)}>
+              거절
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {approved ? (
+        <div className="admin-day-sub-grid admin-day-sub-grid--approved">
+          <p className="help admin-day-hint">승인됨 · 대체 근무만 수정·삭제할 수 있습니다.</p>
+          <label className="admin-day-field">
+            <span className="field-label">대체 인력</span>
+            <select value={subId} onChange={(e) => setSubId(e.target.value)}>
+              <option value="">—</option>
+              {nurseUsers.map((u) => (
+                <option key={u.id} value={u.id} disabled={u.id === requestRow.userId}>
+                  {u.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="admin-day-field">
+            <span className="field-label">대체 근무 코드</span>
+            <select value={code} onChange={(e) => setCode(e.target.value)}>
+              <option value="">—</option>
+              {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="admin-day-actions">
+            <button type="button" className="admin-day-primary-btn" onClick={() => saveSubstituteForApprovedRequest(requestRow.id, { substituteUserId: subId, shiftCode: code })}>
+              대체 저장
+            </button>
+            <button type="button" onClick={() => saveSubstituteForApprovedRequest(requestRow.id, { substituteUserId: "", shiftCode: "" })}>
+              대체 삭제
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {requestRow.status === "REJECTED" ? (
+        <p className="help">거절된 신청입니다.</p>
+      ) : null}
+    </div>
+  );
+}
+
+function AdminDayReviewTab({ users, requests, substituteAssignments, selectRequest, rejectRequest, saveSubstituteForApprovedRequest }) {
+  const [dayYmd, setDayYmd] = useState(() => toLocalYMD(new Date()));
+  const nurseUsers = useMemo(() => users.filter((u) => u.role === "NURSE").sort((a, b) => a.name.localeCompare(b.name, "ko")), [users]);
+  const dayReqs = useMemo(() => {
+    const ld = String(dayYmd).slice(0, 10);
+    return (requests || [])
+      .filter((r) => String(r.leaveDate ?? "").slice(0, 10) === ld && r.status !== "CANCELLED")
+      .sort((a, b) => a.requestedAt.localeCompare(b.requestedAt));
+  }, [requests, dayYmd]);
+
+  return (
+    <section className="card admin-day-review-card">
+      <h2 className="screen-title">승인 · 대체 근무</h2>
+      <p className="help page-lead">날짜를 고른 뒤, 신청별로 승인·거절과 대체 번표를 한 번에 처리합니다.</p>
+      <div className="weekly-toolbar row wrap">
+        <label className="weekly-date-label">
+          처리 날짜
+          <input type="date" value={dayYmd} onChange={(e) => setDayYmd(e.target.value)} />
+        </label>
+      </div>
+      {dayReqs.length === 0 ? (
+        <p className="help">이 날짜에 조회할 신청이 없습니다.</p>
+      ) : (
+        <ul className="admin-day-request-list">
+          {dayReqs.map((r) => (
+            <li key={r.id} className="admin-day-request-li">
+              <AdminDayRequestCard
+                requestRow={r}
+                nurseUsers={nurseUsers}
+                users={users}
+                substituteRec={getSubstituteRecordForRequest(substituteAssignments, r.id)}
+                selectRequest={selectRequest}
+                rejectRequest={rejectRequest}
+                saveSubstituteForApprovedRequest={saveSubstituteForApprovedRequest}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 function DashboardPage({
   dashboard,
   goldkeys,
@@ -1954,6 +2328,11 @@ function DashboardPage({
   currentRole,
   workScheduleRows,
   onSaveWorkScheduleRows,
+  isAdmin,
+  substituteAssignments,
+  selectRequest,
+  rejectRequest,
+  saveSubstituteForApprovedRequest,
 }) {
   const [dashTab, setDashTab] = useState(() => (currentRole === "ANESTHESIA" ? "schedule" : "summary"));
   const [draftRows, setDraftRows] = useState(Array.isArray(workScheduleRows) ? workScheduleRows : WORK_SCHEDULE_2026_ROWS);
@@ -2013,8 +2392,40 @@ function DashboardPage({
 
   return (
     <>
-      {currentRole !== "ANESTHESIA" ? (
-        <div className="segmented-wrap" role="tablist" aria-label="현황 구분">
+      {currentRole === "ANESTHESIA" ? (
+        <div className="segmented-wrap segmented-wrap--multi" role="tablist" aria-label="현황 구분">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={dashTab === "schedule"}
+            className={`segmented-btn${dashTab === "schedule" ? " segmented-btn--active" : ""}`}
+            onClick={() => setDashTab("schedule")}
+          >
+            월간 근무표
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={dashTab === "weekly"}
+            className={`segmented-btn${dashTab === "weekly" ? " segmented-btn--active" : ""}`}
+            onClick={() => setDashTab("weekly")}
+          >
+            주간 번표
+          </button>
+          {isAdmin ? (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={dashTab === "adminDay"}
+              className={`segmented-btn${dashTab === "adminDay" ? " segmented-btn--active" : ""}`}
+              onClick={() => setDashTab("adminDay")}
+            >
+              승인·대체
+            </button>
+          ) : null}
+        </div>
+      ) : (
+        <div className="segmented-wrap segmented-wrap--multi" role="tablist" aria-label="현황 구분">
           <button
             type="button"
             role="tab"
@@ -2031,10 +2442,30 @@ function DashboardPage({
             className={`segmented-btn${dashTab === "schedule" ? " segmented-btn--active" : ""}`}
             onClick={() => setDashTab("schedule")}
           >
-            근무표
+            월간 근무표
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={dashTab === "weekly"}
+            className={`segmented-btn${dashTab === "weekly" ? " segmented-btn--active" : ""}`}
+            onClick={() => setDashTab("weekly")}
+          >
+            주간 번표
+          </button>
+          {isAdmin ? (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={dashTab === "adminDay"}
+              className={`segmented-btn${dashTab === "adminDay" ? " segmented-btn--active" : ""}`}
+              onClick={() => setDashTab("adminDay")}
+            >
+              승인·대체
+            </button>
+          ) : null}
         </div>
-      ) : null}
+      )}
       {currentRole !== "ANESTHESIA" && dashTab === "summary" ? (
         <section className="card">
           <h2 className="screen-title">골드키 잔여</h2>
@@ -2074,7 +2505,7 @@ function DashboardPage({
           </div>
         </section>
       ) : null}
-      {(dashTab === "schedule" || currentRole === "ANESTHESIA") ? (
+      {dashTab === "schedule" ? (
       <section className="card work-schedule-card">
         <h2 className="screen-title">2026년 근무표</h2>
         <p className="help page-lead">월별 근무 코드를 선택해 저장합니다.</p>
@@ -2136,6 +2567,24 @@ function DashboardPage({
           {scheduleMsg ? <span className="help">{scheduleMsg}</span> : null}
         </div>
       </section>
+      ) : null}
+      {dashTab === "weekly" ? (
+        <WeeklyScheduleTab
+          workScheduleRows={workScheduleRows}
+          requests={requests}
+          substituteAssignments={substituteAssignments}
+          users={users}
+        />
+      ) : null}
+      {isAdmin && dashTab === "adminDay" ? (
+        <AdminDayReviewTab
+          users={users}
+          requests={requests}
+          substituteAssignments={substituteAssignments}
+          selectRequest={selectRequest}
+          rejectRequest={rejectRequest}
+          saveSubstituteForApprovedRequest={saveSubstituteForApprovedRequest}
+        />
       ) : null}
     </>
   );
@@ -2708,6 +3157,8 @@ function CalendarPage({
   saveHolidayDuty,
   selectRequest,
   rejectRequest,
+  substituteAssignments,
+  saveSubstituteForApprovedRequest,
   adminDayMemos,
   saveAdminDayMemo,
   dayComments,
@@ -2724,7 +3175,7 @@ function CalendarPage({
   }, [selectedYmd, setLeaveDate]);
 
   const selectedCell = selectedYmd ? calendarData.find((c) => c.date === selectedYmd) : null;
-  const nurseUsers = users.filter((u) => u.role === "NURSE");
+  const nurseUsers = users.filter((u) => u.role === "NURSE").sort((a, b) => a.name.localeCompare(b.name, "ko"));
   const anesthesiaUsers = users.filter((u) => u.role === "ANESTHESIA");
 
   const selectedHolidayDuty = selectedYmd ? holidayDuties?.[selectedYmd] : null;
@@ -3064,42 +3515,47 @@ function CalendarPage({
                               else if (meta.mode === "single" && ord != null && ord !== "") prefix = `${ord}. `;
 
                               return (
-                                <li key={r.id} className="calendar-applicant-item calendar-applicant-item--row">
-                                  <div className="negotiation-order-cell">
-                                    {isNegotiate && r.status !== "CANCELLED" ? (
-                                      <NegotiationOrderInput request={r} disabled={false} onCommit={saveNegotiationOrder} />
-                                    ) : isAuto && r.status !== "CANCELLED" && autoRank != null ? (
-                                      <span className="negotiation-order-readonly" title="신청 순서(수정 불가)">
-                                        {autoRank}
+                                <Fragment key={r.id}>
+                                  <li className="calendar-applicant-item calendar-applicant-item--row">
+                                    <div className="negotiation-order-cell">
+                                      {isNegotiate && r.status !== "CANCELLED" ? (
+                                        <NegotiationOrderInput request={r} disabled={false} onCommit={saveNegotiationOrder} />
+                                      ) : isAuto && r.status !== "CANCELLED" && autoRank != null ? (
+                                        <span className="negotiation-order-readonly" title="신청 순서(수정 불가)">
+                                          {autoRank}
+                                        </span>
+                                      ) : isAuto ? (
+                                        <span className="negotiation-order-readonly negotiation-order-readonly--muted">—</span>
+                                      ) : isCancelledRow || r.status === "CANCELLED" ? (
+                                        <span className="negotiation-order-readonly negotiation-order-readonly--muted">—</span>
+                                      ) : (
+                                        <span className="negotiation-order-placeholder" aria-hidden />
+                                      )}
+                                    </div>
+                                    {showModePill ? (
+                                      <span className={`negotiation-mode-pill ${isAuto ? "negotiation-mode-pill--auto" : ""}`}>
+                                        {isNegotiate ? "협의" : "신청순"}
                                       </span>
-                                    ) : isAuto ? (
-                                      <span className="negotiation-order-readonly negotiation-order-readonly--muted">—</span>
-                                    ) : isCancelledRow || r.status === "CANCELLED" ? (
-                                      <span className="negotiation-order-readonly negotiation-order-readonly--muted">—</span>
-                                    ) : (
-                                      <span className="negotiation-order-placeholder" aria-hidden />
-                                    )}
-                                  </div>
-                                  {showModePill ? (
-                                    <span className={`negotiation-mode-pill ${isAuto ? "negotiation-mode-pill--auto" : ""}`}>
-                                      {isNegotiate ? "협의" : "신청순"}
+                                    ) : null}
+                                    <span className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status)}`}>
+                                      {prefix}
+                                      {nm} · {typeFullLabel(r.leaveType)} · {leaveNatureLabel(r.leaveNature)} · {statusLabel(r.status)}
                                     </span>
+                                  </li>
+                                  {isAdmin && r.status !== "CANCELLED" ? (
+                                    <li className="calendar-applicant-subcard">
+                                      <AdminDayRequestCard
+                                        requestRow={r}
+                                        nurseUsers={nurseUsers}
+                                        users={users}
+                                        substituteRec={getSubstituteRecordForRequest(substituteAssignments, r.id)}
+                                        selectRequest={selectRequest}
+                                        rejectRequest={rejectRequest}
+                                        saveSubstituteForApprovedRequest={saveSubstituteForApprovedRequest}
+                                      />
+                                    </li>
                                   ) : null}
-                                  <span className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status)}`}>
-                                    {prefix}
-                                    {nm} · {typeFullLabel(r.leaveType)} · {leaveNatureLabel(r.leaveNature)} · {statusLabel(r.status)}
-                                  </span>
-                                  {isAdmin && r.status === "APPLIED" ? (
-                                    <span className="row wrap" style={{ marginLeft: "auto" }}>
-                                      <button type="button" onClick={() => void selectRequest(r.id)}>
-                                        승인
-                                      </button>
-                                      <button type="button" onClick={() => void rejectRequest(r.id)}>
-                                        거절
-                                      </button>
-                                    </span>
-                                  ) : null}
-                                </li>
+                                </Fragment>
                               );
                             })}
                           </ul>
