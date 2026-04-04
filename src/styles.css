@@ -69,7 +69,7 @@ body::before {
   overflow-x: hidden;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: calc(76px + env(safe-area-inset-bottom));
+  padding-bottom: calc(92px + env(safe-area-inset-bottom));
 }
 
 .app-header--shell {
@@ -114,13 +114,14 @@ body::before {
   display: flex;
   justify-content: space-around;
   align-items: stretch;
-  gap: 4px;
-  padding: 6px 8px calc(10px + env(safe-area-inset-bottom));
-  background: rgba(255, 255, 255, 0.94);
+  gap: 6px;
+  min-height: 58px;
+  padding: 8px 10px calc(12px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, #eef2ff 0%, #e8edf5 100%);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border-top: 1px solid var(--separator);
-  box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.06);
+  border-top: 2px solid rgba(37, 99, 235, 0.22);
+  box-shadow: 0 -8px 28px rgba(15, 23, 42, 0.12);
 }
 
 .app-bottom-nav__link {
@@ -131,25 +132,30 @@ body::before {
   justify-content: center;
   text-align: center;
   text-decoration: none;
-  font-size: 11px;
-  font-weight: 650;
-  color: var(--text-secondary);
-  padding: 8px 2px;
-  border-radius: 10px;
-  line-height: 1.2;
-  transition: color 0.15s ease, background 0.15s ease;
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+  padding: 12px 6px;
+  min-height: 48px;
+  border-radius: 12px;
+  line-height: 1.25;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: rgba(255, 255, 255, 0.92);
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .app-bottom-nav__link--active {
-  color: var(--accent);
-  background: var(--accent-muted);
+  color: #fff;
+  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+  border-color: #1d4ed8;
   font-weight: 800;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.45);
 }
 
 @media (min-width: 768px) {
   .app-bottom-nav__link {
-    font-size: 12px;
-    padding: 10px 6px;
+    font-size: 14px;
+    padding: 12px 10px;
   }
 }
 
@@ -360,14 +366,87 @@ body::before {
   margin: 0 0 4px !important;
 }
 
-.calendar-applicant-subcard {
-  list-style: none;
-  margin: 0 0 8px 12px;
-  padding: 0;
+/* 관리자: 신청 목록 + 우측 승인/거절 + 하단 대체 패널 */
+.calendar-applicant-item--admin.calendar-applicant-item--row {
+  align-items: center;
 }
 
-.calendar-applicant-subcard .admin-day-request-item {
+.calendar-applicant-item--admin .calendar-applicant-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-calendar-applicant-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  align-items: center;
+  margin-left: auto;
+}
+
+.admin-calendar-btn {
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 10px;
+  border: 1px solid var(--separator);
+  background: var(--surface);
+  cursor: pointer;
+  min-height: 40px;
+  white-space: nowrap;
+}
+
+.admin-calendar-btn--approve {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.admin-calendar-btn--reject {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.admin-calendar-substitute-section {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--separator);
+}
+
+.admin-calendar-substitute-title {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.admin-calendar-substitute-lead {
+  margin: 0 0 12px !important;
+  font-size: 13px !important;
+  line-height: 1.45 !important;
+}
+
+.admin-calendar-substitute-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.admin-day-request-item--calendar-panel {
   margin: 0;
+}
+
+@media (max-width: 768px) {
+  .calendar-applicant-item--admin.calendar-applicant-item--row {
+    flex-wrap: wrap;
+  }
+
+  .admin-calendar-applicant-actions {
+    width: 100%;
+    justify-content: flex-end;
+    margin-left: 0;
+    padding-top: 4px;
+  }
 }
 
 .screen-title {
@@ -902,6 +981,40 @@ tbody tr:last-child td {
   border-bottom: none;
 }
 
+/* 관리자 승인·거절 기록: 신청 1건 = 가로 한 줄(줄바꿈 방지, 가로 스크롤) */
+.admin-approval-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.admin-approval-table {
+  width: max-content;
+  min-width: 100%;
+  table-layout: auto;
+}
+
+.admin-approval-table th,
+.admin-approval-table td {
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.admin-approval-table .leave-type-pill {
+  white-space: nowrap;
+}
+
+.work-schedule-save-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.work-schedule-save-msg {
+  margin-right: auto;
+}
+
 /* ----- 내 신청내역: 모바일에서 신청 1건 = 가로 한 줄 ----- */
 .my-requests-table .my-requests-col {
   vertical-align: middle;
@@ -1269,14 +1382,17 @@ button.calendar-nav-today:hover {
   text-align-last: center !important;
 }
 
-/* 세 글자 이름만: 두 글자(유진 등)는 그대로 — 모바일 WebKit에서 살짝 오른쪽으로 보이는 보정 */
+/* 세 글자 이름: 좌우 대칭 패딩 + 텍스트 박스 가운데 (비대칭 패딩/translate 제거) */
 .calendar-day-chip--name3 {
-  padding: 3px 6px 3px 4px !important;
+  padding: 3px 5px !important;
+  justify-content: center !important;
 }
 
 .calendar-day-chip--name3 .calendar-day-chip__text {
-  transform: translate3d(-1px, 0, 0);
-  letter-spacing: -0.03em;
+  flex: 0 1 auto !important;
+  max-width: 100%;
+  text-align: center !important;
+  letter-spacing: -0.02em;
 }
 
 /* 관리자 승인(또는 레거시 확정): 유형색 유지 + 왼쪽 포인트 블루 띠(휴가 유형 색과 충돌 적음) */
@@ -1469,12 +1585,78 @@ button.calendar-nav-today:hover {
 }
 
 /* ----- Ladder ----- */
+.ladder-page .ladder-page-lead {
+  margin-bottom: 8px;
+}
+
+.ladder-applicant-line {
+  font-size: 13px !important;
+  margin: 0 0 10px !important;
+  line-height: 1.35 !important;
+}
+
 .ladder-date-type-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px 16px;
   align-items: end;
   margin-bottom: 14px;
+}
+
+.ladder-date-type-row--compact {
+  gap: 8px 10px;
+  margin-bottom: 8px;
+}
+
+.ladder-date-type-row--compact .ladder-field-label {
+  font-size: 13px !important;
+  font-weight: 700 !important;
+}
+
+.ladder-participant-block--compact {
+  margin-bottom: 6px;
+}
+
+.ladder-participant-grid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.ladder-participant-tile--compact {
+  padding: 6px 8px !important;
+  font-size: 13px;
+}
+
+.ladder-toolbar--sticky-tools {
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+.ladder-toolbar--sticky-tools button {
+  min-height: 44px;
+  padding: 10px 16px;
+  font-weight: 700;
+}
+
+.ladder-divider {
+  margin: 12px 0;
+}
+
+.ladder-saved-heading {
+  font-size: 15px;
+  margin: 0 0 8px;
+}
+
+.ladder-saved-table-wrap {
+  max-height: 150px;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.ladder-saved-table-wrap th,
+.ladder-saved-table-wrap td {
+  font-size: 12px;
+  padding: 8px 10px;
 }
 
 .ladder-field {
@@ -1553,9 +1735,13 @@ button.calendar-nav-today:hover {
 }
 
 @media (max-width: 768px) {
-  /* iOS: 2~5명 모두 한 화면에 보이도록 높이를 제한하고 SVG를 자동 축소 */
+  /* iOS: 사다리·툴바·참가자와 한 화면에 맞추기 위해 SVG 높이 축소 */
   .ladder-svg-wrap {
-    height: min(56vh, 520px);
+    height: min(36vh, 340px);
+  }
+
+  .ladder-page .page-lead {
+    margin-bottom: 6px;
   }
 }
 
@@ -2016,11 +2202,11 @@ tr.request-cancelled-row td button {
   }
 
   .calendar-day-chip--name3 {
-    padding: 1px 6px 1px 3px !important;
+    padding: 1px 5px !important;
   }
 
   .calendar-day-chip--name3 .calendar-day-chip__text {
-    transform: translate3d(-1.5px, 0, 0);
+    transform: none;
   }
 
   .calendar-day-chip__text {

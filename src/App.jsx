@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import {
   holidaysCache as seedHolidays,
@@ -2182,7 +2182,16 @@ function WeeklyScheduleTab({ workScheduleRows, requests, substituteAssignments, 
   );
 }
 
-function AdminDayRequestCard({ requestRow, nurseUsers, users, substituteRec, selectRequest, rejectRequest, saveSubstituteForApprovedRequest }) {
+function AdminDayRequestCard({
+  requestRow,
+  nurseUsers,
+  users,
+  substituteRec,
+  selectRequest,
+  rejectRequest,
+  saveSubstituteForApprovedRequest,
+  substituteLayout = "default",
+}) {
   const [subId, setSubId] = useState(substituteRec?.substituteUserId ?? "");
   const [code, setCode] = useState(substituteRec?.shiftCode ?? "");
   useEffect(() => {
@@ -2191,8 +2200,9 @@ function AdminDayRequestCard({ requestRow, nurseUsers, users, substituteRec, sel
   }, [requestRow.id, substituteRec?.substituteUserId, substituteRec?.shiftCode]);
   const nm = users.find((u) => u.id === requestRow.userId)?.name ?? requestRow.userId;
   const approved = isWinnerStatus(requestRow.status);
+  const calendarPanel = substituteLayout === "calendarPanel";
   return (
-    <div className="admin-day-request-item">
+    <div className={`admin-day-request-item${calendarPanel ? " admin-day-request-item--calendar-panel" : ""}`}>
       <div className="admin-day-request-head">
         <strong>{nm}</strong>
         <span className="admin-day-meta">
@@ -2225,11 +2235,13 @@ function AdminDayRequestCard({ requestRow, nurseUsers, users, substituteRec, sel
           </label>
           <div className="admin-day-actions">
             <button type="button" className="admin-day-primary-btn" onClick={() => void selectRequest(requestRow.id, { substituteUserId: subId, shiftCode: code })}>
-              승인 후 저장
+              {calendarPanel ? "승인(대체 반영)" : "승인 후 저장"}
             </button>
-            <button type="button" onClick={() => void rejectRequest(requestRow.id)}>
-              거절
-            </button>
+            {calendarPanel ? null : (
+              <button type="button" onClick={() => void rejectRequest(requestRow.id)}>
+                거절
+              </button>
+            )}
           </div>
         </div>
       ) : null}
@@ -2560,11 +2572,11 @@ function DashboardPage({
             </tbody>
           </table>
         </div>
-        <div className="row" style={{ marginTop: 10 }}>
+        <div className="row work-schedule-save-row" style={{ marginTop: 10 }}>
+          {scheduleMsg ? <span className="help work-schedule-save-msg">{scheduleMsg}</span> : null}
           <button type="button" onClick={saveWorkSchedule}>
             근무표 저장
           </button>
-          {scheduleMsg ? <span className="help">{scheduleMsg}</span> : null}
         </div>
       </section>
       ) : null}
@@ -2945,16 +2957,16 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
   }
 
   return (
-    <section className="card">
+    <section className="card ladder-page">
       <h2 className="screen-title">순서 추첨</h2>
-      <p className="help page-lead">같은 날·같은 유형 신청자에게 사다리로 순서를 정합니다.</p>
-      <p className="help">
+      <p className="help page-lead ladder-page-lead">같은 날·같은 유형 신청자에게 사다리로 순서를 정합니다.</p>
+      <p className="help ladder-applicant-line">
         해당일 협의 신청자:{" "}
         {applicantUserIds.length > 0
           ? applicantUserIds.map((id) => idToName.get(id) ?? id).join(", ")
           : "없음"}
       </p>
-      <div className="ladder-date-type-row">
+      <div className="ladder-date-type-row ladder-date-type-row--compact">
         <label className="ladder-field ladder-field--date">
           <span className="field-label ladder-field-label">휴가일</span>
           <YmdSplitInput value={leaveDate} onChange={setLeaveDate} />
@@ -2970,10 +2982,10 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
         </label>
       </div>
 
-      <div className="ladder-participant-block">
-        <div className="ladder-participant-grid">
+      <div className="ladder-participant-block ladder-participant-block--compact">
+        <div className="ladder-participant-grid ladder-participant-grid--two">
           {nurseUsers.map((u) => (
-            <label key={u.id} className="row ladder-participant-tile">
+            <label key={u.id} className="row ladder-participant-tile ladder-participant-tile--compact">
               <input type="checkbox" checked={selectedUserIds.includes(u.id)} onChange={() => toggleUser(u.id)} />
               <span>{u.name}</span>
             </label>
@@ -2981,7 +2993,7 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
         </div>
       </div>
 
-      <div className="row wrap ladder-toolbar">
+      <div className="row wrap ladder-toolbar ladder-toolbar--sticky-tools">
         <button type="button" onClick={runLadder}>
           {animating ? "사다리 진행중..." : "사다리 실행"}
         </button>
@@ -3080,9 +3092,9 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
       ) : null}
       {ladderMsg ? <p className="msg">{ladderMsg}</p> : null}
 
-      <hr className="divider" />
-      <h3>저장된 결과</h3>
-      <div className="table-wrap">
+      <hr className="divider ladder-divider" />
+      <h3 className="ladder-saved-heading">저장된 결과</h3>
+      <div className="table-wrap ladder-saved-table-wrap">
         <table>
           <thead>
             <tr>
@@ -3515,50 +3527,71 @@ function CalendarPage({
                               else if (meta.mode === "single" && ord != null && ord !== "") prefix = `${ord}. `;
 
                               return (
-                                <Fragment key={r.id}>
-                                  <li className="calendar-applicant-item calendar-applicant-item--row">
-                                    <div className="negotiation-order-cell">
-                                      {isNegotiate && r.status !== "CANCELLED" ? (
-                                        <NegotiationOrderInput request={r} disabled={false} onCommit={saveNegotiationOrder} />
-                                      ) : isAuto && r.status !== "CANCELLED" && autoRank != null ? (
-                                        <span className="negotiation-order-readonly" title="신청 순서(수정 불가)">
-                                          {autoRank}
-                                        </span>
-                                      ) : isAuto ? (
-                                        <span className="negotiation-order-readonly negotiation-order-readonly--muted">—</span>
-                                      ) : isCancelledRow || r.status === "CANCELLED" ? (
-                                        <span className="negotiation-order-readonly negotiation-order-readonly--muted">—</span>
-                                      ) : (
-                                        <span className="negotiation-order-placeholder" aria-hidden />
-                                      )}
-                                    </div>
-                                    {showModePill ? (
-                                      <span className={`negotiation-mode-pill ${isAuto ? "negotiation-mode-pill--auto" : ""}`}>
-                                        {isNegotiate ? "협의" : "신청순"}
+                                <li key={r.id} className={`calendar-applicant-item calendar-applicant-item--row${isAdmin ? " calendar-applicant-item--admin" : ""}`}>
+                                  <div className="negotiation-order-cell">
+                                    {isNegotiate && r.status !== "CANCELLED" ? (
+                                      <NegotiationOrderInput request={r} disabled={false} onCommit={saveNegotiationOrder} />
+                                    ) : isAuto && r.status !== "CANCELLED" && autoRank != null ? (
+                                      <span className="negotiation-order-readonly" title="신청 순서(수정 불가)">
+                                        {autoRank}
                                       </span>
-                                    ) : null}
-                                    <span className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status)}`}>
-                                      {prefix}
-                                      {nm} · {typeFullLabel(r.leaveType)} · {leaveNatureLabel(r.leaveNature)} · {statusLabel(r.status)}
+                                    ) : isAuto ? (
+                                      <span className="negotiation-order-readonly negotiation-order-readonly--muted">—</span>
+                                    ) : isCancelledRow || r.status === "CANCELLED" ? (
+                                      <span className="negotiation-order-readonly negotiation-order-readonly--muted">—</span>
+                                    ) : (
+                                      <span className="negotiation-order-placeholder" aria-hidden />
+                                    )}
+                                  </div>
+                                  {showModePill ? (
+                                    <span className={`negotiation-mode-pill ${isAuto ? "negotiation-mode-pill--auto" : ""}`}>
+                                      {isNegotiate ? "협의" : "신청순"}
                                     </span>
-                                  </li>
-                                  {isAdmin && r.status !== "CANCELLED" ? (
-                                    <li className="calendar-applicant-subcard">
-                                      <AdminDayRequestCard
-                                        requestRow={r}
-                                        nurseUsers={nurseUsers}
-                                        users={users}
-                                        substituteRec={getSubstituteRecordForRequest(substituteAssignments, r.id)}
-                                        selectRequest={selectRequest}
-                                        rejectRequest={rejectRequest}
-                                        saveSubstituteForApprovedRequest={saveSubstituteForApprovedRequest}
-                                      />
-                                    </li>
                                   ) : null}
-                                </Fragment>
+                                  <span className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status)}`}>
+                                    {prefix}
+                                    {nm} · {typeFullLabel(r.leaveType)} · {leaveNatureLabel(r.leaveNature)} · {statusLabel(r.status)}
+                                  </span>
+                                  {isAdmin && r.status === "APPLIED" ? (
+                                    <div className="admin-calendar-applicant-actions">
+                                      <button type="button" className="admin-calendar-btn admin-calendar-btn--approve" onClick={() => void selectRequest(r.id, {})}>
+                                        승인
+                                      </button>
+                                      <button type="button" className="admin-calendar-btn admin-calendar-btn--reject" onClick={() => void rejectRequest(r.id)}>
+                                        거절
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                </li>
                               );
                             })}
                           </ul>
+                          {isAdmin &&
+                          dayRequests.some((r) => r.status !== "CANCELLED" && (r.status === "APPLIED" || isWinnerStatus(r.status))) ? (
+                            <div className="admin-calendar-substitute-section">
+                              <h4 className="admin-calendar-substitute-title">대체 근무 지정</h4>
+                              <p className="help admin-calendar-substitute-lead">
+                                목록 오른쪽 <strong>승인</strong>은 대체 없이 바로 승인합니다. 대체 인력·코드를 넣은 뒤 승인하려면 아래에서 선택하고 <strong>승인(대체 반영)</strong>을 누르세요.
+                              </p>
+                              <div className="admin-calendar-substitute-stack">
+                                {dayRequests
+                                  .filter((r) => r.status === "APPLIED" || isWinnerStatus(r.status))
+                                  .map((r) => (
+                                    <AdminDayRequestCard
+                                      key={r.id}
+                                      requestRow={r}
+                                      nurseUsers={nurseUsers}
+                                      users={users}
+                                      substituteRec={getSubstituteRecordForRequest(substituteAssignments, r.id)}
+                                      selectRequest={selectRequest}
+                                      rejectRequest={rejectRequest}
+                                      saveSubstituteForApprovedRequest={saveSubstituteForApprovedRequest}
+                                      substituteLayout="calendarPanel"
+                                    />
+                                  ))}
+                              </div>
+                            </div>
+                          ) : null}
                         </>
                       )}
                     </div>
@@ -3769,8 +3802,8 @@ function AdminPage({ allRequests, users, notes, goldkeys, cancellations, serverM
             <option value="HALF_DAY">반차</option>
           </select>
         </div>
-        <div className="table-wrap">
-          <table>
+        <div className="table-wrap admin-approval-table-wrap">
+          <table className="admin-approval-table">
             <thead>
               <tr>
                 <th>간호사</th>
