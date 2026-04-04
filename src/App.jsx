@@ -2209,6 +2209,92 @@ function weeklyOverrideSelectValue(ov) {
   return "__auto__";
 }
 
+function escapeHtmlForWeeklyExport(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function weeklyCellTextForExport(cell) {
+  if (!cell) return "—";
+  const main = String(cell.main ?? "").trim() || "—";
+  const sub = String(cell.sub ?? "").trim();
+  return sub ? `${main} (${sub})` : main;
+}
+
+/** 공적·인쇄용 단일 HTML 문서 (브라우저에서 인쇄 또는 PDF로 저장 가능) */
+function buildWeeklyOfficialScheduleHtml({ weekStartYmd, weekEndYmd, dayLabels, daysYmd, nurseRows }) {
+  const gen = new Date().toLocaleString("ko-KR", { hour12: false });
+  const thead = `<tr><th class="c-name">간호사</th>${daysYmd
+    .map(
+      (d, i) =>
+        `<th class="c-day">${escapeHtmlForWeeklyExport(dayLabels[i])}<br><span class="subdt">${escapeHtmlForWeeklyExport(
+          d.slice(5).replace("-", "/")
+        )}</span></th>`
+    )
+    .join("")}</tr>`;
+  const tbody = nurseRows
+    .map(
+      (row) =>
+        `<tr><th class="c-name">${escapeHtmlForWeeklyExport(row.name)}</th>${row.cells
+          .map((c) => `<td>${escapeHtmlForWeeklyExport(weeklyCellTextForExport(c))}</td>`)
+          .join("")}</tr>`
+    )
+    .join("");
+  return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>주간 근무표 ${escapeHtmlForWeeklyExport(weekStartYmd)} ~ ${escapeHtmlForWeeklyExport(weekEndYmd)}</title>
+<style>
+@page { size: A4 landscape; margin: 12mm; }
+body { font-family: "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; margin: 16px; color: #111; }
+h1 { font-size: 18px; margin: 0 0 4px; text-align: center; letter-spacing: -0.02em; }
+.meta { text-align: center; font-size: 12px; color: #444; margin-bottom: 14px; line-height: 1.45; }
+.period { font-weight: 700; }
+table { width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; }
+th, td { border: 1px solid #222; padding: 6px 4px; text-align: center; vertical-align: middle; word-break: keep-all; }
+th { background: #eee; font-weight: 700; }
+th.c-name { width: 7%; }
+th .subdt { font-size: 10px; font-weight: 600; color: #333; }
+tr:nth-child(even) td { background: #fafafa; }
+.footer { margin-top: 16px; font-size: 10px; color: #555; border-top: 1px solid #ccc; padding-top: 8px; line-height: 1.5; }
+.tools { margin: 12px 0; text-align: center; }
+.tools button { padding: 8px 16px; font-size: 14px; cursor: pointer; border-radius: 6px; border: 1px solid #333; background: #fff; }
+@media print { .tools { display: none !important; } body { margin: 0; } }
+</style>
+</head>
+<body>
+<h1>수술실 주간 근무표</h1>
+<div class="meta"><span class="period">${escapeHtmlForWeeklyExport(weekStartYmd)} ~ ${escapeHtmlForWeeklyExport(
+    weekEndYmd
+  )}</span><br/>출력 시각: ${escapeHtmlForWeeklyExport(gen)}</div>
+<div class="tools"><button type="button" onclick="window.print()">인쇄 / PDF로 저장</button></div>
+<table>
+<thead>${thead}</thead>
+<tbody>${tbody}</tbody>
+</table>
+<div class="footer">본 문서는 EOROFF 휴가·근무 관리 시스템에서 생성되었습니다. 화면에 표시된 주간 번표 내용을 반영하며, 브라우저에서 「인쇄」로 출력하거나 「PDF로 저장」을 선택할 수 있습니다.</div>
+</body>
+</html>`;
+}
+
+function downloadWeeklyOfficialHtmlFile(filename, html) {
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function WeeklyScheduleTab({
   workScheduleRows,
   requests,
@@ -2219,6 +2305,7 @@ function WeeklyScheduleTab({
   weeklyCellOverrides,
   setWeeklyCellOverrides,
   canEditWeekly,
+  isAdmin,
 }) {
   const [weekAnchor, setWeekAnchor] = useState(() => toLocalYMD(new Date()));
   const [draftOverrides, setDraftOverrides] = useState(() => ({ ...(weeklyCellOverrides || {}) }));
@@ -2263,11 +2350,31 @@ function WeeklyScheduleTab({
     });
   }
 
+  function exportOfficialWeeklyDocument() {
+    const nurseRows = nurses.map((u) => ({
+      name: u.name,
+      cells: days.map((d) => displayCell(u, d)),
+    }));
+    const html = buildWeeklyOfficialScheduleHtml({
+      weekStartYmd: mon,
+      weekEndYmd: days[6],
+      dayLabels,
+      daysYmd: days,
+      nurseRows,
+    });
+    const a = mon.replace(/-/g, "");
+    const b = days[6].replace(/-/g, "");
+    downloadWeeklyOfficialHtmlFile(`주간근무표_${a}_${b}.html`, html);
+  }
+
   function saveWeeklyDraft() {
     if (!window.confirm("주간 번표 셀 표시를 저장할까요? (이 기기 브라우저에만 저장됩니다.)")) return;
     setWeeklyCellOverrides(draftOverrides);
     setWeeklyMsg("저장했습니다.");
     notifyDone("저장되었습니다.");
+    if (isAdmin) {
+      exportOfficialWeeklyDocument();
+    }
   }
 
   return (
@@ -2276,6 +2383,11 @@ function WeeklyScheduleTab({
       <p className="help page-lead">
         월간 근무·승인 휴가·대체 근무를 반영합니다. 토·일·공휴일·명절에는 당직으로 지정된 간호사만 「당직」으로 보이고, 나머지는 휴가로 표시합니다.
       </p>
+      {isAdmin ? (
+        <p className="help weekly-official-hint">
+          관리자: <strong>셀 표시 저장</strong> 시 현재 표와 동일한 내용의 <strong>인쇄용 HTML 파일</strong>이 함께 내려받아집니다. 저장 없이 파일만 받으려면 「인쇄용 HTML 저장」을 누르세요. 파일을 연 뒤 브라우저에서 인쇄하거나 PDF로 저장할 수 있습니다.
+        </p>
+      ) : null}
       <div className="weekly-toolbar row wrap">
         <label className="weekly-date-label">
           기준 날짜
@@ -2286,6 +2398,11 @@ function WeeklyScheduleTab({
             <button type="button" className="weekly-save-btn" onClick={saveWeeklyDraft} disabled={!dirty}>
               셀 표시 저장
             </button>
+            {isAdmin ? (
+              <button type="button" className="weekly-official-export-btn" onClick={exportOfficialWeeklyDocument}>
+                인쇄용 HTML 저장
+              </button>
+            ) : null}
             {weeklyMsg ? <span className="help weekly-save-msg">{weeklyMsg}</span> : null}
           </div>
         ) : null}
@@ -2768,6 +2885,7 @@ function DashboardPage({
           weeklyCellOverrides={weeklyCellOverrides}
           setWeeklyCellOverrides={setWeeklyCellOverrides}
           canEditWeekly={currentRole === "NURSE" || currentRole === "ADMIN" || currentRole === "ANESTHESIA"}
+          isAdmin={isAdmin}
         />
       ) : null}
       {isAdmin && dashTab === "adminDay" ? (

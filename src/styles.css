@@ -310,6 +310,32 @@ body::before {
   gap: 10px;
 }
 
+.weekly-official-hint {
+  font-size: 13px !important;
+  line-height: 1.45 !important;
+  margin: -4px 0 10px !important;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1e3a5f !important;
+}
+
+.weekly-official-export-btn {
+  padding: 10px 14px !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  border-radius: var(--radius-sm) !important;
+  border: 1px solid #1d4ed8 !important;
+  background: #fff !important;
+  color: #1d4ed8 !important;
+  cursor: pointer;
+}
+
+.weekly-official-export-btn:hover {
+  background: #eff6ff !important;
+}
+
 .weekly-save-btn {
   min-height: 44px;
   padding: 10px 16px;
