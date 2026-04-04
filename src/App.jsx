@@ -3031,8 +3031,13 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
     if (typeof window === "undefined") return undefined;
     const mq = window.matchMedia("(max-width: 768px)");
     const onChange = () => setNarrowUi(mq.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
+    /* Safari 13 등: MediaQueryList에 addEventListener 없음 → addListener 사용 */
+    if (typeof mq.addEventListener === "function") {
+      mq.addEventListener("change", onChange);
+      return () => mq.removeEventListener("change", onChange);
+    }
+    mq.addListener(onChange);
+    return () => mq.removeListener(onChange);
   }, []);
 
   const nurseUsers = useMemo(
