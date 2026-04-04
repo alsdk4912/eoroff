@@ -270,6 +270,8 @@ function App() {
   const [dayComments, setDayComments] = useLocalStorage(LS_DAY_COMMENTS, []);
   const [workScheduleRows, setWorkScheduleRows] = useLocalStorage(LS_WORK_SCHEDULE_2026, WORK_SCHEDULE_2026_ROWS);
   const [substituteAssignments, setSubstituteAssignments] = useLocalStorage(LS_SUBSTITUTE_ASSIGNMENTS, []);
+  /** 주간 번표 셀 수동 표시(기기 로컬) */
+  const [weeklyCellOverrides, setWeeklyCellOverrides] = useLocalStorage(LS_WEEKLY_CELL_OVERRIDES, {});
   const [notifications, setNotifications] = useLocalStorage(LS_NOTIFICATIONS, []);
   const [serverNotifications, setServerNotifications] = useState([]);
   const [pushEnabled, setPushEnabled] = useState(false);
