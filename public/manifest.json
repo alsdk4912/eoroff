@@ -1,6 +1,6 @@
 {
-  "name": "EOR 휴가 시스템 (v2)",
-  "short_name": "EOR v2",
+  "name": "EOROFF",
+  "short_name": "EOROFF",
   "description": "수술실 간호사 휴가 신청 및 관리 앱",
   "start_url": "./",
   "scope": "./",

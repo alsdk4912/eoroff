@@ -13,6 +13,7 @@
   --text-tertiary: #aeaeb2;
   --separator: rgba(60, 60, 67, 0.12);
   --accent: #2563eb;
+  --approved-stripe: #2563eb;
   --accent-pressed: #1d4ed8;
   --accent-muted: #eff6ff;
   --danger: #dc2626;
@@ -56,7 +57,7 @@ body::before {
 .app-header {
   background: var(--surface);
   border-radius: var(--radius-lg);
-  padding: 16px 18px;
+  padding: 18px 20px;
   margin-bottom: 12px;
   box-shadow: var(--shadow-sm);
   border: 1px solid var(--separator);
@@ -66,19 +67,20 @@ body::before {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 18px;
 }
 
 .app-header-title {
   margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.45px;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  line-height: 1.15;
   color: var(--text-primary);
 }
 
 .app-header-meta {
-  margin: 10px 0 0;
+  margin: 12px 0 0;
   font-size: 13px;
   font-weight: 500;
   color: var(--text-secondary);
@@ -831,13 +833,13 @@ button.calendar-nav-today:hover {
   letter-spacing: -0.03em;
 }
 
-/* 관리자 승인(또는 레거시 확정): 유형색 유지 + 왼쪽 초록 띠 */
+/* 관리자 승인(또는 레거시 확정): 유형색 유지 + 왼쪽 포인트 블루 띠(휴가 유형 색과 충돌 적음) */
 .calendar-day-chip.selected-item.request-approved {
-  box-shadow: inset 3px 0 0 0 #16a34a !important;
+  box-shadow: inset 3px 0 0 0 var(--approved-stripe) !important;
 }
 
 .calendar-applicant-name.selected-item.request-approved {
-  box-shadow: inset 3px 0 0 0 #16a34a !important;
+  box-shadow: inset 3px 0 0 0 var(--approved-stripe) !important;
 }
 
 .calendar-chip-more {
@@ -1531,11 +1533,16 @@ tr.request-cancelled-row td button {
   }
 
   .app-header {
-    padding: 14px 16px;
+    padding: 15px 16px;
   }
 
   .app-header-title {
-    font-size: 18px;
+    font-size: 20px;
+    letter-spacing: 0.1em;
+  }
+
+  .app-header-row {
+    gap: 14px;
   }
 
   .grid,

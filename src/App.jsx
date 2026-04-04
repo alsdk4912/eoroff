@@ -1434,7 +1434,7 @@ function App() {
     <div className="app">
       <header className="app-header">
         <div className="app-header-row">
-          <h1 className="app-header-title">EOR 휴가</h1>
+          <h1 className="app-header-title">EOROFF</h1>
           <div className="app-header-actions">
             <button type="button" className="btn-ghost-header" onClick={handleLogout}>
               로그아웃
