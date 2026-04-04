@@ -349,20 +349,43 @@ body::before {
   border-top: 1px solid var(--separator);
 }
 
-.weekly-save-confirm-hint {
-  margin: 0 0 12px !important;
-  font-size: 13px !important;
-  line-height: 1.5 !important;
-  color: var(--text-secondary) !important;
+.weekly-footer-actions {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
-.weekly-footer-actions {
+.weekly-footer-spacer {
+  flex: 1;
+  min-width: 8px;
+}
+
+.weekly-save-msg--footer {
+  flex: 1;
+  margin: 0 !important;
+  text-align: left;
+  min-width: 0;
+}
+
+.weekly-footer-buttons {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
 }
 
 .weekly-save-btn--footer {
   min-width: 7rem;
+}
+
+.weekly-cell-main--one {
+  text-align: center;
+  font-weight: 750;
+  line-height: 1.25;
 }
 
 .weekly-cell-select {

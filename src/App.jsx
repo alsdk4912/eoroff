@@ -2164,13 +2164,13 @@ function effectiveWeeklyCell(userId, nurseName, ymd, workScheduleRows, requests,
   const ld = String(ymd).slice(0, 10);
   const sub = (substituteAssignments || []).find((s) => s.substituteUserId === userId && String(s.leaveDate ?? "").slice(0, 10) === ld);
   if (sub) {
-    return { kind: "sub", main: sub.shiftCode, sub: "대체" };
+    return { kind: "sub", main: sub.shiftCode, sub: "" };
   }
   const approvedLeave = (requests || []).find(
     (r) => r.userId === userId && String(r.leaveDate ?? "").slice(0, 10) === ld && isWinnerStatus(r.status)
   );
   if (approvedLeave) {
-    return { kind: "leave", main: "휴가", sub: typeFullLabel(approvedLeave.leaveType) };
+    return { kind: "leave", main: "휴가", sub: "" };
   }
   const offLike = isWeekendYmd(ld) || isPublicHolidayYmd(ld, holidays);
   if (offLike) {
@@ -2192,7 +2192,7 @@ function parseWeeklyOverrideSelectValue(val) {
   if (val === "__leave__") return { mode: "manual", kind: "leave", main: "휴가", sub: "" };
   if (val.startsWith("__sub__:")) {
     const code = val.slice(7);
-    return { mode: "manual", kind: "sub", main: code, sub: "대체" };
+    return { mode: "manual", kind: "sub", main: code, sub: "" };
   }
   if (val.startsWith("__base__:")) {
     const code = val.slice(9);
@@ -2209,12 +2209,11 @@ function weeklyOverrideSelectValue(ov) {
   return "__auto__";
 }
 
-/** 월간·승인·대체·달력 당직을 반영한 표시용 한 줄 (select 첫 옵션 등) — '자동' 접두어 없음 */
+/** 주간 번표: 번표 코드(안D0, 3D2 등)·휴가·당직만 한 줄로 표시(부가 문구 없음) */
 function weeklyCellDisplayLine(cell) {
   if (!cell) return "—";
   const m = String(cell.main ?? "").trim() || "—";
-  const s = String(cell.sub ?? "").trim();
-  return s ? `${m} (${s})` : m;
+  return m;
 }
 
 function escapeHtmlForWeeklyExport(s) {
@@ -2226,10 +2225,7 @@ function escapeHtmlForWeeklyExport(s) {
 }
 
 function weeklyCellTextForExport(cell) {
-  if (!cell) return "—";
-  const main = String(cell.main ?? "").trim() || "—";
-  const sub = String(cell.sub ?? "").trim();
-  return sub ? `${main} (${sub})` : main;
+  return weeklyCellDisplayLine(cell);
 }
 
 /** 공적·인쇄용 단일 HTML 문서 (브라우저에서 인쇄 또는 PDF로 저장 가능) */
@@ -2439,23 +2435,20 @@ function WeeklyScheduleTab({
                           aria-label={`${u.name} ${d} 표시`}
                         >
                           <option value="__auto__">{weeklyCellDisplayLine(auto)}</option>
-                          <option value="__leave__">휴가(고정)</option>
+                          <option value="__leave__">휴가</option>
                           {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
                             <option key={`base-${opt}`} value={`__base__:${opt}`}>
-                              근무 {opt}
+                              {opt}
                             </option>
                           ))}
                           {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
                             <option key={`sub-${opt}`} value={`__sub__:${opt}`}>
-                              대체 {opt}
+                              {opt}
                             </option>
                           ))}
                         </select>
                       ) : (
-                        <>
-                          <div className="weekly-cell-main">{cell.main}</div>
-                          {cell.sub ? <div className="weekly-cell-sub">{cell.sub}</div> : null}
-                        </>
+                        <div className="weekly-cell-main weekly-cell-main--one">{weeklyCellDisplayLine(cell)}</div>
                       )}
                     </td>
                   );
@@ -2467,23 +2460,24 @@ function WeeklyScheduleTab({
       </div>
       {canEditWeekly ? (
         <div className="weekly-table-footer">
-          <p className="help weekly-save-confirm-hint">
-            저장 시 수동으로 변경한 셀만 이 기기 브라우저에 보관됩니다. 저장하시겠습니까? 아래 버튼을 누르면 확인 창이 열립니다.
-          </p>
-          <div className="weekly-footer-actions row wrap">
-            <button type="button" className="weekly-save-btn weekly-save-btn--footer" onClick={saveWeeklyDraft} disabled={!dirty}>
-              저장
-            </button>
-            {isAdmin ? (
-              <button type="button" className="weekly-official-export-btn" onClick={exportOfficialWeeklyDocument}>
-                인쇄용 HTML 저장
-              </button>
-            ) : null}
+          <div className="weekly-footer-actions">
             {weeklyMsg ? (
-              <span className="help weekly-save-msg" role="status">
+              <span className="help weekly-save-msg weekly-save-msg--footer" role="status">
                 {weeklyMsg}
               </span>
-            ) : null}
+            ) : (
+              <span className="weekly-footer-spacer" aria-hidden />
+            )}
+            <div className="weekly-footer-buttons row wrap">
+              {isAdmin ? (
+                <button type="button" className="weekly-official-export-btn" onClick={exportOfficialWeeklyDocument}>
+                  인쇄용 HTML 저장
+                </button>
+              ) : null}
+              <button type="button" className="weekly-save-btn weekly-save-btn--footer" onClick={saveWeeklyDraft} disabled={!dirty}>
+                저장
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
