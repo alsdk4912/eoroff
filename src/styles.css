@@ -831,6 +831,15 @@ button.calendar-nav-today:hover {
   letter-spacing: -0.03em;
 }
 
+/* 관리자 승인(또는 레거시 확정): 유형색 유지 + 왼쪽 초록 띠 */
+.calendar-day-chip.selected-item.request-approved {
+  box-shadow: inset 3px 0 0 0 #16a34a !important;
+}
+
+.calendar-applicant-name.selected-item.request-approved {
+  box-shadow: inset 3px 0 0 0 #16a34a !important;
+}
+
 .calendar-chip-more {
   font-size: 9px;
   font-weight: 700;
