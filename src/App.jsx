@@ -38,6 +38,7 @@ const LS_DAY_COMMENTS = "or.dayComments.v1";
 const LS_WORK_SCHEDULE_2026 = "or.workSchedule2026.v1";
 /** 승인 시 지정하는 대체 근무(로컬). 서버 API 없음 — 주간 최종 번표 반영용 */
 const LS_SUBSTITUTE_ASSIGNMENTS = "or.substituteAssignments.v1";
+const LS_WEEKLY_CELL_OVERRIDES = "or.weeklyCellOverrides.v1";
 const LS_NOTIFICATIONS = "or.notifications.v1";
 
 /** 이전 버전 키는 남아 있으면 혼동만 되므로 제거(현재 키는 유지) */
@@ -1582,6 +1583,10 @@ function App() {
               onSaveWorkScheduleRows={setWorkScheduleRows}
               isAdmin={isAdmin}
               substituteAssignments={substituteAssignments}
+              holidays={holidays}
+              holidayDuties={holidayDuties}
+              weeklyCellOverrides={weeklyCellOverrides}
+              setWeeklyCellOverrides={setWeeklyCellOverrides}
               selectRequest={selectRequest}
               rejectRequest={rejectRequest}
               saveSubstituteForApprovedRequest={saveSubstituteForApprovedRequest}
@@ -2130,24 +2135,158 @@ function effectiveScheduleCell(userId, nurseName, ymd, workScheduleRows, request
   return { kind: "base", main: baseMonthCodeForNurseName(nurseName, ld, workScheduleRows), sub: "" };
 }
 
-function WeeklyScheduleTab({ workScheduleRows, requests, substituteAssignments, users }) {
+function isWeekendYmd(ymd) {
+  const s = String(ymd ?? "").slice(0, 10);
+  const p = s.split("-").map(Number);
+  if (p.length !== 3 || p.some((n) => !Number.isFinite(n))) return false;
+  const dt = new Date(p[0], p[1] - 1, p[2]);
+  const w = dt.getDay();
+  return w === 0 || w === 6;
+}
+
+function isPublicHolidayYmd(ymd, holidays) {
+  const ld = String(ymd ?? "").slice(0, 10);
+  return (Array.isArray(holidays) ? holidays : []).some((h) => h?.isHoliday && String(h.holidayDate ?? "").slice(0, 10) === ld);
+}
+
+function dutyNurseIdSet(ymd, holidayDuties) {
+  const ld = String(ymd ?? "").slice(0, 10);
+  const row = holidayDuties?.[ld];
+  const s = new Set();
+  if (row?.nurse1UserId) s.add(String(row.nurse1UserId));
+  if (row?.nurse2UserId) s.add(String(row.nurse2UserId));
+  return s;
+}
+
+function effectiveWeeklyCell(userId, nurseName, ymd, workScheduleRows, requests, substituteAssignments, holidays, holidayDuties) {
+  const ld = String(ymd).slice(0, 10);
+  const sub = (substituteAssignments || []).find((s) => s.substituteUserId === userId && String(s.leaveDate ?? "").slice(0, 10) === ld);
+  if (sub) {
+    return { kind: "sub", main: sub.shiftCode, sub: "대체" };
+  }
+  const approvedLeave = (requests || []).find(
+    (r) => r.userId === userId && String(r.leaveDate ?? "").slice(0, 10) === ld && isWinnerStatus(r.status)
+  );
+  if (approvedLeave) {
+    return { kind: "leave", main: "휴가", sub: typeFullLabel(approvedLeave.leaveType) };
+  }
+  const offLike = isWeekendYmd(ld) || isPublicHolidayYmd(ld, holidays);
+  if (offLike) {
+    const duties = dutyNurseIdSet(ld, holidayDuties);
+    if (duties.has(String(userId))) {
+      return { kind: "base", main: baseMonthCodeForNurseName(nurseName, ld, workScheduleRows), sub: "" };
+    }
+    return { kind: "leave", main: "휴가", sub: "주말·공휴" };
+  }
+  return { kind: "base", main: baseMonthCodeForNurseName(nurseName, ld, workScheduleRows), sub: "" };
+}
+
+function weeklyCellKey(userId, ymd) {
+  return `${userId}|${String(ymd).slice(0, 10)}`;
+}
+
+function parseWeeklyOverrideSelectValue(val) {
+  if (!val || val === "__auto__") return null;
+  if (val === "__leave__") return { mode: "manual", kind: "leave", main: "휴가", sub: "" };
+  if (val.startsWith("__sub__:")) {
+    const code = val.slice(7);
+    return { mode: "manual", kind: "sub", main: code, sub: "대체" };
+  }
+  if (val.startsWith("__base__:")) {
+    const code = val.slice(9);
+    return { mode: "manual", kind: "base", main: code, sub: "" };
+  }
+  return null;
+}
+
+function weeklyOverrideSelectValue(ov) {
+  if (!ov || ov.mode !== "manual") return "__auto__";
+  if (ov.kind === "leave") return "__leave__";
+  if (ov.kind === "sub") return `__sub__:${ov.main}`;
+  if (ov.kind === "base") return `__base__:${ov.main}`;
+  return "__auto__";
+}
+
+function WeeklyScheduleTab({
+  workScheduleRows,
+  requests,
+  substituteAssignments,
+  users,
+  holidays,
+  holidayDuties,
+  weeklyCellOverrides,
+  setWeeklyCellOverrides,
+  canEditWeekly,
+}) {
   const [weekAnchor, setWeekAnchor] = useState(() => toLocalYMD(new Date()));
+  const [draftOverrides, setDraftOverrides] = useState(() => ({ ...(weeklyCellOverrides || {}) }));
+  const [weeklyMsg, setWeeklyMsg] = useState("");
+
+  useEffect(() => {
+    setDraftOverrides({ ...(weeklyCellOverrides || {}) });
+  }, [weeklyCellOverrides]);
+
   const mon = mondayOfWeekContaining(weekAnchor);
   const days = Array.from({ length: 7 }, (_, i) => addDaysToYmd(mon, i));
   const dayLabels = ["월", "화", "수", "목", "금", "토", "일"];
   const nurses = users.filter((u) => u.role === "NURSE").sort((a, b) => a.name.localeCompare(b.name, "ko"));
+
+  const dirty = useMemo(
+    () => JSON.stringify(draftOverrides || {}) !== JSON.stringify(weeklyCellOverrides || {}),
+    [draftOverrides, weeklyCellOverrides]
+  );
+
+  function computedCell(u, d) {
+    return effectiveWeeklyCell(u.id, u.name, d, workScheduleRows, requests, substituteAssignments, holidays, holidayDuties);
+  }
+
+  function displayCell(u, d) {
+    const key = weeklyCellKey(u.id, d);
+    const o = draftOverrides[key];
+    if (o && o.mode === "manual") {
+      return { kind: o.kind || "base", main: o.main ?? "—", sub: o.sub ?? "" };
+    }
+    return computedCell(u, d);
+  }
+
+  function onCellOverrideChange(userId, ymd, val) {
+    const key = weeklyCellKey(userId, ymd);
+    const parsed = parseWeeklyOverrideSelectValue(val);
+    setWeeklyMsg("");
+    setDraftOverrides((prev) => {
+      const next = { ...(prev || {}) };
+      if (!parsed) delete next[key];
+      else next[key] = parsed;
+      return next;
+    });
+  }
+
+  function saveWeeklyDraft() {
+    if (!window.confirm("주간 번표 셀 표시를 저장할까요? (이 기기 브라우저에만 저장됩니다.)")) return;
+    setWeeklyCellOverrides(draftOverrides);
+    setWeeklyMsg("저장했습니다.");
+    notifyDone("저장되었습니다.");
+  }
+
   return (
     <section className="card weekly-schedule-card">
       <h2 className="screen-title">주간 번표</h2>
-      <p className="help page-lead">월간 기본 근무에 승인 휴가·대체 근무를 반영한 최종 표입니다. (1~9월 월간 근무표 기준)</p>
+      <p className="help page-lead">
+        월간 근무·승인 휴가·대체 근무를 반영합니다. 토·일·공휴일에는 휴일 당직자(달력에 저장된 당직 1·2)만 근무로 보이고 나머지는 휴가로 표시합니다.
+      </p>
       <div className="weekly-toolbar row wrap">
         <label className="weekly-date-label">
           기준 날짜
           <input type="date" value={weekAnchor} onChange={(e) => setWeekAnchor(e.target.value)} />
         </label>
-        <button type="button" className="btn-ghost-header btn-ghost-header--compact" onClick={() => setWeekAnchor(mon)}>
-          이번 주 월요일로
-        </button>
+        {canEditWeekly ? (
+          <div className="weekly-edit-actions row wrap">
+            <button type="button" className="weekly-save-btn" onClick={saveWeeklyDraft} disabled={!dirty}>
+              셀 표시 저장
+            </button>
+            {weeklyMsg ? <span className="help weekly-save-msg">{weeklyMsg}</span> : null}
+          </div>
+        ) : null}
       </div>
       <div className="table-wrap weekly-table-wrap">
         <table className="weekly-schedule-table">
@@ -2167,11 +2306,41 @@ function WeeklyScheduleTab({ workScheduleRows, requests, substituteAssignments, 
               <tr key={u.id}>
                 <td className="weekly-name">{u.name}</td>
                 {days.map((d) => {
-                  const cell = effectiveScheduleCell(u.id, u.name, d, workScheduleRows, requests, substituteAssignments);
+                  const cell = displayCell(u, d);
+                  const key = weeklyCellKey(u.id, d);
+                  const selVal = weeklyOverrideSelectValue(draftOverrides[key]);
+                  const auto = computedCell(u, d);
                   return (
                     <td key={d} className={`weekly-cell weekly-cell--${cell.kind}`}>
-                      <div className="weekly-cell-main">{cell.main}</div>
-                      {cell.sub ? <div className="weekly-cell-sub">{cell.sub}</div> : null}
+                      {canEditWeekly ? (
+                        <select
+                          className="weekly-cell-select"
+                          value={selVal}
+                          onChange={(e) => onCellOverrideChange(u.id, d, e.target.value)}
+                          aria-label={`${u.name} ${d} 표시`}
+                        >
+                          <option value="__auto__">
+                            자동 ({auto.main}
+                            {auto.sub ? ` · ${auto.sub}` : ""})
+                          </option>
+                          <option value="__leave__">휴가(고정)</option>
+                          {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
+                            <option key={`base-${opt}`} value={`__base__:${opt}`}>
+                              근무 {opt}
+                            </option>
+                          ))}
+                          {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
+                            <option key={`sub-${opt}`} value={`__sub__:${opt}`}>
+                              대체 {opt}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <>
+                          <div className="weekly-cell-main">{cell.main}</div>
+                          {cell.sub ? <div className="weekly-cell-sub">{cell.sub}</div> : null}
+                        </>
+                      )}
                     </td>
                   );
                 })}
@@ -2344,6 +2513,10 @@ function DashboardPage({
   onSaveWorkScheduleRows,
   isAdmin,
   substituteAssignments,
+  holidays,
+  holidayDuties,
+  weeklyCellOverrides,
+  setWeeklyCellOverrides,
   selectRequest,
   rejectRequest,
   saveSubstituteForApprovedRequest,
@@ -2588,6 +2761,11 @@ function DashboardPage({
           requests={requests}
           substituteAssignments={substituteAssignments}
           users={users}
+          holidays={holidays}
+          holidayDuties={holidayDuties}
+          weeklyCellOverrides={weeklyCellOverrides}
+          setWeeklyCellOverrides={setWeeklyCellOverrides}
+          canEditWeekly={currentRole === "NURSE" || currentRole === "ADMIN" || currentRole === "ANESTHESIA"}
         />
       ) : null}
       {isAdmin && dashTab === "adminDay" ? (
@@ -3087,35 +3265,35 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
       ) : null}
 
       {previewOrder.length > 0 ? (
-        <p className="help">
-          미리보기 결과:{" "}
-          {previewOrder.map((id, idx) => `${idx + 1}순위 ${idToName.get(id) ?? id}`).join(" / ")}
+        <p className="help ladder-preview-line">
+          순서: {previewOrder.map((id, idx) => `${idx + 1}.${idToName.get(id) ?? id}`).join(" → ")}
         </p>
       ) : null}
-      {ladderMsg ? <p className="msg">{ladderMsg}</p> : null}
+      {ladderMsg ? <p className="msg ladder-msg-inline">{ladderMsg}</p> : null}
 
-      <hr className="divider ladder-divider" />
-      <h3 className="ladder-saved-heading">저장된 결과</h3>
-      <div className="table-wrap ladder-saved-table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>제목</th>
-              <th>결과</th>
-              <th>저장시각</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(Array.isArray(ladderResults) ? ladderResults : []).map((r) => (
-              <tr key={r.id}>
-                <td>{`${r.leaveDate} ${leaveTypeLabel(r.leaveType)} 사다리 게임 결과`}</td>
-                <td>{(Array.isArray(r.order) ? r.order : []).map((id, idx) => `${idx + 1}순위 ${idToName.get(id) ?? id}`).join(" / ")}</td>
-                <td>{r.createdAt ? new Date(r.createdAt).toLocaleString("ko-KR") : "-"}</td>
+      <details className="ladder-saved-details">
+        <summary className="ladder-saved-summary">저장된 사다리 결과 보기</summary>
+        <div className="table-wrap ladder-saved-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>제목</th>
+                <th>결과</th>
+                <th>저장시각</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {(Array.isArray(ladderResults) ? ladderResults : []).map((r) => (
+                <tr key={r.id}>
+                  <td>{`${r.leaveDate} ${leaveTypeLabel(r.leaveType)} 사다리 게임 결과`}</td>
+                  <td>{(Array.isArray(r.order) ? r.order : []).map((id, idx) => `${idx + 1}순위 ${idToName.get(id) ?? id}`).join(" / ")}</td>
+                  <td>{r.createdAt ? new Date(r.createdAt).toLocaleString("ko-KR") : "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
     </section>
   );
 }
