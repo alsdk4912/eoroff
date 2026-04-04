@@ -931,6 +931,13 @@ app.post("/api/requests/:id/cancel", async (req, res) => {
 
 app.post("/api/requests/:id/uncancel", async (req, res) => {
   try {
+    const actorUserId = String(req.body?.actorUserId ?? "").trim();
+    if (!actorUserId) return res.status(400).json({ error: "actorUserId가 필요합니다." });
+    const actor = await queryOne("SELECT id, role FROM users WHERE id = ?", actorUserId);
+    if (!actor || actor.role !== "ADMIN") {
+      return res.status(403).json({ error: "관리자만 복원할 수 있습니다." });
+    }
+
     const row = await queryOne(
       "SELECT id, leave_type, leave_date, requested_at, status FROM requests WHERE id = ?",
       req.params.id

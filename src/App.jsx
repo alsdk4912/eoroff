@@ -1172,6 +1172,10 @@ function App() {
   }
 
   async function uncancelRequest(requestId) {
+    if (!isAdmin) {
+      window.alert?.("취소 복원은 관리자만 할 수 있습니다.");
+      return;
+    }
     const target = requests.find((r) => r.id === requestId);
     if (!target || target.status !== "CANCELLED") return;
     if (!window.confirm("정말 복원하시겠습니까?")) return;
@@ -1448,14 +1452,14 @@ function App() {
       <nav className={`app-nav${isAdmin ? " app-nav--admin" : ""}`} aria-label="주 메뉴">
         {isAdmin ? (
           <>
-            <Link to="/calendar">일정 관리</Link>
+            <Link to="/calendar">캘린더</Link>
             <Link to="/dashboard">통합 현황</Link>
             <Link to="/admin">휴가 배정 내역</Link>
             <Link to="/ladder">추첨 배정</Link>
           </>
         ) : (
           <>
-            <Link to="/calendar">휴가 일정</Link>
+            <Link to="/calendar">캘린더</Link>
             {currentUser?.role === "NURSE" ? <Link to="/my">신청 내역</Link> : null}
             <Link to="/dashboard">종합 현황</Link>
             {currentUser?.role !== "ANESTHESIA" ? <Link to="/ladder">추첨 배정</Link> : null}
@@ -1531,7 +1535,12 @@ function App() {
             />
           }
         />
-        <Route path="/my" element={<MyRequestsPage myRequests={myRequests} cancelRequest={cancelRequest} uncancelRequest={uncancelRequest} />} />
+        <Route
+          path="/my"
+          element={
+            <MyRequestsPage myRequests={myRequests} cancelRequest={cancelRequest} uncancelRequest={uncancelRequest} canUncancel={isAdmin} />
+          }
+        />
         <Route
           path="/dashboard"
           element={
@@ -1780,7 +1789,7 @@ function formatRequestedAtCompact(iso) {
   }
 }
 
-function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest }) {
+function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncancel }) {
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [search, setSearch] = useState("");
   function matchesStatusFilter(r) {
@@ -1831,6 +1840,7 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest }) {
               const isLocked = Boolean(r.cancelLocked);
               const actionCell = (() => {
                 if (r.status === "CANCELLED") {
+                  if (!canUncancel) return "-";
                   return (
                     <button type="button" onClick={() => void uncancelRequest(r.id)}>
                       복원
@@ -2656,9 +2666,18 @@ function CalendarPage({
     setCalendarMonth(next);
   }
 
+  function goToToday() {
+    const n = new Date();
+    const ymd = toLocalYMD(n);
+    const ym = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`;
+    setCalendarMonth(ym);
+    setSelectedYmd(ymd);
+    setLeaveDate(ymd);
+  }
+
   return (
     <section className="card">
-      <h2>일정</h2>
+      <h2>캘린더</h2>
       <p className="help">
         {isAdmin
           ? "날짜를 누르면 아래에서 신청 현황을 보고 같은 화면에서 승인/거절, 승인된 휴가자, 듀티 메모를 확인할 수 있습니다."
@@ -2677,6 +2696,9 @@ function CalendarPage({
         />
         <button type="button" className="calendar-nav-btn" onClick={() => moveCalendarMonth(1)} aria-label="다음 달">
           ›
+        </button>
+        <button type="button" className="calendar-nav-today" onClick={goToToday} aria-label="오늘 날짜로 이동">
+          오늘
         </button>
       </div>
       <div className="calendar">
