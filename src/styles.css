@@ -1540,7 +1540,8 @@ button.calendar-nav-month-trigger:hover {
   margin: 0;
   padding: 0;
   border: none;
-  background: rgba(15, 23, 42, 0.48);
+  /* 슬레이트 톤은 뒤쪽 앱 배경(파란 그라데이션)이 비쳐 보여 청색으로 보일 수 있음 → 무채색 딤 */
+  background: rgba(0, 0, 0, 0.45);
   cursor: pointer;
 }
 
@@ -1552,7 +1553,7 @@ button.calendar-nav-month-trigger:hover {
   background: #fff;
   border-radius: 22px;
   padding: 20px 16px 16px;
-  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.28);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.18);
   box-sizing: border-box;
 }
 

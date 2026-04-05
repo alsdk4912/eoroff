@@ -3372,8 +3372,6 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
 
   return (
     <section className="card ladder-page">
-      <h2 className="screen-title">순서 추첨</h2>
-      <p className="help page-lead ladder-page-lead">같은 날·같은 유형 신청자에게 사다리로 순서를 정합니다.</p>
       <p className="help ladder-applicant-line">
         해당일 협의 신청자:{" "}
         {applicantUserIds.length > 0
