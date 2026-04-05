@@ -67,7 +67,15 @@ ReactDOM.createRoot(document.getElementById("root")).render(
   </React.StrictMode>
 );
 
-if ("serviceWorker" in navigator) {
+/**
+ * GitHub Pages: index.html 이 먼저 SW 를 unregister 하지만, 여기서 다시 register 하면
+ * 예전 번들이 SW 캐시에 남아 "배포했는데도 안 바뀌는" 현상이 반복될 수 있음 → github.io 에서는 등록하지 않음.
+ * (Render 등 다른 호스트는 오프라인·푸시용으로 SW 유지)
+ */
+const isGithubPagesHost =
+  typeof location !== "undefined" && String(location.hostname || "").endsWith("github.io");
+
+if ("serviceWorker" in navigator && !isGithubPagesHost) {
   window.addEventListener("load", () => {
     const scope = import.meta.env.BASE_URL || "/";
     const swUrl = `${scope}sw.js`;
