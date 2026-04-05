@@ -24,13 +24,26 @@ export function getLocalBuildId() {
   return String(import.meta.env.VITE_APP_BUILD_ID ?? "").trim() || "unknown";
 }
 
+/**
+ * version.json URL — base 가 "./" 일 때 location.href 의 hash 만 다른 경우
+ * new URL("./version.json", "https://host/eoroff#/cal") 가 루트(/version.json)로 잘못 풀리는 브라우저 동작을 피함.
+ */
 export function getVersionJsonUrl() {
   const b = import.meta.env.BASE_URL || "/";
   if (b.startsWith("/")) {
     const path = b.endsWith("/") ? b : `${b}/`;
     return `${window.location.origin}${path}version.json`;
   }
-  return new URL(`${b}version.json`, window.location.href).href;
+  const u = new URL(window.location.href);
+  u.hash = "";
+  u.search = "";
+  let pathname = u.pathname || "/";
+  if (pathname.endsWith(".html")) {
+    pathname = pathname.slice(0, pathname.lastIndexOf("/") + 1);
+  } else if (!pathname.endsWith("/")) {
+    pathname = `${pathname}/`;
+  }
+  return `${u.origin}${pathname}version.json`;
 }
 
 async function fetchRemoteBuildId() {
@@ -78,7 +91,13 @@ export function useAppUpdate() {
 
   useEffect(() => {
     cancelledRef.current = false;
-    if (!import.meta.env.PROD) {
+    /**
+     * Vite dev 서버(import.meta.env.DEV)에서는 기본 비활성(매번 HMR과 충돌·불필요).
+     * 프로덕션 번들 + vite preview 는 DEV=false → 동작.
+     * 로컬에서 검증: VITE_UPDATE_CHECK_IN_DEV=true npm run dev
+     */
+    const checkEnabled = !import.meta.env.DEV || import.meta.env.VITE_UPDATE_CHECK_IN_DEV === "true";
+    if (!checkEnabled) {
       setUpdateAvailable(false);
       return undefined;
     }
