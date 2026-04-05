@@ -457,6 +457,14 @@ body::before {
   border: 1px solid var(--separator);
   background: var(--surface);
   line-height: 1.2;
+  text-align: center;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: none;
+}
+
+.weekly-cell-select::-ms-expand {
+  display: none;
 }
 
 .weekly-save-msg {

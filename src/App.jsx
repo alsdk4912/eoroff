@@ -1535,9 +1535,6 @@ function App() {
             </p>
           </div>
           <div className="app-header-actions app-header-actions--inline">
-            <Link to="/account" className="btn-ghost-header btn-ghost-header--compact app-header-account-btn">
-              계정
-            </Link>
             <Link
               to="/notifications"
               className="app-header-bell"
@@ -1554,6 +1551,9 @@ function App() {
               {unreadNotificationCount > 0 ? (
                 <span className="app-header-bell__badge">{unreadNotificationCount > 99 ? "99+" : String(unreadNotificationCount)}</span>
               ) : null}
+            </Link>
+            <Link to="/account" className="btn-ghost-header btn-ghost-header--compact app-header-account-btn">
+              계정
             </Link>
             <button type="button" className="btn-ghost-header btn-ghost-header--compact" onClick={handleLogout}>
               나가기
@@ -3781,12 +3781,6 @@ function CalendarPage({
     <section className="card calendar-page-card">
       <div className="calendar-page">
         <div className="calendar-page__top">
-      <h2 className="screen-title">캘린더</h2>
-      <p className="help page-lead">
-        {isAdmin
-          ? "날짜를 탭하면 아래에서 승인·메모를 처리할 수 있습니다."
-          : "날짜를 탭하면 신청·현황을 확인할 수 있습니다."}
-      </p>
       <div className="calendar-nav" role="navigation" aria-label="달력 월 이동">
         <div className="calendar-nav-month-row">
           <button type="button" className="calendar-nav-btn" onClick={() => moveCalendarMonth(-1)} aria-label="이전 달">
