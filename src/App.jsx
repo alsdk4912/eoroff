@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import {
   holidaysCache as seedHolidays,
@@ -3471,6 +3472,99 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
   );
 }
 
+const CAL_YWHEEL_ITEM_PX = 44;
+const CAL_YWHEEL_PAD_PX = (220 - CAL_YWHEEL_ITEM_PX) / 2;
+
+/** 캘린더 연·월 — iOS 스타일 휠 피커 모달 (하단 today / 확인) */
+function CalendarYearMonthWheelModal({ yearOptions, initialYear, initialMonth, onClose, onConfirm, onToday }) {
+  const yearScrollRef = useRef(null);
+  const monthScrollRef = useRef(null);
+
+  useLayoutEffect(() => {
+    let yi = yearOptions.indexOf(initialYear);
+    if (yi < 0) {
+      const ge = yearOptions.findIndex((y) => y >= initialYear);
+      yi = ge >= 0 ? ge : Math.max(0, yearOptions.length - 1);
+    }
+    const mi = Math.max(0, Math.min(11, initialMonth - 1));
+    const ys = yearScrollRef.current;
+    const ms = monthScrollRef.current;
+    if (ys) ys.scrollTop = yi * CAL_YWHEEL_ITEM_PX;
+    if (ms) ms.scrollTop = mi * CAL_YWHEEL_ITEM_PX;
+  }, [yearOptions, initialYear, initialMonth]);
+
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
+  function handleConfirm() {
+    const ys = yearScrollRef.current;
+    const ms = monthScrollRef.current;
+    const yi = ys
+      ? Math.max(0, Math.min(yearOptions.length - 1, Math.round(ys.scrollTop / CAL_YWHEEL_ITEM_PX)))
+      : 0;
+    const mi = ms ? Math.max(0, Math.min(11, Math.round(ms.scrollTop / CAL_YWHEEL_ITEM_PX))) : 0;
+    onConfirm(yearOptions[yi], mi + 1);
+  }
+
+  return createPortal(
+    <div className="ym-wheel-modal" role="dialog" aria-modal="true" aria-label="연·월 선택">
+      <button type="button" className="ym-wheel-modal__backdrop" onClick={onClose} aria-label="닫기" />
+      <div className="ym-wheel-modal__sheet">
+        <div className="ym-wheel-columns">
+          <div className="ym-wheel-col">
+            <div className="ym-wheel-highlight" aria-hidden />
+            <div className="ym-wheel-scroll" ref={yearScrollRef}>
+              <div className="ym-wheel-padding" style={{ height: CAL_YWHEEL_PAD_PX }} aria-hidden />
+              {yearOptions.map((yr) => (
+                <div key={yr} className="ym-wheel-item">
+                  {yr}년
+                </div>
+              ))}
+              <div className="ym-wheel-padding" style={{ height: CAL_YWHEEL_PAD_PX }} aria-hidden />
+            </div>
+          </div>
+          <div className="ym-wheel-col">
+            <div className="ym-wheel-highlight" aria-hidden />
+            <div className="ym-wheel-scroll" ref={monthScrollRef}>
+              <div className="ym-wheel-padding" style={{ height: CAL_YWHEEL_PAD_PX }} aria-hidden />
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                <div key={m} className="ym-wheel-item">
+                  {m}월
+                </div>
+              ))}
+              <div className="ym-wheel-padding" style={{ height: CAL_YWHEEL_PAD_PX }} aria-hidden />
+            </div>
+          </div>
+        </div>
+        <div className="ym-wheel-footer">
+          <button type="button" className="ym-wheel-today" onClick={onToday}>
+            today
+          </button>
+          <button type="button" className="ym-wheel-check" onClick={handleConfirm} aria-label="확인">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 /** 달력 신청 현황: 협의 후 순번 입력 (blur 시 저장) */
 function NegotiationOrderInput({ request, onCommit, disabled }) {
   const v = request.negotiationOrder ?? request.negotiation_order;
@@ -3532,6 +3626,7 @@ function CalendarPage({
   deleteDayComment,
 }) {
   const [detailTab, setDetailTab] = useState("list");
+  const [ymModalOpen, setYmModalOpen] = useState(false);
   const CALENDAR_DAY_CHIP_MAX = 4;
 
   useEffect(() => {
@@ -3673,8 +3768,8 @@ function CalendarPage({
   const calendarYearOptions = useMemo(() => {
     const cy = calendarYMParts.y;
     const nowY = new Date().getFullYear();
-    const from = Math.min(cy - 3, nowY - 2);
-    const to = Math.max(cy + 4, nowY + 3);
+    const from = Math.min(2018, nowY - 12, cy - 4);
+    const to = Math.max(2040, nowY + 10, cy + 4);
     const lo = Math.min(from, cy);
     const hi = Math.max(to, cy);
     const list = [];
@@ -3692,53 +3787,44 @@ function CalendarPage({
           ? "날짜를 탭하면 아래에서 승인·메모를 처리할 수 있습니다."
           : "날짜를 탭하면 신청·현황을 확인할 수 있습니다."}
       </p>
-      <div className="calendar-nav calendar-nav--stack" role="navigation" aria-label="달력 월 이동">
-        <div className="calendar-nav-month-block">
-          <div className="calendar-nav-month-row">
-            <button type="button" className="calendar-nav-btn" onClick={() => moveCalendarMonth(-1)} aria-label="이전 달">
-              ‹
-            </button>
-            <div className="calendar-nav-month-box">
-              <select
-                className="calendar-nav-month-select"
-                value={calendarYMParts.y}
-                onChange={(e) => {
-                  const nextY = parseInt(e.target.value, 10);
-                  if (!Number.isInteger(nextY)) return;
-                  setCalendarMonth(`${nextY}-${calendarYMParts.mPad}`);
-                }}
-                aria-label="연도"
-              >
-                {calendarYearOptions.map((yr) => (
-                  <option key={yr} value={yr}>
-                    {yr}년
-                  </option>
-                ))}
-              </select>
-              <select
-                className="calendar-nav-month-select"
-                value={calendarYMParts.mPad}
-                onChange={(e) => setCalendarMonth(`${calendarYMParts.y}-${e.target.value}`)}
-                aria-label="월"
-              >
-                {Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, "0")).map((mp) => (
-                  <option key={mp} value={mp}>
-                    {parseInt(mp, 10)}월
-                  </option>
-                ))}
-              </select>
-            </div>
-            <button type="button" className="calendar-nav-btn" onClick={() => moveCalendarMonth(1)} aria-label="다음 달">
-              ›
-            </button>
-          </div>
-          <div className="calendar-nav-month-footer">
-            <button type="button" className="calendar-nav-today" onClick={goToToday} aria-label="오늘 날짜로 이동">
-              today
-            </button>
-          </div>
+      <div className="calendar-nav" role="navigation" aria-label="달력 월 이동">
+        <div className="calendar-nav-month-row">
+          <button type="button" className="calendar-nav-btn" onClick={() => moveCalendarMonth(-1)} aria-label="이전 달">
+            ‹
+          </button>
+          <button
+            type="button"
+            className="calendar-nav-month-trigger"
+            onClick={() => setYmModalOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={ymModalOpen}
+            aria-label={`연·월 선택, 현재 ${calendarYMParts.y}년 ${parseInt(calendarYMParts.mPad, 10)}월`}
+          >
+            <span className="calendar-nav-month-trigger__label">
+              {calendarYMParts.y}년 {parseInt(calendarYMParts.mPad, 10)}월
+            </span>
+          </button>
+          <button type="button" className="calendar-nav-btn" onClick={() => moveCalendarMonth(1)} aria-label="다음 달">
+            ›
+          </button>
         </div>
       </div>
+      {ymModalOpen ? (
+        <CalendarYearMonthWheelModal
+          yearOptions={calendarYearOptions}
+          initialYear={calendarYMParts.y}
+          initialMonth={parseInt(calendarYMParts.mPad, 10)}
+          onClose={() => setYmModalOpen(false)}
+          onConfirm={(y, m) => {
+            setCalendarMonth(`${y}-${String(m).padStart(2, "0")}`);
+            setYmModalOpen(false);
+          }}
+          onToday={() => {
+            goToToday();
+            setYmModalOpen(false);
+          }}
+        />
+      ) : null}
       <div className="calendar">
         {["일", "월", "화", "수", "목", "금", "토"].map((d) => (
           <div key={d} className="calendar-head">
