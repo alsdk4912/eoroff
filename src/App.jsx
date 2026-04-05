@@ -2312,6 +2312,15 @@ function downloadWeeklyOfficialHtmlFile(filename, html) {
   URL.revokeObjectURL(url);
 }
 
+/** 주간 번표: 유진·임희종·최유경 행 — 월간 근무표 강조(#ecfdf5 / #d1fae5) 톤과 조화되는 구분색 */
+function weeklyRowTrackClass(nurseName) {
+  const n = String(nurseName ?? "").trim();
+  if (n === "유진") return "weekly-row--track-yujin";
+  if (n === "임희종") return "weekly-row--track-heejong";
+  if (n === "최유경") return "weekly-row--track-yukyung";
+  return "";
+}
+
 function WeeklyScheduleTab({
   workScheduleRows,
   requests,
@@ -2431,7 +2440,7 @@ function WeeklyScheduleTab({
           </thead>
           <tbody>
             {nurses.map((u) => (
-              <tr key={u.id}>
+              <tr key={u.id} className={weeklyRowTrackClass(u.name)}>
                 <td className="weekly-name">{u.name}</td>
                 {days.map((d) => {
                   const cell = displayCell(u, d);
