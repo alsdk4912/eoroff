@@ -1527,16 +1527,8 @@ function App() {
   return (
     <div className="app app-shell">
       <header className="app-header app-header--shell">
-        <div className="app-header-inner">
-          <div className="app-header-brand-block">
-            <img
-              className="app-header-logo"
-              src={`${import.meta.env.BASE_URL}icon.svg`}
-              alt=""
-              width={128}
-              height={128}
-              decoding="async"
-            />
+        <div className="app-header-row">
+          <div className="app-header-brand">
             <h1 className="app-header-title">EOROFF</h1>
             <p className="app-header-userline" aria-hidden={false}>
               {currentUser?.name}
