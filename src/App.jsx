@@ -1736,7 +1736,6 @@ function App() {
                 managedUsers={managedUsers}
                 onResetPassword={handleResetPassword}
                 accountMessage={accountMessage}
-                serverMode={serverMode}
                 onResetLeaveData={handleResetLeaveData}
                 resetDataMessage={resetDataMessage}
               />
@@ -4055,7 +4054,10 @@ function CalendarPage({
                               else if (meta.mode === "single" && ord != null && ord !== "") prefix = `${ord}. `;
 
                               return (
-                                <li key={r.id} className={`calendar-applicant-item calendar-applicant-item--row${isAdmin ? " calendar-applicant-item--admin" : ""}`}>
+                                <li
+                                  key={r.id}
+                                  className={`calendar-applicant-item calendar-applicant-item--row${isAdmin ? " calendar-applicant-item--admin calendar-applicant-item--admin-inline" : ""}`}
+                                >
                                   <div className="negotiation-order-cell">
                                     {isNegotiate && r.status !== "CANCELLED" ? (
                                       <NegotiationOrderInput request={r} disabled={false} onCommit={saveNegotiationOrder} />
@@ -4076,20 +4078,40 @@ function CalendarPage({
                                       {isNegotiate ? "협의" : "신청순"}
                                     </span>
                                   ) : null}
-                                  <span className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status)}`}>
-                                    {prefix}
-                                    {nm} · {typeFullLabel(r.leaveType)} · {leaveNatureLabel(r.leaveNature)} · {statusLabel(r.status)}
-                                  </span>
-                                  {isAdmin && r.status === "APPLIED" ? (
-                                    <div className="admin-calendar-applicant-actions">
-                                      <button type="button" className="admin-calendar-btn admin-calendar-btn--approve" onClick={() => void selectRequest(r.id, {})}>
-                                        승인
-                                      </button>
-                                      <button type="button" className="admin-calendar-btn admin-calendar-btn--reject" onClick={() => void rejectRequest(r.id)}>
-                                        거절
-                                      </button>
-                                    </div>
-                                  ) : null}
+                                  {isAdmin ? (
+                                    <>
+                                      <span className="admin-calendar-applicant-name" title="신청자">
+                                        {prefix}
+                                        {nm}
+                                      </span>
+                                      <span className={`admin-calendar-applicant-type ${buildLeaveChipClass(r.leaveType, r.status)}`} title="휴가 종류">
+                                        {typeFullLabel(r.leaveType)}
+                                      </span>
+                                      <span className="admin-calendar-applicant-nature" title="휴가 성격">
+                                        {leaveNatureLabel(r.leaveNature)}
+                                      </span>
+                                      <span className="admin-calendar-applicant-status" title="신청 상태">
+                                        {statusLabel(r.status)}
+                                      </span>
+                                      {r.status === "APPLIED" ? (
+                                        <div className="admin-calendar-applicant-actions">
+                                          <button type="button" className="admin-calendar-btn admin-calendar-btn--approve" onClick={() => void selectRequest(r.id, {})}>
+                                            승인
+                                          </button>
+                                          <button type="button" className="admin-calendar-btn admin-calendar-btn--reject" onClick={() => void rejectRequest(r.id)}>
+                                            거절
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <div className="admin-calendar-applicant-actions admin-calendar-applicant-actions--placeholder" aria-hidden />
+                                      )}
+                                    </>
+                                  ) : (
+                                    <span className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status)}`}>
+                                      {prefix}
+                                      {nm} · {typeFullLabel(r.leaveType)} · {leaveNatureLabel(r.leaveNature)} · {statusLabel(r.status)}
+                                    </span>
+                                  )}
                                 </li>
                               );
                             })}
@@ -4490,14 +4512,12 @@ function SettingsPage({
   managedUsers,
   onResetPassword,
   accountMessage,
-  serverMode,
   onResetLeaveData,
   resetDataMessage,
 }) {
   return (
     <section className="card">
       <h2 className="screen-title">설정</h2>
-      <p className="help page-lead">공휴일 동기화, 백업·복구, 데이터 초기화, 계정 초기화를 처리합니다.</p>
       <h3 className="settings-subheading">공휴일 API 동기화</h3>
       <div className="grid-api">
         <input type="password" placeholder="(옵션) 서비스키 - 현재는 미사용" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
@@ -4515,12 +4535,6 @@ function SettingsPage({
       {backupMessage ? <p className="msg">{backupMessage}</p> : null}
       <hr className="divider" />
       <h3 className="settings-subheading">휴가·골드키 데이터 초기화</h3>
-      <p className="help" style={{ marginBottom: 10 }}>
-        신청된 휴가 전부, 협의 메모·선정·취소 기록, 조정 로그를 지우고 간호사 골드키를 이름별 기본 총량·미사용으로 되돌립니다. 공휴일 캐시는 그대로입니다.
-        {serverMode
-          ? " DB 모드에서는 화면 데이터가 Turso 등 원격 DB에서 오므로, 여기서 버튼이 실패하거나 반영이 없으면 저장소의 워크플로「Reset Turso leave data」를 실행하거나, Render에 DATA_RESET_SECRET 설정 후 API 문서대로 curl로 초기화하세요."
-          : " (현재: 이 브라우저 로컬만 반영 · GitHub Pages 단독 사용 시)"}
-      </p>
       <div className="row">
         <button type="button" onClick={() => void onResetLeaveData()}>
           휴가·골드키 초기화 실행
@@ -4529,19 +4543,18 @@ function SettingsPage({
       {resetDataMessage ? <p className="msg">{resetDataMessage}</p> : null}
       <hr className="divider" />
       <h3 className="settings-subheading">사용자 비밀번호 초기화</h3>
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>이름</th><th>사번</th><th>권한</th><th>액션</th></tr></thead>
-          <tbody>
-            {managedUsers.map((u) => (
-              <tr key={u.id}>
-                <td>{u.name}</td><td>{u.employeeNo}</td><td>{u.role}</td>
-                <td><button onClick={() => onResetPassword(u.id)}>비밀번호 1234로 초기화</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <ul className="settings-password-reset-list">
+        {managedUsers.map((u) => (
+          <li key={u.id} className="settings-password-reset-row">
+            <span className="settings-password-reset-name">{u.name}</span>
+            <span className="settings-password-reset-emp">{u.employeeNo}</span>
+            <span className="settings-password-reset-role">{u.role}</span>
+            <button type="button" className="settings-password-reset-btn" onClick={() => onResetPassword(u.id)}>
+              비밀번호 1234로 초기화
+            </button>
+          </li>
+        ))}
+      </ul>
       {accountMessage ? <p className="msg">{accountMessage}</p> : null}
     </section>
   );

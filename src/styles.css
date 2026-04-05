@@ -626,14 +626,51 @@ button.app-header-update-btn:hover {
   margin: 0 0 4px !important;
 }
 
-/* 관리자: 신청 목록 + 우측 승인/거절 + 하단 대체 패널 */
+/* 관리자: 신청 목록 — 순번·모드 | 신청자 | 종류 | 성격 | 상태 | 승인·거절 한 줄 */
 .calendar-applicant-item--admin.calendar-applicant-item--row {
   align-items: center;
 }
 
-.calendar-applicant-item--admin .calendar-applicant-name {
-  flex: 1;
-  min-width: 0;
+.calendar-applicant-item--admin-inline {
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  gap: 10px;
+  padding-bottom: 2px;
+}
+
+.admin-calendar-applicant-name,
+.admin-calendar-applicant-type,
+.admin-calendar-applicant-nature,
+.admin-calendar-applicant-status {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+.admin-calendar-applicant-name {
+  color: var(--text-primary);
+}
+
+.admin-calendar-applicant-type {
+  border: 1px solid transparent;
+}
+
+.admin-calendar-applicant-nature {
+  background: var(--fill-secondary);
+  border: 1px solid var(--separator);
+  color: var(--text-primary);
+}
+
+.admin-calendar-applicant-status {
+  background: var(--surface);
+  border: 1px solid var(--separator);
+  color: var(--text-secondary);
 }
 
 .admin-calendar-applicant-actions {
@@ -642,6 +679,11 @@ button.app-header-update-btn:hover {
   flex-shrink: 0;
   align-items: center;
   margin-left: auto;
+}
+
+.admin-calendar-applicant-actions--placeholder {
+  min-width: 148px;
+  min-height: 40px;
 }
 
 .admin-calendar-btn {
@@ -697,26 +739,9 @@ button.app-header-update-btn:hover {
 }
 
 @media (max-width: 768px) {
-  /* 관리자 승인/거절도 신청자당 한 줄(가로 스크롤) — 일반 행과 동일하게 유지 */
-  .calendar-applicant-item--admin.calendar-applicant-item--row {
-    flex-wrap: nowrap;
-    align-items: center;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    padding-bottom: 2px;
-  }
-
-  .calendar-applicant-item--admin.calendar-applicant-item--row .calendar-applicant-name {
-    white-space: nowrap;
-    flex: 0 1 auto;
-    min-width: 0;
-  }
-
   .admin-calendar-applicant-actions {
     flex-shrink: 0;
-    width: auto;
     margin-left: auto;
-    padding-top: 0;
   }
 }
 
@@ -847,6 +872,65 @@ button.app-header-update-btn:hover {
 
 .settings-subheading:first-of-type {
   margin-top: 4px;
+}
+
+/* 설정: 사용자당 비밀번호 초기화 한 줄(가로) */
+.settings-password-reset-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-password-reset-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.settings-password-reset-name {
+  font-weight: 700;
+  color: var(--text-primary);
+  flex-shrink: 0;
+  min-width: 4.5rem;
+}
+
+.settings-password-reset-emp {
+  font-size: 13px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.settings-password-reset-role {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--fill-secondary);
+}
+
+.settings-password-reset-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--separator);
+  background: var(--fill-secondary);
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 /* ----- App header (replaces .top) ----- */
