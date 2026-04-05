@@ -24,7 +24,7 @@ import {
 } from "./utils/rules";
 import { api } from "./api/client";
 import { defaultGoldkeyQuotaForName } from "./data/goldkeyQuotas.js";
-import { restoreHashAfterReload, useAppUpdate } from "./useAppUpdate.js";
+import { consumeManualVersionReloadToast, restoreHashAfterReload, useAppUpdate } from "./useAppUpdate.js";
 
 /** 오프라인 저장소 버전 — 배포 시 키 올리면 예전 휴가·골드키 캐시 무시(빈 신청·기본 골드키로 로드) */
 const LS_REQUESTS = "or.requests.v3";
@@ -683,25 +683,28 @@ function App() {
     }
   }
 
-  async function refreshServerData(options = {}) {
-    const showToast = Boolean(options?.showToast);
+  async function refreshServerData() {
     if (!isLoggedIn || refreshBusyRef.current) return false;
     refreshBusyRef.current = true;
     try {
       const data = await api.bootstrap();
       applyBootstrapPayload(data);
       setServerMode(true);
-      if (showToast) notifyDone("최신 내용으로 갱신되었습니다.");
       return true;
     } catch {
-      if (showToast) {
-        window.alert?.("새로고침에 실패했습니다. 네트워크를 확인 후 다시 시도해 주세요.");
-      }
       return false;
     } finally {
       refreshBusyRef.current = false;
     }
   }
+
+  /** 상단 새로고침(업데이트) 버튼으로만 안내 — 당겨서 갱신·주기 bootstrap 은 알림 없음 */
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    if (consumeManualVersionReloadToast()) {
+      window.setTimeout(() => notifyDone("최신 버전으로 갱신되었습니다."), 0);
+    }
+  }, [isLoggedIn]);
 
   useEffect(() => {
     if (!isLoggedIn) return;
@@ -749,7 +752,7 @@ function App() {
       if (!pulling) return;
       pulling = false;
       if (window.scrollY === 0 && maxDelta >= threshold) {
-        void refreshServerData({ showToast: true });
+        void refreshServerData();
       }
       maxDelta = 0;
     };

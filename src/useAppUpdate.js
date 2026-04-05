@@ -15,6 +15,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const SS_HASH = "eor.resumeHashAfterReload";
 const SS_RELOAD_FOR = "eor.updateReloadForRemoteBuildId";
 const SS_BACKOFF = "eor.versionCheckBackoffUntil";
+/** 상단「최신 버전」수동 새로고침 직후 1회만 안내(자동 reload 와 구분) */
+const SS_MANUAL_VERSION_TOAST = "eor.manualVersionReloadToast";
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const AUTO_RELOAD_DELAY_MS = 2000;
@@ -83,6 +85,7 @@ export function useAppUpdate() {
   const applyUpdate = useCallback(() => {
     try {
       sessionStorage.setItem(SS_HASH, window.location.hash || "#/calendar");
+      sessionStorage.setItem(SS_MANUAL_VERSION_TOAST, "1");
     } catch {
       /* ignore */
     }
@@ -201,4 +204,17 @@ export function useAppUpdate() {
   }, []);
 
   return { updateAvailable, applyUpdate };
+}
+
+/** 수동 버전 새로고침 후 로드 시 1회 true, 이후 즉시 제거 */
+export function consumeManualVersionReloadToast() {
+  try {
+    if (sessionStorage.getItem(SS_MANUAL_VERSION_TOAST) === "1") {
+      sessionStorage.removeItem(SS_MANUAL_VERSION_TOAST);
+      return true;
+    }
+  } catch {
+    /* ignore */
+  }
+  return false;
 }
