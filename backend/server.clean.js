@@ -120,6 +120,59 @@ function leaveTypeLabel(leaveType) {
   return String(leaveType ?? "");
 }
 
+/** 소프트 삭제되지 않은 휴가 요청만 대상으로 하는 SQL 조각 (쿼리 문자열에 직접 삽입) */
+const SQL_REQ_ACTIVE = "deleted_at IS NULL";
+
+function getIdempotencyKey(req) {
+  const h = String(req.headers["idempotency-key"] ?? req.headers["x-idempotency-key"] ?? "").trim();
+  if (h) return h;
+  return String(req.body?.idempotencyKey ?? "").trim();
+}
+
+async function auditRowByIdempotencyKey(key) {
+  if (!key) return null;
+  return await queryOne("SELECT id, leave_request_id, action FROM leave_request_audit WHERE idempotency_key = ?", key);
+}
+
+function newAuditId() {
+  return `lra_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function csvEscapeCell(v) {
+  const s = String(v ?? "");
+  if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+/**
+ * 상태 변경과 같은 트랜잭션에서 호출. idempotency_key UNIQUE로 재시도 시 선행 완료 행만 조회해 재생 응답.
+ */
+async function insertLeaveRequestAuditRow(tx, row) {
+  const id = row.id || newAuditId();
+  const nowIso = row.createdAt || new Date().toISOString();
+  await tx.execute(
+    `INSERT INTO leave_request_audit (id, leave_request_id, action, from_status, to_status, actor_user_id, reason, idempotency_key, metadata_json, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    id,
+    row.leaveRequestId,
+    row.action,
+    row.fromStatus ?? null,
+    row.toStatus,
+    row.actorUserId,
+    row.reason ?? null,
+    row.idempotencyKey ?? null,
+    row.metadataJson != null ? JSON.stringify(row.metadataJson) : null,
+    nowIso
+  );
+  return id;
+}
+
+async function requireAdminUser(actorUserId) {
+  const uid = String(actorUserId ?? "").trim();
+  if (!uid) return null;
+  return await queryOne("SELECT id FROM users WHERE id = ? AND role = 'ADMIN'", uid);
+}
+
 async function createNotificationsForAllNurses({ type, message, targetDate = "", leaveRequestId = "" }) {
   const msg = String(message ?? "").trim();
   if (!msg) return;
@@ -178,7 +231,7 @@ async function sendPushToAllNurses({ title, body, url = "#/calendar" }) {
 
 async function reconcileGoldkeyUsageByPolicy(nowLike = new Date().toISOString()) {
   const reqRows = await queryAll(
-    "SELECT user_id, leave_type, leave_date, requested_at, status FROM requests WHERE leave_type = 'GOLDKEY'"
+    `SELECT user_id, leave_type, leave_date, requested_at, status FROM requests WHERE leave_type = 'GOLDKEY' AND ${SQL_REQ_ACTIVE}`
   );
   const goldkeyRows = await queryAll("SELECT user_id, quota_total FROM goldkeys");
   const usedByUser = new Map();
@@ -272,9 +325,16 @@ async function upsertKoreanHolidaysFromPublicApi(year, monthOpt) {
   return count;
 }
 
-app.get("/api/health", (_, res) => {
+app.get("/api/health", async (_, res) => {
   const ephemeral = isLikelyEphemeralDeployRisk();
   const remote = isUsingRemoteDb();
+  let leaveAuditCount = 0;
+  try {
+    const row = await queryOne("SELECT COUNT(*) AS c FROM leave_request_audit");
+    leaveAuditCount = Number(row?.c ?? 0);
+  } catch {
+    /* 초기 기동 직전 등 */
+  }
   res.json({
     ok: true,
     storage: remote ? "libsql-remote" : "sqlite-file",
@@ -282,6 +342,7 @@ app.get("/api/health", (_, res) => {
     dataLossRiskOnDeploy: ephemeral,
     remoteDb: remote,
     sqlitePathSet: Boolean(process.env.SQLITE_PATH),
+    leaveRequestAuditRows: leaveAuditCount,
     ...(ephemeral
       ? {
           hint: "무료 유지: Turso 무료 DB + Render에 TURSO_DATABASE_URL·TURSO_AUTH_TOKEN 설정. 또는 유료 Disk + SQLITE_PATH.",
@@ -293,12 +354,13 @@ app.get("/api/health", (_, res) => {
 app.get("/api/bootstrap", async (_, res) => {
   try {
     await reconcileGoldkeyUsageByPolicy(new Date().toISOString());
+    const auditCountRow = await queryOne("SELECT COUNT(*) AS c FROM leave_request_audit");
     res.json({
       users: await queryAll("SELECT id, name, employee_no, role FROM users"),
       goldkeys: await queryAll("SELECT * FROM goldkeys"),
-      requests: await queryAll("SELECT * FROM requests"),
+      requests: await queryAll(`SELECT * FROM requests WHERE ${SQL_REQ_ACTIVE}`),
       notes: await queryAll("SELECT * FROM notes"),
-      cancellations: await queryAll("SELECT * FROM cancellations"),
+      cancellations: await queryAll("SELECT * FROM cancellations WHERE revoked_at IS NULL"),
       selections: await queryAll("SELECT * FROM selections"),
       logs: await queryAll("SELECT * FROM logs"),
       ladderResults: await queryAll("SELECT * FROM ladder_results ORDER BY created_at DESC"),
@@ -306,6 +368,7 @@ app.get("/api/bootstrap", async (_, res) => {
       adminDayMemos: await queryAll("SELECT * FROM admin_day_memos"),
       dayComments: await queryAll("SELECT * FROM day_comments ORDER BY created_at ASC"),
       holidays: await queryAll("SELECT * FROM holidays"),
+      leaveRequestAuditCount: Number(auditCountRow?.c ?? 0),
     });
   } catch (err) {
     console.error("GET /api/bootstrap", err);
@@ -803,6 +866,14 @@ app.post("/api/requests", async (req, res) => {
       leave_nature,
     } = req.body ?? {};
 
+    const idem = getIdempotencyKey(req);
+    if (idem) {
+      const prev = await auditRowByIdempotencyKey(idem);
+      if (prev?.leave_request_id) {
+        return res.json({ ok: true, idempotentReplay: true, requestId: prev.leave_request_id });
+      }
+    }
+
     const leaveNature = String(leaveNatureRaw ?? leave_nature ?? "PERSONAL").trim();
     const user = await queryOne("SELECT id, role FROM users WHERE id = ?", userId);
     if (!user) return res.status(400).json({ error: "사용자 정보가 올바르지 않습니다." });
@@ -819,6 +890,7 @@ app.post("/api/requests", async (req, res) => {
     const duplicate = await queryOne(
       `SELECT id FROM requests
        WHERE user_id = ? AND leave_date = ?
+         AND ${SQL_REQ_ACTIVE}
          AND status NOT IN ('CANCELLED', 'REJECTED')
        LIMIT 1`,
       userId,
@@ -836,6 +908,7 @@ app.post("/api/requests", async (req, res) => {
          WHERE user_id = ?
            AND leave_type = 'GENERAL_PRIORITY'
            AND SUBSTR(leave_date, 1, 7) = ?
+           AND ${SQL_REQ_ACTIVE}
            AND status NOT IN ('CANCELLED', 'REJECTED')`,
         userId,
         month
@@ -857,12 +930,22 @@ app.post("/api/requests", async (req, res) => {
         requestedAt,
         memo
       );
+      await insertLeaveRequestAuditRow(tx, {
+        leaveRequestId: id,
+        action: "APPLY",
+        fromStatus: null,
+        toStatus: String(status ?? "APPLIED"),
+        actorUserId: String(userId),
+        reason: null,
+        idempotencyKey: idem || null,
+        metadataJson: { memo: memo || "" },
+      });
     });
     if (leaveType === "GOLDKEY") {
       await reconcileGoldkeyUsageByPolicy(requestedAt || new Date().toISOString());
     }
 
-    res.json({ ok: true });
+    res.json({ ok: true, requestId: id });
   } catch (err) {
     console.error("POST /api/requests", err);
     res.status(500).json({ error: String(err?.message || err) });
@@ -873,19 +956,52 @@ app.post("/api/requests", async (req, res) => {
 async function handleNegotiationOrder(req, res) {
   try {
     const requestId = decodeURIComponent(String(req.params.id ?? ""));
-    const row = await queryOne("SELECT id FROM requests WHERE id = ?", requestId);
+    const idem = getIdempotencyKey(req);
+    if (idem) {
+      const prev = await auditRowByIdempotencyKey(idem);
+      if (prev) return res.json({ ok: true, idempotentReplay: true });
+    }
+
+    const actorUserId = String(req.body?.actorUserId ?? "system").trim() || "system";
+    const row = await queryOne(`SELECT id, status, negotiation_order FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`, requestId);
     if (!row) return res.status(404).json({ error: "요청을 찾을 수 없습니다." });
 
     const raw = req.body?.negotiationOrder ?? req.body?.negotiation_order;
+    const prevOrder = row.negotiation_order;
+
     if (raw === null || raw === undefined || raw === "") {
-      await execute("UPDATE requests SET negotiation_order = NULL WHERE id = ?", requestId);
+      await runTransaction(async (tx) => {
+        await tx.execute("UPDATE requests SET negotiation_order = NULL WHERE id = ?", requestId);
+        await insertLeaveRequestAuditRow(tx, {
+          leaveRequestId: requestId,
+          action: "NEGOTIATION_ORDER_CLEAR",
+          fromStatus: String(row.status),
+          toStatus: String(row.status),
+          actorUserId,
+          reason: null,
+          idempotencyKey: idem || null,
+          metadataJson: { previousNegotiationOrder: prevOrder ?? null, negotiationOrder: null },
+        });
+      });
       return res.json({ ok: true, negotiationOrder: null });
     }
     const n = Number(raw);
     if (!Number.isInteger(n) || n < 1 || n > 999) {
       return res.status(400).json({ error: "협의 순번은 1~999 정수이거나 비워야 합니다." });
     }
-    await execute("UPDATE requests SET negotiation_order = ? WHERE id = ?", n, requestId);
+    await runTransaction(async (tx) => {
+      await tx.execute("UPDATE requests SET negotiation_order = ? WHERE id = ?", n, requestId);
+      await insertLeaveRequestAuditRow(tx, {
+        leaveRequestId: requestId,
+        action: "NEGOTIATION_ORDER_SET",
+        fromStatus: String(row.status),
+        toStatus: String(row.status),
+        actorUserId,
+        reason: null,
+        idempotencyKey: idem || null,
+        metadataJson: { previousNegotiationOrder: prevOrder ?? null, negotiationOrder: n },
+      });
+    });
     return res.json({ ok: true, negotiationOrder: n });
   } catch (err) {
     console.error("negotiation-order", err);
@@ -897,9 +1013,18 @@ app.post("/api/requests/:id/negotiation-order", handleNegotiationOrder);
 
 app.post("/api/requests/:id/cancel", async (req, res) => {
   try {
+    const requestId = String(req.params.id ?? "");
+    const idem = getIdempotencyKey(req);
+    if (idem) {
+      const prev = await auditRowByIdempotencyKey(idem);
+      if (prev) {
+        return res.json({ ok: true, idempotentReplay: true, deductionExempt: false, deductionNote: null });
+      }
+    }
+
     const row = await queryOne(
-      "SELECT id, user_id, leave_type, leave_date, requested_at, status FROM requests WHERE id = ?",
-      req.params.id
+      `SELECT id, user_id, leave_type, leave_date, requested_at, status FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`,
+      requestId
     );
     if (!row) return res.status(404).json({ error: "요청을 찾을 수 없습니다." });
     if (String(row.status) === "CANCELLED") return res.json({ ok: true, alreadyCancelled: true });
@@ -907,19 +1032,30 @@ app.post("/api/requests/:id/cancel", async (req, res) => {
     const cancelledAt = new Date().toISOString();
     const deductionExempt = isLongTermGoldkeyDeductionExempt(row, cancelledAt);
     const deductionNote = deductionExempt ? "차감 제외 처리됨(장기휴가 모집기간)" : null;
+    const cancelReason = String(req.body?.cancelReason ?? "").trim();
 
     await runTransaction(async (tx) => {
-      await tx.execute("UPDATE requests SET status = 'CANCELLED' WHERE id = ?", req.params.id);
+      await tx.execute("UPDATE requests SET status = 'CANCELLED' WHERE id = ?", requestId);
       await tx.execute(
-        "INSERT INTO cancellations (id, leave_request_id, cancelled_by, cancel_reason, cancelled_at, deduction_exempt, deduction_note) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO cancellations (id, leave_request_id, cancelled_by, cancel_reason, cancelled_at, deduction_exempt, deduction_note, revoked_at, revoked_by) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL)",
         req.body.cancellationId,
-        req.params.id,
+        requestId,
         req.body.cancelledBy,
-        req.body.cancelReason,
+        cancelReason || "사용자 취소",
         cancelledAt,
         deductionExempt ? 1 : 0,
         deductionNote
       );
+      await insertLeaveRequestAuditRow(tx, {
+        leaveRequestId: requestId,
+        action: "CANCEL",
+        fromStatus: String(row.status),
+        toStatus: "CANCELLED",
+        actorUserId: String(req.body?.cancelledBy ?? ""),
+        reason: cancelReason || null,
+        idempotencyKey: idem || null,
+        metadataJson: { cancellationId: req.body.cancellationId, deductionExempt },
+      });
     });
     await reconcileGoldkeyUsageByPolicy(cancelledAt);
     res.json({ ok: true, deductionExempt, deductionNote });
@@ -938,18 +1074,41 @@ app.post("/api/requests/:id/uncancel", async (req, res) => {
       return res.status(403).json({ error: "관리자만 복원할 수 있습니다." });
     }
 
+    const requestId = String(req.params.id ?? "");
+    const idem = getIdempotencyKey(req);
+    if (idem) {
+      const prev = await auditRowByIdempotencyKey(idem);
+      if (prev) return res.json({ ok: true, idempotentReplay: true });
+    }
+
     const row = await queryOne(
-      "SELECT id, leave_type, leave_date, requested_at, status FROM requests WHERE id = ?",
-      req.params.id
+      `SELECT id, leave_type, leave_date, requested_at, status FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`,
+      requestId
     );
     if (!row) return res.status(404).json({ error: "요청을 찾을 수 없습니다." });
     if (String(row.status) !== "CANCELLED") {
       return res.status(400).json({ error: "취소 상태인 신청만 복원할 수 있습니다." });
     }
 
+    const nowIso = new Date().toISOString();
     await runTransaction(async (tx) => {
-      await tx.execute("UPDATE requests SET status = 'APPLIED' WHERE id = ?", req.params.id);
-      await tx.execute("DELETE FROM cancellations WHERE leave_request_id = ?", req.params.id);
+      await tx.execute("UPDATE requests SET status = 'APPLIED' WHERE id = ?", requestId);
+      await tx.execute(
+        "UPDATE cancellations SET revoked_at = ?, revoked_by = ? WHERE leave_request_id = ? AND revoked_at IS NULL",
+        nowIso,
+        actorUserId,
+        requestId
+      );
+      await insertLeaveRequestAuditRow(tx, {
+        leaveRequestId: requestId,
+        action: "UNCANCEL",
+        fromStatus: "CANCELLED",
+        toStatus: "APPLIED",
+        actorUserId,
+        reason: String(req.body?.reason ?? "").trim() || null,
+        idempotencyKey: idem || null,
+        metadataJson: null,
+      });
     });
     await reconcileGoldkeyUsageByPolicy(new Date().toISOString());
     return res.json({ ok: true });
@@ -960,52 +1119,146 @@ app.post("/api/requests/:id/uncancel", async (req, res) => {
 });
 
 app.post("/api/requests/:id/select", async (req, res) => {
-  const row = await queryOne(
-    "SELECT id, leave_date, leave_type FROM requests WHERE id = ?",
-    req.params.id
-  );
-  if (!row) return res.status(404).json({ error: "요청을 찾을 수 없습니다." });
-  await execute("UPDATE requests SET status = 'APPROVED' WHERE id = ?", req.params.id);
-  await execute(
-    "INSERT INTO selections (id, leave_request_id, selected_by, selected_at) VALUES (?, ?, ?, ?)",
-    req.body.selectionId,
-    req.params.id,
-    req.body.selectedBy,
-    req.body.selectedAt
-  );
-  await createNotificationsForAllNurses({
-    type: "REQUEST_APPROVED",
-    message: `휴가 처리 결과 안내: 승인 ${row.leave_date} · ${leaveTypeLabel(row.leave_type)}`,
-    targetDate: row.leave_date,
-    leaveRequestId: row.id,
-  });
-  await sendPushToAllNurses({
-    title: "휴가 처리 결과 안내",
-    body: `휴가 처리 결과 안내: 승인 ${row.leave_date} · ${leaveTypeLabel(row.leave_type)}`,
-    url: `#/calendar?ymd=${encodeURIComponent(row.leave_date)}`,
-  });
-  res.json({ ok: true });
+  try {
+    const requestId = decodeURIComponent(String(req.params.id ?? ""));
+    const idem = getIdempotencyKey(req);
+    if (idem) {
+      const prev = await auditRowByIdempotencyKey(idem);
+      if (prev) return res.json({ ok: true, idempotentReplay: true, leaveRequestId: prev.leave_request_id });
+    }
+
+    const row = await queryOne(
+      `SELECT id, leave_date, leave_type, status FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`,
+      requestId
+    );
+    if (!row) return res.status(404).json({ error: "요청을 찾을 수 없습니다." });
+    if (String(row.status) === "APPROVED") {
+      return res.json({ ok: true, alreadyApproved: true });
+    }
+    if (String(row.status) !== "APPLIED") {
+      return res.status(409).json({ error: "승인할 수 있는 상태가 아닙니다.", status: row.status });
+    }
+
+    const selectedBy = String(req.body?.selectedBy ?? "").trim();
+    if (!selectedBy) return res.status(400).json({ error: "selectedBy가 필요합니다." });
+    const selectionId = String(req.body?.selectionId ?? "").trim();
+    const selectedAt = String(req.body?.selectedAt ?? "").trim();
+    if (!selectionId || !selectedAt) return res.status(400).json({ error: "selectionId, selectedAt가 필요합니다." });
+
+    await runTransaction(async (tx) => {
+      const cur = await tx.queryOne(
+        `SELECT status FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`,
+        requestId
+      );
+      if (!cur || String(cur.status) !== "APPLIED") {
+        throw Object.assign(new Error("상태 충돌"), { code: "STATUS_CONFLICT" });
+      }
+      await tx.execute("UPDATE requests SET status = 'APPROVED' WHERE id = ?", requestId);
+      await tx.execute(
+        "INSERT INTO selections (id, leave_request_id, selected_by, selected_at) VALUES (?, ?, ?, ?)",
+        selectionId,
+        requestId,
+        selectedBy,
+        selectedAt
+      );
+      await insertLeaveRequestAuditRow(tx, {
+        leaveRequestId: requestId,
+        action: "APPROVE",
+        fromStatus: "APPLIED",
+        toStatus: "APPROVED",
+        actorUserId: selectedBy,
+        reason: null,
+        idempotencyKey: idem || null,
+        metadataJson: { selectionId },
+      });
+    });
+
+    await createNotificationsForAllNurses({
+      type: "REQUEST_APPROVED",
+      message: `휴가 처리 결과 안내: 승인 ${row.leave_date} · ${leaveTypeLabel(row.leave_type)}`,
+      targetDate: row.leave_date,
+      leaveRequestId: row.id,
+    });
+    await sendPushToAllNurses({
+      title: "휴가 처리 결과 안내",
+      body: `휴가 처리 결과 안내: 승인 ${row.leave_date} · ${leaveTypeLabel(row.leave_type)}`,
+      url: `#/calendar?ymd=${encodeURIComponent(row.leave_date)}`,
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    if (err?.code === "STATUS_CONFLICT") {
+      return res.status(409).json({ error: "다른 요청에 의해 상태가 바뀌었습니다. 목록을 새로고침 후 다시 시도하세요." });
+    }
+    console.error("POST /api/requests/:id/select", err);
+    res.status(500).json({ error: String(err?.message || err) });
+  }
 });
 
 app.post("/api/requests/:id/reject", async (req, res) => {
-  const row = await queryOne(
-    "SELECT id, leave_date, leave_type FROM requests WHERE id = ?",
-    req.params.id
-  );
-  if (!row) return res.status(404).json({ error: "요청을 찾을 수 없습니다." });
-  await execute("UPDATE requests SET status = 'REJECTED' WHERE id = ?", req.params.id);
-  await createNotificationsForAllNurses({
-    type: "REQUEST_REJECTED",
-    message: `휴가 처리 결과 안내: 거절 ${row.leave_date} · ${leaveTypeLabel(row.leave_type)}`,
-    targetDate: row.leave_date,
-    leaveRequestId: row.id,
-  });
-  await sendPushToAllNurses({
-    title: "휴가 처리 결과 안내",
-    body: `휴가 처리 결과 안내: 거절 ${row.leave_date} · ${leaveTypeLabel(row.leave_type)}`,
-    url: `#/calendar?ymd=${encodeURIComponent(row.leave_date)}`,
-  });
-  res.json({ ok: true });
+  try {
+    const requestId = decodeURIComponent(String(req.params.id ?? ""));
+    const idem = getIdempotencyKey(req);
+    if (idem) {
+      const prev = await auditRowByIdempotencyKey(idem);
+      if (prev) return res.json({ ok: true, idempotentReplay: true, leaveRequestId: prev.leave_request_id });
+    }
+
+    const row = await queryOne(
+      `SELECT id, leave_date, leave_type, status FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`,
+      requestId
+    );
+    if (!row) return res.status(404).json({ error: "요청을 찾을 수 없습니다." });
+    if (String(row.status) === "REJECTED") {
+      return res.json({ ok: true, alreadyRejected: true });
+    }
+    if (String(row.status) !== "APPLIED") {
+      return res.status(409).json({ error: "거절할 수 있는 상태가 아닙니다.", status: row.status });
+    }
+
+    const actorUserId = String(req.body?.actorUserId ?? "").trim();
+    if (!actorUserId) return res.status(400).json({ error: "actorUserId가 필요합니다." });
+    const reason = String(req.body?.reason ?? req.body?.rejectReason ?? "").trim();
+
+    await runTransaction(async (tx) => {
+      const cur = await tx.queryOne(
+        `SELECT status FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`,
+        requestId
+      );
+      if (!cur || String(cur.status) !== "APPLIED") {
+        throw Object.assign(new Error("상태 충돌"), { code: "STATUS_CONFLICT" });
+      }
+      await tx.execute("UPDATE requests SET status = 'REJECTED' WHERE id = ?", requestId);
+      await insertLeaveRequestAuditRow(tx, {
+        leaveRequestId: requestId,
+        action: "REJECT",
+        fromStatus: "APPLIED",
+        toStatus: "REJECTED",
+        actorUserId,
+        reason: reason || null,
+        idempotencyKey: idem || null,
+        metadataJson: null,
+      });
+    });
+
+    await createNotificationsForAllNurses({
+      type: "REQUEST_REJECTED",
+      message: `휴가 처리 결과 안내: 거절 ${row.leave_date} · ${leaveTypeLabel(row.leave_type)}`,
+      targetDate: row.leave_date,
+      leaveRequestId: row.id,
+    });
+    await sendPushToAllNurses({
+      title: "휴가 처리 결과 안내",
+      body: `휴가 처리 결과 안내: 거절 ${row.leave_date} · ${leaveTypeLabel(row.leave_type)}`,
+      url: `#/calendar?ymd=${encodeURIComponent(row.leave_date)}`,
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    if (err?.code === "STATUS_CONFLICT") {
+      return res.status(409).json({ error: "다른 요청에 의해 상태가 바뀌었습니다. 목록을 새로고침 후 다시 시도하세요." });
+    }
+    console.error("POST /api/requests/:id/reject", err);
+    res.status(500).json({ error: String(err?.message || err) });
+  }
 });
 
 app.post("/api/notes", async (req, res) => {
@@ -1114,6 +1367,125 @@ app.post("/api/admin/holidays/upsert", async (req, res) => {
   } catch (err) {
     console.error("POST /api/admin/holidays/upsert", err);
     return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
+/**
+ * 기간별 휴가 신청 스냅샷 CSV (관리자). 복구 기준은 원본 DB·Turso 백업이며, CSV는 보조 증빙·감사용.
+ * query: actorUserId (ADMIN), from, to = YYYY-MM-DD (leave_date 기준)
+ */
+app.get("/api/admin/leave-export.csv", async (req, res) => {
+  try {
+    const actorUserId = String(req.query.actorUserId ?? "").trim();
+    if (!(await requireAdminUser(actorUserId))) return res.status(403).send("forbidden");
+
+    const from = String(req.query.from ?? "").trim();
+    const to = String(req.query.to ?? "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+      return res.status(400).send("from, to (YYYY-MM-DD) are required");
+    }
+
+    const rows = await queryAll(
+      `SELECT r.id, r.user_id, r.leave_date, r.leave_type, r.leave_nature, r.status, r.requested_at, r.negotiation_order, u.name AS user_name
+       FROM requests r
+       LEFT JOIN users u ON u.id = r.user_id
+       WHERE r.deleted_at IS NULL AND r.leave_date >= ? AND r.leave_date <= ?
+       ORDER BY r.leave_date ASC, r.requested_at ASC`,
+      from,
+      to
+    );
+
+    const header = ["request_id", "user_name", "user_id", "leave_date", "leave_type", "leave_nature", "status", "negotiation_order", "requested_at"];
+    const lines = [header.join(",")];
+    for (const r of rows) {
+      lines.push(
+        [
+          csvEscapeCell(r.id),
+          csvEscapeCell(r.user_name),
+          csvEscapeCell(r.user_id),
+          csvEscapeCell(r.leave_date),
+          csvEscapeCell(r.leave_type),
+          csvEscapeCell(r.leave_nature),
+          csvEscapeCell(r.status),
+          csvEscapeCell(r.negotiation_order),
+          csvEscapeCell(r.requested_at),
+        ].join(",")
+      );
+    }
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="leave-requests-${from}_${to}.csv"`);
+    res.send(`\uFEFF${lines.join("\n")}`);
+  } catch (err) {
+    console.error("GET /api/admin/leave-export.csv", err);
+    res.status(500).send(String(err?.message || err));
+  }
+});
+
+/**
+ * 상태 변경 감사 이력 CSV (관리자). created_at(UTC ISO) 구간 필터.
+ * query: actorUserId, from, to = YYYY-MM-DD
+ */
+app.get("/api/admin/leave-audit-export.csv", async (req, res) => {
+  try {
+    const actorUserId = String(req.query.actorUserId ?? "").trim();
+    if (!(await requireAdminUser(actorUserId))) return res.status(403).send("forbidden");
+
+    const from = String(req.query.from ?? "").trim();
+    const to = String(req.query.to ?? "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+      return res.status(400).send("from, to (YYYY-MM-DD) are required");
+    }
+
+    const fromIso = `${from}T00:00:00.000Z`;
+    const toIso = `${to}T23:59:59.999Z`;
+
+    const rows = await queryAll(
+      `SELECT a.id, a.leave_request_id, a.action, a.from_status, a.to_status, a.actor_user_id, a.reason, a.created_at,
+              ua.name AS actor_name, r.leave_date
+       FROM leave_request_audit a
+       LEFT JOIN users ua ON ua.id = a.actor_user_id
+       LEFT JOIN requests r ON r.id = a.leave_request_id
+       WHERE a.created_at >= ? AND a.created_at <= ?
+       ORDER BY a.created_at ASC`,
+      fromIso,
+      toIso
+    );
+
+    const header = [
+      "audit_id",
+      "leave_request_id",
+      "leave_date",
+      "action",
+      "from_status",
+      "to_status",
+      "actor_user_id",
+      "actor_name",
+      "reason",
+      "created_at",
+    ];
+    const lines = [header.join(",")];
+    for (const r of rows) {
+      lines.push(
+        [
+          csvEscapeCell(r.id),
+          csvEscapeCell(r.leave_request_id),
+          csvEscapeCell(r.leave_date),
+          csvEscapeCell(r.action),
+          csvEscapeCell(r.from_status),
+          csvEscapeCell(r.to_status),
+          csvEscapeCell(r.actor_user_id),
+          csvEscapeCell(r.actor_name),
+          csvEscapeCell(r.reason),
+          csvEscapeCell(r.created_at),
+        ].join(",")
+      );
+    }
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="leave-audit-${from}_${to}.csv"`);
+    res.send(`\uFEFF${lines.join("\n")}`);
+  } catch (err) {
+    console.error("GET /api/admin/leave-audit-export.csv", err);
+    res.status(500).send(String(err?.message || err));
   }
 });
 

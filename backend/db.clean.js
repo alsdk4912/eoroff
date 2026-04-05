@@ -225,6 +225,26 @@ CREATE TABLE IF NOT EXISTS notifications (
 CREATE INDEX IF NOT EXISTS idx_notifications_user_created
   ON notifications(user_id, created_at DESC);
 
+-- 휴가 신청 상태 변경 감사(승인/거절/취소/순번 변경 등). 메인 requests와 분리해 이력 누적·복구·분석에 사용.
+CREATE TABLE IF NOT EXISTS leave_request_audit (
+  id TEXT PRIMARY KEY,
+  leave_request_id TEXT NOT NULL,
+  action TEXT NOT NULL,
+  from_status TEXT,
+  to_status TEXT NOT NULL,
+  actor_user_id TEXT NOT NULL,
+  reason TEXT,
+  idempotency_key TEXT UNIQUE,
+  metadata_json TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_leave_request_audit_req
+  ON leave_request_audit(leave_request_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_leave_request_audit_created
+  ON leave_request_audit(created_at);
+
 -- Web Push 구독(간호사 디바이스)
 CREATE TABLE IF NOT EXISTS push_subscriptions (
   id TEXT PRIMARY KEY,
@@ -277,6 +297,8 @@ export async function initDb() {
   await ensureRequestsNegotiationOrderColumn();
   await ensureHolidayDutiesAnesthesiaColumn();
   await ensureCancellationsDeductionColumns();
+  await ensureCancellationsRevokedColumns();
+  await ensureRequestsSoftDeleteColumns();
 
   await seedDefaultsIfEmpty();
   await ensureAnesthesiaUsers();
@@ -325,6 +347,30 @@ async function ensureCancellationsDeductionColumns() {
   }
 }
 
+/** 관리자 복원(uncancel) 시 물리 DELETE 대신 취소 행에 해제 시각을 남김 — 취소·복원 이력 보존 */
+async function ensureCancellationsRevokedColumns() {
+  const cols = await queryAll("PRAGMA table_info(cancellations)");
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("revoked_at")) {
+    await execute("ALTER TABLE cancellations ADD COLUMN revoked_at TEXT");
+  }
+  if (!names.has("revoked_by")) {
+    await execute("ALTER TABLE cancellations ADD COLUMN revoked_by TEXT");
+  }
+}
+
+/** 요청 행 물리 삭제 대신 숨김(운영 삭제·오입력 대응). 일반 API는 deleted_at IS NULL만 조회 */
+async function ensureRequestsSoftDeleteColumns() {
+  const cols = await queryAll("PRAGMA table_info(requests)");
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("deleted_at")) {
+    await execute("ALTER TABLE requests ADD COLUMN deleted_at TEXT");
+  }
+  if (!names.has("deleted_yn")) {
+    await execute("ALTER TABLE requests ADD COLUMN deleted_yn INTEGER NOT NULL DEFAULT 0");
+  }
+}
+
 /**
  * 일반휴가-후순위를 전부 협의제로 전환하면서, 기존에 DB에 순번이 없던 동일일·다인 건에는
  * 신청 시각 순(기존 화면의 신청순)을 negotiation_order에 한 번만 백필한다.
@@ -334,7 +380,7 @@ async function backfillGeneralNormalNegotiationOrderFromAppliedOrder() {
   if (done) return;
 
   const all = await queryAll(
-    "SELECT id, leave_date, requested_at, negotiation_order, status, leave_type FROM requests WHERE leave_type = ?",
+    "SELECT id, leave_date, requested_at, negotiation_order, status, leave_type FROM requests WHERE leave_type = ? AND deleted_at IS NULL",
     "GENERAL_NORMAL"
   );
   const active = (all || []).filter((r) => {
@@ -653,7 +699,8 @@ async function backfillLongTermGoldkeyCancellationExemptions() {
        r.leave_date,
        r.requested_at
      FROM cancellations c
-     JOIN requests r ON r.id = c.leave_request_id`
+     JOIN requests r ON r.id = c.leave_request_id
+     WHERE c.revoked_at IS NULL`
   );
 
   for (const row of cancellationRows) {
@@ -675,14 +722,14 @@ async function backfillLongTermGoldkeyCancellationExemptions() {
   const allGoldkeyByUser = await queryAll(
     `SELECT user_id, COUNT(*) AS c
      FROM requests
-     WHERE leave_type = 'GOLDKEY'
+     WHERE leave_type = 'GOLDKEY' AND deleted_at IS NULL
      GROUP BY user_id`
   );
   const exemptGoldkeyByUser = await queryAll(
     `SELECT r.user_id, COUNT(*) AS c
      FROM cancellations c
      JOIN requests r ON r.id = c.leave_request_id
-     WHERE r.leave_type = 'GOLDKEY' AND c.deduction_exempt = 1
+     WHERE r.leave_type = 'GOLDKEY' AND c.deduction_exempt = 1 AND c.revoked_at IS NULL AND r.deleted_at IS NULL
      GROUP BY r.user_id`
   );
 
@@ -725,7 +772,8 @@ export async function execute(sql, ...params) {
 
 /**
  * libSQL 트랜잭션 (로컬·Turso 공통: write → execute → commit / 오류 시 rollback)
- * @param {(tx: { execute: typeof execute }) => Promise<void>} fn
+ * tx: execute, queryAll, queryOne (동일 트랜잭션에서 읽기 일관성)
+ * @param {(tx: { execute: Function, queryAll: Function, queryOne: Function }) => Promise<void>} fn
  */
 export async function runTransaction(fn) {
   const tx = await client.transaction("write");
@@ -738,6 +786,14 @@ export async function runTransaction(fn) {
           lastInsertRowid: r.lastInsertRowid,
         };
       },
+      queryAll: async (sql, ...args) => {
+        const r = await tx.execute({ sql, args });
+        return r.rows || [];
+      },
+    };
+    wrap.queryOne = async (sql, ...args) => {
+      const rows = await wrap.queryAll(sql, ...args);
+      return rows[0];
     };
     await fn(wrap);
     await tx.commit();
@@ -751,6 +807,7 @@ export async function runTransaction(fn) {
 export async function resetLeaveDataToDefaults() {
   const nurses = await queryAll("SELECT id, name FROM users WHERE role = 'NURSE'");
   await runTransaction(async (tx) => {
+    await tx.execute("DELETE FROM leave_request_audit");
     await tx.execute("DELETE FROM notes");
     await tx.execute("DELETE FROM cancellations");
     await tx.execute("DELETE FROM selections");

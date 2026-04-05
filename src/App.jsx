@@ -907,7 +907,7 @@ function App() {
     if (serverMode) {
       try {
         for (const u of updates) {
-          await api.patchNegotiationOrder(u.requestId, { negotiationOrder: u.negotiationOrder });
+          await api.patchNegotiationOrder(u.requestId, { negotiationOrder: u.negotiationOrder, actorUserId: auth.userId });
         }
         await bootstrap();
       } catch (e) {
@@ -932,7 +932,7 @@ function App() {
     }
     if (serverMode) {
       try {
-        await api.patchNegotiationOrder(requestId, { negotiationOrder });
+        await api.patchNegotiationOrder(requestId, { negotiationOrder, actorUserId: auth.userId });
         await bootstrap();
         notifyDone("저장되었습니다.");
       } catch (e) {
@@ -1325,7 +1325,7 @@ function App() {
     setRequests((prev) => prev.map((r) => (r.id === requestId ? { ...r, status: "REJECTED" } : r)));
     if (serverMode) {
       try {
-        await api.rejectRequest(requestId);
+        await api.rejectRequest(requestId, { actorUserId: auth.userId });
         await bootstrap();
         if (target) {
           createNotificationForNurses(
@@ -1707,6 +1707,7 @@ function App() {
                 goldkeys={goldkeys}
                 cancellations={cancellations}
                 serverMode={serverMode}
+                adminUserId={auth?.userId ?? ""}
               />
             ) : (
               <Navigate to="/calendar" />
@@ -4285,9 +4286,14 @@ function CalendarPage({
   );
 }
 
-function AdminPage({ allRequests, users, notes, goldkeys, cancellations, serverMode }) {
+function AdminPage({ allRequests, users, notes, goldkeys, cancellations, serverMode, adminUserId }) {
   const [nameSearch, setNameSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("ALL");
+  const [exportFrom, setExportFrom] = useState(() => {
+    const y = new Date().getFullYear();
+    return `${y}-01-01`;
+  });
+  const [exportTo, setExportTo] = useState(() => toLocalYMD(new Date()));
   const rows = allRequests
     .filter((r) => r.status === "APPROVED" || r.status === "REJECTED")
     .filter((r) => {
@@ -4316,6 +4322,70 @@ function AdminPage({ allRequests, users, notes, goldkeys, cancellations, serverM
     .sort((a, b) => String(b.cancelledAt ?? "").localeCompare(String(a.cancelledAt ?? "")));
   return (
     <>
+      {serverMode && adminUserId ? (
+        <section className="card">
+          <h2 className="screen-title">데이터 내보내기 (CSV)</h2>
+          <p className="help page-lead">
+            휴가일 또는 처리 시각 구간을 지정해 Excel에서 열 수 있는 CSV를 받습니다. 원장 복구는 Turso 등 DB 백업이 기준이며, CSV는 감사·열람용입니다.
+          </p>
+          <div className="row wrap" style={{ alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <label>
+              시작일{" "}
+              <input type="date" value={exportFrom} onChange={(e) => setExportFrom(e.target.value)} />
+            </label>
+            <label>
+              종료일{" "}
+              <input type="date" value={exportTo} onChange={(e) => setExportTo(e.target.value)} />
+            </label>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const text = await api.downloadLeaveExportCsv({
+                    actorUserId: adminUserId,
+                    from: exportFrom,
+                    to: exportTo,
+                  });
+                  const blob = new Blob([text], { type: "text/csv;charset=utf-8" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `leave-requests-${exportFrom}_${exportTo}.csv`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                } catch (e) {
+                  window.alert?.(e?.message || e);
+                }
+              }}
+            >
+              신청·상태 CSV
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const text = await api.downloadLeaveAuditExportCsv({
+                    actorUserId: adminUserId,
+                    from: exportFrom,
+                    to: exportTo,
+                  });
+                  const blob = new Blob([text], { type: "text/csv;charset=utf-8" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `leave-audit-${exportFrom}_${exportTo}.csv`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                } catch (e) {
+                  window.alert?.(e?.message || e);
+                }
+              }}
+            >
+              상태 변경 이력 CSV
+            </button>
+          </div>
+        </section>
+      ) : null}
       <section className="card">
         <h2 className="screen-title">승인·거절 기록</h2>
         <p className="help page-lead">휴가일 기준으로 정렬됩니다. 이름·유형으로 좁힐 수 있습니다.</p>

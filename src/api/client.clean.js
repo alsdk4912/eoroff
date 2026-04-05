@@ -83,7 +83,8 @@ export const api = {
     requestJson(`/requests/${id}/uncancel`, { method: "POST", body: JSON.stringify(payload) }),
   selectRequest: (id, payload) =>
     requestJson(`/requests/${id}/select`, { method: "POST", body: JSON.stringify(payload) }),
-  rejectRequest: (id) => requestJson(`/requests/${id}/reject`, { method: "POST" }),
+  rejectRequest: (id, payload = {}) =>
+    requestJson(`/requests/${encodeURIComponent(id)}/reject`, { method: "POST", body: JSON.stringify(payload) }),
   addNote: (payload) => requestJson("/notes", { method: "POST", body: JSON.stringify(payload) }),
   updateGoldkey: (userId, payload) =>
     requestJson(`/goldkeys/${userId}`, { method: "PATCH", body: JSON.stringify(payload) }),
@@ -142,5 +143,27 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ sql }),
     }),
+  /** 관리자: 휴가일(leave_date) 구간별 신청·상태 CSV */
+  downloadLeaveExportCsv: async ({ actorUserId, from, to }) => {
+    if (API_ROOT === null) throw new TypeError("Failed to fetch");
+    const q = new URLSearchParams({ actorUserId, from, to });
+    const res = await fetch(`${API_ROOT}/admin/leave-export.csv?${q}`, { cache: "no-store" });
+    if (!res.ok) {
+      const t = await res.text();
+      throw new Error(t || `HTTP ${res.status}`);
+    }
+    return res.text();
+  },
+  /** 관리자: 감사 이력(상태 변경) CSV — created_at 구간 */
+  downloadLeaveAuditExportCsv: async ({ actorUserId, from, to }) => {
+    if (API_ROOT === null) throw new TypeError("Failed to fetch");
+    const q = new URLSearchParams({ actorUserId, from, to });
+    const res = await fetch(`${API_ROOT}/admin/leave-audit-export.csv?${q}`, { cache: "no-store" });
+    if (!res.ok) {
+      const t = await res.text();
+      throw new Error(t || `HTTP ${res.status}`);
+    }
+    return res.text();
+  },
 };
 
