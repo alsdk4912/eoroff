@@ -10,7 +10,7 @@
     "dev": "vite",
     "dev:server": "PORT=4015 node backend/server.clean.js",
     "dev:all": "concurrently \"npm run dev\" \"npm run dev:server\"",
-    "build": "vite build",
+    "build": "node scripts/write-version.mjs && vite build",
     "preview": "vite preview",
     "start": "node backend/server.clean.js",
     "db:reset-leave": "node scripts/reset-leave-data.mjs",

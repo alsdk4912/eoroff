@@ -24,6 +24,7 @@ import {
 } from "./utils/rules";
 import { api } from "./api/client";
 import { defaultGoldkeyQuotaForName } from "./data/goldkeyQuotas.js";
+import { restoreHashAfterReload, useAppUpdate } from "./useAppUpdate.js";
 
 /** 오프라인 저장소 버전 — 배포 시 키 올리면 예전 휴가·골드키 캐시 무시(빈 신청·기본 골드키로 로드) */
 const LS_REQUESTS = "or.requests.v3";
@@ -256,6 +257,12 @@ function YmdSplitInput({ value, onChange, disabled }) {
 }
 
 function App() {
+  const { updateAvailable, applyUpdate } = useAppUpdate();
+
+  useEffect(() => {
+    restoreHashAfterReload();
+  }, []);
+
   const [auth, setAuth] = useLocalStorage("or.auth", null);
   const [users, setUsers] = useState(seedUsers);
   const [requests, setRequests] = useLocalStorage(LS_REQUESTS, initialRequests);
@@ -1535,6 +1542,16 @@ function App() {
             </p>
           </div>
           <div className="app-header-actions app-header-actions--inline">
+            {updateAvailable ? (
+              <button
+                type="button"
+                className="btn-ghost-header btn-ghost-header--compact app-header-update-btn"
+                onClick={applyUpdate}
+                title="새 버전이 있습니다. 탭하면 최신 화면으로 불러옵니다."
+              >
+                업데이트
+              </button>
+            ) : null}
             <Link
               to="/notifications"
               className="app-header-bell"

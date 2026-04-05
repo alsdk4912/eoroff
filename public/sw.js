@@ -1,5 +1,5 @@
 /* GitHub Pages: 예전 index.html이 캐시에 남으면 VITE_DEPLOY_TAG(빌드 SHA)가 영원히 안 바뀐 것처럼 보임 → HTML은 네트워크 우선 */
-const CACHE_NAME = "eor-pwa-v48-eoroff-sw-network-first";
+const CACHE_NAME = "eor-pwa-v49-eoroff-sw-network-first";
 const APP_SHELL = [
   "./manifest.json",
   "./icon.svg",
@@ -41,6 +41,14 @@ self.addEventListener("fetch", (event) => {
   }
 
   const path = url.pathname;
+  /* 배포 버전 비교용 — 항상 네트워크(캐시 금지). 이전 SW가 캐시한 version.json 이면 업데이트 감지 실패 */
+  if (path.endsWith("version.json")) {
+    event.respondWith(
+      fetch(event.request, { cache: "no-store" }).catch(() => new Response('{"buildId":""}', { status: 503, headers: { "Content-Type": "application/json" } }))
+    );
+    return;
+  }
+
   const isHtmlShell =
     event.request.mode === "navigate" ||
     event.request.destination === "document" ||
