@@ -2439,9 +2439,6 @@ function WeeklyScheduleTab({
   return (
     <section className="card weekly-schedule-card">
       <h2 className="screen-title">주간 번표</h2>
-      <p className="help page-lead">
-        월간 근무표를 기준으로 요일별 근무가 채워지며, 승인 휴가·대체 근무를 반영합니다. 토·일·공휴일·명절에는 달력에 지정한 당직자만 「당직」, 나머지 간호사는 「휴가」로 표시됩니다.
-      </p>
       {isAdmin ? (
         <p className="help weekly-official-hint">
           관리자: 표 하단 <strong>저장</strong> 시 현재 표와 동일한 <strong>인쇄용 HTML 파일</strong>이 함께 내려받아집니다. 저장 없이 파일만 받으려면 「인쇄용 HTML 저장」을 누르세요.
@@ -2877,7 +2874,6 @@ function DashboardPage({
       {dashTab === "schedule" ? (
       <section className={`card work-schedule-card${isAdmin ? " work-schedule-card--admin" : ""}`}>
         <h2 className="screen-title">2026년 근무표</h2>
-        <p className="help page-lead">월별 근무 코드를 선택해 저장합니다.</p>
         <div className="table-wrap work-schedule-wrap">
           <table className="work-schedule-table">
             <thead>
