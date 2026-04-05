@@ -3482,10 +3482,27 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
 const CAL_YWHEEL_ITEM_PX = 44;
 const CAL_YWHEEL_PAD_PX = (220 - CAL_YWHEEL_ITEM_PX) / 2;
 
-/** 캘린더 연·월 — iOS 스타일 휠 피커 모달 (하단 today / 확인) */
+/** 캘린더 연·월 — 휠 피커: 전체 화면 딤/레이어 없음(뒤 달린 그대로), 흰 시트만 고정 표시 */
 function CalendarYearMonthWheelModal({ yearOptions, initialYear, initialMonth, onClose, onConfirm, onToday }) {
   const yearScrollRef = useRef(null);
   const monthScrollRef = useRef(null);
+  const sheetRef = useRef(null);
+
+  useEffect(() => {
+    let removeDocListener = () => {};
+    const rafId = requestAnimationFrame(() => {
+      function onPointerDown(e) {
+        if (!sheetRef.current || sheetRef.current.contains(e.target)) return;
+        onClose();
+      }
+      document.addEventListener("pointerdown", onPointerDown, true);
+      removeDocListener = () => document.removeEventListener("pointerdown", onPointerDown, true);
+    });
+    return () => {
+      cancelAnimationFrame(rafId);
+      removeDocListener();
+    };
+  }, [onClose]);
 
   useLayoutEffect(() => {
     let yi = yearOptions.indexOf(initialYear);
@@ -3519,9 +3536,7 @@ function CalendarYearMonthWheelModal({ yearOptions, initialYear, initialMonth, o
   }
 
   return createPortal(
-    <div className="ym-wheel-modal" role="dialog" aria-modal="true" aria-label="연·월 선택">
-      <button type="button" className="ym-wheel-modal__backdrop" onClick={onClose} aria-label="닫기" />
-      <div className="ym-wheel-modal__sheet">
+    <div ref={sheetRef} className="ym-wheel-modal__sheet ym-wheel-modal__sheet--solo" role="dialog" aria-label="연·월 선택">
         <div className="ym-wheel-columns">
           <div className="ym-wheel-col">
             <div className="ym-wheel-highlight" aria-hidden />
@@ -3558,9 +3573,8 @@ function CalendarYearMonthWheelModal({ yearOptions, initialYear, initialMonth, o
             </svg>
           </button>
         </div>
-      </div>
     </div>,
-    document.body
+    document.getElementById("root") ?? document.body
   );
 }
 

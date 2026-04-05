@@ -1521,36 +1521,8 @@ button.calendar-nav-month-trigger:hover {
   letter-spacing: -0.02em;
 }
 
-/* 연·월 휠 피커 — 딤 없음: 뒤 캘린더가 그대로 보이고 흰 시트만 떠 있음 */
-.ym-wheel-modal {
-  position: fixed;
-  inset: 0;
-  z-index: 400;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-  padding-bottom: max(20px, env(safe-area-inset-bottom));
-  box-sizing: border-box;
-  background: transparent;
-  pointer-events: none;
-}
-
-.ym-wheel-modal__backdrop {
-  position: absolute;
-  inset: 0;
-  margin: 0;
-  padding: 0;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  pointer-events: auto;
-  -webkit-tap-highlight-color: transparent;
-}
-
+/* 연·월 휠: 전체 화면 딤/래퍼 없음 — 흰 시트만 #root 위에 고정, 뒤 캘린더 그대로 보임 */
 .ym-wheel-modal__sheet {
-  position: relative;
-  z-index: 1;
   width: 100%;
   max-width: 340px;
   background: #fff;
@@ -1558,7 +1530,19 @@ button.calendar-nav-month-trigger:hover {
   padding: 20px 16px 16px;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.18);
   box-sizing: border-box;
-  pointer-events: auto;
+}
+
+.ym-wheel-modal__sheet--solo {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 400;
+  width: min(340px, calc(100vw - 32px));
+  max-height: min(90dvh, 90vh);
+  overflow: hidden;
+  margin: 0;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .ym-wheel-columns {
