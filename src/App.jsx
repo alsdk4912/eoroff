@@ -4053,10 +4053,11 @@ function CalendarPage({
                               else if (isNegotiate && ord != null && ord !== "") prefix = `${ord}. `;
                               else if (meta.mode === "single" && ord != null && ord !== "") prefix = `${ord}. `;
 
+                              const lineText = `${prefix}${nm} · ${typeFullLabel(r.leaveType)} · ${leaveNatureLabel(r.leaveNature)} · ${statusLabel(r.status)}`;
                               return (
                                 <li
                                   key={r.id}
-                                  className={`calendar-applicant-item calendar-applicant-item--row${isAdmin ? " calendar-applicant-item--admin calendar-applicant-item--admin-inline" : ""}`}
+                                  className={`calendar-applicant-item calendar-applicant-item--row${isAdmin ? " calendar-applicant-item--admin" : ""}`}
                                 >
                                   <div className="negotiation-order-cell">
                                     {isNegotiate && r.status !== "CANCELLED" ? (
@@ -4078,40 +4079,22 @@ function CalendarPage({
                                       {isNegotiate ? "협의" : "신청순"}
                                     </span>
                                   ) : null}
-                                  {isAdmin ? (
-                                    <>
-                                      <span className="admin-calendar-applicant-name" title="신청자">
-                                        {prefix}
-                                        {nm}
-                                      </span>
-                                      <span className={`admin-calendar-applicant-type ${buildLeaveChipClass(r.leaveType, r.status)}`} title="휴가 종류">
-                                        {typeFullLabel(r.leaveType)}
-                                      </span>
-                                      <span className="admin-calendar-applicant-nature" title="휴가 성격">
-                                        {leaveNatureLabel(r.leaveNature)}
-                                      </span>
-                                      <span className="admin-calendar-applicant-status" title="신청 상태">
-                                        {statusLabel(r.status)}
-                                      </span>
-                                      {r.status === "APPLIED" ? (
-                                        <div className="admin-calendar-applicant-actions">
-                                          <button type="button" className="admin-calendar-btn admin-calendar-btn--approve" onClick={() => void selectRequest(r.id, {})}>
-                                            승인
-                                          </button>
-                                          <button type="button" className="admin-calendar-btn admin-calendar-btn--reject" onClick={() => void rejectRequest(r.id)}>
-                                            거절
-                                          </button>
-                                        </div>
-                                      ) : (
-                                        <div className="admin-calendar-applicant-actions admin-calendar-applicant-actions--placeholder" aria-hidden />
-                                      )}
-                                    </>
-                                  ) : (
-                                    <span className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status)}`}>
-                                      {prefix}
-                                      {nm} · {typeFullLabel(r.leaveType)} · {leaveNatureLabel(r.leaveNature)} · {statusLabel(r.status)}
-                                    </span>
-                                  )}
+                                  <span
+                                    className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status)}`}
+                                    title={lineText}
+                                  >
+                                    {lineText}
+                                  </span>
+                                  {isAdmin && r.status === "APPLIED" ? (
+                                    <div className="admin-calendar-applicant-actions">
+                                      <button type="button" className="admin-calendar-btn admin-calendar-btn--approve" onClick={() => void selectRequest(r.id, {})}>
+                                        승인
+                                      </button>
+                                      <button type="button" className="admin-calendar-btn admin-calendar-btn--reject" onClick={() => void rejectRequest(r.id)}>
+                                        거절
+                                      </button>
+                                    </div>
+                                  ) : null}
                                 </li>
                               );
                             })}

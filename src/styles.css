@@ -626,75 +626,37 @@ button.app-header-update-btn:hover {
   margin: 0 0 4px !important;
 }
 
-/* 관리자: 신청 목록 — 순번·모드 | 신청자 | 종류 | 성격 | 상태 | 승인·거절 한 줄 */
+/* 관리자: 순번·모드 | (비관리자와 동일 한 덩어리 텍스트) | 승인·거절 — 가로 스크롤 없음, 긴 텍스트는 말줄임 */
 .calendar-applicant-item--admin.calendar-applicant-item--row {
+  flex-wrap: nowrap;
   align-items: center;
+  min-width: 0;
 }
 
-.calendar-applicant-item--admin-inline {
-  flex-wrap: nowrap !important;
-  align-items: center !important;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  gap: 10px;
-  padding-bottom: 2px;
-}
-
-.admin-calendar-applicant-name,
-.admin-calendar-applicant-type,
-.admin-calendar-applicant-nature,
-.admin-calendar-applicant-status {
-  flex-shrink: 0;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.35;
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
+.calendar-applicant-item--admin .calendar-applicant-name {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.admin-calendar-applicant-name {
-  color: var(--text-primary);
-}
-
-.admin-calendar-applicant-type {
-  border: 1px solid transparent;
-}
-
-.admin-calendar-applicant-nature {
-  background: var(--fill-secondary);
-  border: 1px solid var(--separator);
-  color: var(--text-primary);
-}
-
-.admin-calendar-applicant-status {
-  background: var(--surface);
-  border: 1px solid var(--separator);
-  color: var(--text-secondary);
 }
 
 .admin-calendar-applicant-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
   align-items: center;
-  margin-left: auto;
-}
-
-.admin-calendar-applicant-actions--placeholder {
-  min-width: 148px;
-  min-height: 40px;
 }
 
 .admin-calendar-btn {
-  padding: 8px 12px;
-  font-size: 13px;
+  padding: 6px 10px;
+  font-size: 12px;
   font-weight: 700;
-  border-radius: 10px;
+  border-radius: 8px;
   border: 1px solid var(--separator);
   background: var(--surface);
   cursor: pointer;
-  min-height: 40px;
+  min-height: 34px;
   white-space: nowrap;
 }
 
@@ -739,9 +701,10 @@ button.app-header-update-btn:hover {
 }
 
 @media (max-width: 768px) {
-  .admin-calendar-applicant-actions {
-    flex-shrink: 0;
-    margin-left: auto;
+  .calendar-applicant-item--admin .admin-calendar-btn {
+    padding: 6px 8px;
+    font-size: 11px;
+    min-height: 32px;
   }
 }
 
@@ -2972,6 +2935,18 @@ tr.request-cancelled-row td button {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     padding-bottom: 2px;
+  }
+
+  /* 관리자: 한 덩어리 텍스트 + 버튼, 가로 스크롤 없이 말줄임 */
+  .calendar-applicant-item--admin.calendar-applicant-item--row {
+    overflow-x: visible;
+    padding-bottom: 0;
+  }
+
+  .calendar-applicant-item--admin .calendar-applicant-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .negotiation-order-cell {
