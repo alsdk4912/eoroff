@@ -1921,9 +1921,8 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
   return (
     <section className="card my-requests-card">
       <h2 id="my-requests-heading" className="screen-title">
-        내 신청
+        신청내역
       </h2>
-      <p className="help page-lead">필터와 검색으로 내 휴가 신청을 찾을 수 있습니다.</p>
       <div className="row wrap my-requests-toolbar">
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="ALL">전체 상태</option>
