@@ -80,9 +80,9 @@ body::before {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  /* 하단 고정 탭·홈 인디케이터 — 본문 아래 회색 빈칸은 surface로 메움, 여백은 탭 실높이에 맞춤 */
+  /* 하단 고정 탭·홈 인디케이터 — 여백은 탭 실높이에 맞춤; 배경은 페이지와 동일(카드는 .card 가 surface) */
   padding-bottom: calc(78px + env(safe-area-inset-bottom));
-  background: var(--surface);
+  background: var(--bg-page);
 }
 
 /* 마지막 카드 아래 불필요한 12px 여백 제거(탭 직전까지 본문 연장) */
