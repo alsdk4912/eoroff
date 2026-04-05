@@ -1521,7 +1521,7 @@ button.calendar-nav-month-trigger:hover {
   letter-spacing: -0.02em;
 }
 
-/* 연·월 휠 피커 모달 */
+/* 연·월 휠 피커 — 딤 없음: 뒤 캘린더가 그대로 보이고 흰 시트만 떠 있음 */
 .ym-wheel-modal {
   position: fixed;
   inset: 0;
@@ -1532,6 +1532,8 @@ button.calendar-nav-month-trigger:hover {
   padding: 20px;
   padding-bottom: max(20px, env(safe-area-inset-bottom));
   box-sizing: border-box;
+  background: transparent;
+  pointer-events: none;
 }
 
 .ym-wheel-modal__backdrop {
@@ -1540,9 +1542,10 @@ button.calendar-nav-month-trigger:hover {
   margin: 0;
   padding: 0;
   border: none;
-  /* 슬레이트 톤은 뒤쪽 앱 배경(파란 그라데이션)이 비쳐 보여 청색으로 보일 수 있음 → 무채색 딤 */
-  background: rgba(0, 0, 0, 0.45);
+  background: transparent;
   cursor: pointer;
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .ym-wheel-modal__sheet {
@@ -1555,6 +1558,7 @@ button.calendar-nav-month-trigger:hover {
   padding: 20px 16px 16px;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.18);
   box-sizing: border-box;
+  pointer-events: auto;
 }
 
 .ym-wheel-columns {

@@ -3508,14 +3508,6 @@ function CalendarYearMonthWheelModal({ yearOptions, initialYear, initialMonth, o
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, []);
-
   function handleConfirm() {
     const ys = yearScrollRef.current;
     const ms = monthScrollRef.current;
