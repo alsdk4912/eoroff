@@ -102,7 +102,55 @@ body::before {
 .app-header-actions--inline {
   flex-direction: row !important;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+}
+
+.app-header-bell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  color: #2563eb;
+  text-decoration: none;
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: var(--shadow-sm);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.app-header-bell:hover {
+  background: var(--accent-muted);
+  border-color: rgba(37, 99, 235, 0.4);
+}
+
+.app-header-bell__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.app-header-bell__badge {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 18px;
+  text-align: center;
+  border: 2px solid rgba(255, 255, 255, 0.95);
+  box-sizing: border-box;
+  pointer-events: none;
 }
 
 .btn-ghost-header--compact {
@@ -238,29 +286,30 @@ body::before {
 }
 
 .weekly-table-wrap {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
+  overflow-x: visible;
+  max-width: 100%;
 }
 
 .weekly-schedule-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .weekly-schedule-table th,
 .weekly-schedule-table td {
   border: 1px solid var(--separator);
-  padding: 6px 4px;
+  padding: 4px 2px;
   text-align: center;
   vertical-align: middle;
-  min-width: 3.25rem;
+  min-width: 0;
 }
 
 .weekly-th-name {
-  min-width: 4.5rem;
+  width: 18%;
   text-align: left !important;
-  padding-left: 8px !important;
+  padding-left: 6px !important;
   position: sticky;
   left: 0;
   background: var(--surface);
@@ -273,15 +322,17 @@ body::before {
 }
 
 .weekly-th-date {
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 600;
   color: var(--text-secondary);
 }
 
 .weekly-name {
+  width: 18%;
   font-weight: 700;
+  font-size: 11px;
   text-align: left !important;
-  padding-left: 8px !important;
+  padding-left: 6px !important;
   position: sticky;
   left: 0;
   background: var(--surface);
@@ -399,9 +450,9 @@ body::before {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 650;
-  padding: 6px 4px;
+  padding: 4px 2px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--separator);
   background: var(--surface);
@@ -844,6 +895,11 @@ body::before {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.notification-head--page {
+  margin: 0 0 12px;
+  justify-content: flex-end;
 }
 
 .notification-badge {
@@ -1376,18 +1432,61 @@ tbody tr:last-child td {
 
 /* ----- Calendar ----- */
 .calendar-nav {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   margin-top: 12px;
   margin-bottom: 8px;
-  flex-wrap: wrap;
+}
+
+.calendar-nav.calendar-nav--stack {
+  display: block;
+}
+
+.calendar-nav-month-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.calendar-nav-month-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.calendar-nav-month-box {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--separator);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.calendar-nav-month-select {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--separator);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--fill-secondary);
+}
+
+.calendar-nav-month-footer {
+  display: flex;
+  justify-content: flex-end;
 }
 
 button.calendar-nav-today {
   flex-shrink: 0;
-  padding: 8px 14px !important;
-  font-size: 13px !important;
+  padding: 7px 12px !important;
+  font-size: 12px !important;
   font-weight: 600 !important;
   border-radius: var(--radius-pill) !important;
   background: var(--accent-muted) !important;
@@ -1398,19 +1497,6 @@ button.calendar-nav-today {
 
 button.calendar-nav-today:hover {
   background: #dbeafe !important;
-}
-
-.calendar-nav-month {
-  flex: 1;
-  min-width: 0;
-  padding: 11px 12px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--separator);
-  font-weight: 600;
-  font-size: 15px;
-  color: var(--text-primary);
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
 }
 
 .calendar {
@@ -2240,13 +2326,14 @@ button.calendar-nav-today:hover {
 
 /* ----- 종합현황 · 2026 근무표: 모바일에서 select에 글자(안E, 5D2 등)가 보이도록 ----- */
 .work-schedule-wrap {
-  overflow-x: auto;
+  overflow-x: visible;
+  max-width: 100%;
   -webkit-overflow-scrolling: touch;
 }
 
 .work-schedule-table {
-  width: max-content;
-  min-width: 100%;
+  width: 100%;
+  table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
 }
@@ -2269,6 +2356,9 @@ button.calendar-nav-today:hover {
 
 .work-schedule-table thead th:not(:first-child) {
   text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 2px;
 }
 
 .work-schedule-table th:first-child,
@@ -2276,10 +2366,12 @@ button.calendar-nav-today:hover {
   position: sticky;
   left: 0;
   z-index: 2;
-  min-width: 3.5rem;
-  max-width: 5.5rem;
+  width: 18%;
+  min-width: 0;
+  max-width: 5rem;
   white-space: nowrap;
-  padding: 8px 6px;
+  padding: 4px 5px;
+  font-size: 11px;
   background: var(--surface);
   box-shadow: 2px 0 6px rgba(0, 0, 0, 0.06);
 }
@@ -2295,9 +2387,9 @@ button.calendar-nav-today:hover {
 
 .work-schedule-table th:not(:first-child),
 .work-schedule-table td.work-schedule-month-cell {
-  min-width: 5.75rem;
-  width: 5.75rem;
-  padding: 6px 4px;
+  min-width: 0;
+  width: auto;
+  padding: 4px 2px;
   vertical-align: middle;
 }
 
@@ -2306,7 +2398,7 @@ button.calendar-nav-today:hover {
   position: relative;
   display: block;
   width: 100%;
-  min-height: 44px;
+  min-height: 30px;
 }
 
 .work-schedule-picker-face {
@@ -2314,9 +2406,9 @@ button.calendar-nav-today:hover {
   align-items: center;
   justify-content: center;
   text-align: center;
-  min-height: 44px;
-  padding: 6px 6px;
-  font-size: 14px;
+  min-height: 30px;
+  padding: 4px 3px;
+  font-size: 11px;
   font-weight: 700;
   line-height: 1.2;
   letter-spacing: -0.02em;
@@ -2368,16 +2460,15 @@ button.calendar-nav-today:hover {
 }
 
 @media (max-width: 768px) {
-  .work-schedule-table th:not(:first-child),
-  .work-schedule-table td.work-schedule-month-cell {
-    min-width: 6.25rem;
-    width: 6.25rem;
+  .work-schedule-table thead th:not(:first-child) {
+    font-size: 10px;
+    padding: 3px 1px;
   }
 
   .work-schedule-picker-face {
-    font-size: 15px;
-    min-height: 46px;
-    padding: 7px 6px;
+    font-size: 10px;
+    min-height: 28px;
+    padding: 3px 2px;
   }
 }
 
@@ -2582,8 +2673,9 @@ tr.request-cancelled-row td button {
     padding: 0;
   }
 
-  .calendar-nav-month {
-    font-size: 14px;
+  .calendar-nav-month-select {
+    font-size: 13px;
+    padding: 7px 6px;
   }
 
   .calendar-nav-btn {

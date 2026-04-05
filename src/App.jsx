@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
+import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import {
   holidaysCache as seedHolidays,
   initialAdjustmentLogs,
@@ -1537,6 +1537,23 @@ function App() {
             <Link to="/account" className="btn-ghost-header btn-ghost-header--compact app-header-account-btn">
               계정
             </Link>
+            <Link
+              to="/notifications"
+              className="app-header-bell"
+              aria-label={unreadNotificationCount > 0 ? `알림 ${unreadNotificationCount}건` : "알림"}
+            >
+              <span className="app-header-bell__icon" aria-hidden="true">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path
+                    d="M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2zm6-6V11a6 6 0 1 0-12 0v5l-2 2v1h16v-1l-2-2z"
+                    fill="currentColor"
+                  />
+                </svg>
+              </span>
+              {unreadNotificationCount > 0 ? (
+                <span className="app-header-bell__badge">{unreadNotificationCount > 99 ? "99+" : String(unreadNotificationCount)}</span>
+              ) : null}
+            </Link>
             <button type="button" className="btn-ghost-header btn-ghost-header--compact" onClick={handleLogout}>
               나가기
             </button>
@@ -1699,26 +1716,21 @@ function App() {
           }
         />
         <Route
-          path="/more"
+          path="/notifications"
           element={
-            isAdmin ? (
-              <Navigate to="/settings" replace />
-            ) : (
-              <MorePage
-                currentUser={currentUser}
-                serverMode={serverMode}
-                myNotifications={myNotifications}
-                unreadNotificationCount={unreadNotificationCount}
-                markAllNotificationsRead={markAllNotificationsRead}
-                markNotificationRead={markNotificationRead}
-                enablePushNotifications={enablePushNotifications}
-                pushBusy={pushBusy}
-                pushEnabled={pushEnabled}
-                onLogout={handleLogout}
-              />
-            )
+            <NotificationsPage
+              currentUser={currentUser}
+              serverMode={serverMode}
+              myNotifications={myNotifications}
+              markAllNotificationsRead={markAllNotificationsRead}
+              markNotificationRead={markNotificationRead}
+              enablePushNotifications={enablePushNotifications}
+              pushBusy={pushBusy}
+              pushEnabled={pushEnabled}
+            />
           }
         />
+        <Route path="/more" element={isAdmin ? <Navigate to="/settings" replace /> : <Navigate to="/calendar" replace />} />
         <Route path="*" element={<Navigate to="/calendar" />} />
       </Routes>
       </main>
@@ -2995,73 +3007,37 @@ function AppBottomNav({ isAdmin, role }) {
           추첨
         </NavLink>
       ) : null}
-      <NavLink to="/more" className={navLinkClass}>
-        더보기
-      </NavLink>
     </nav>
   );
 }
 
-/** 알림·계정·부가 정보 — 본문 스크롤을 줄이기 위해 상단 카드에서 분리 */
-function MorePage({
+/** 알림 목록·푸시 — 상단 종 아이콘과 연결 */
+function NotificationsPage({
   currentUser,
   serverMode,
   myNotifications,
-  unreadNotificationCount,
   markAllNotificationsRead,
   markNotificationRead,
   enablePushNotifications,
   pushBusy,
   pushEnabled,
-  onLogout,
 }) {
-  const roleKo =
-    currentUser?.role === "ADMIN"
-      ? "관리자"
-      : currentUser?.role === "NURSE"
-        ? "간호사"
-        : currentUser?.role === "ANESTHESIA"
-          ? "마취"
-          : currentUser?.role ?? "";
-  const buildTag = import.meta.env.VITE_DEPLOY_TAG ? String(import.meta.env.VITE_DEPLOY_TAG).slice(0, 7) : "로컬";
+  const navigate = useNavigate();
+
+  function openNotificationTarget(n) {
+    void markNotificationRead(n.id);
+    const td = String(n.targetDate ?? n.target_date ?? "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(td)) return;
+    navigate(`/calendar?ymd=${td}`);
+  }
 
   return (
-    <div className="more-page">
-      <section className="card more-hero-card">
-        <h2 className="more-hero-title">더보기</h2>
-        <p className="more-hero-meta">
-          {currentUser?.name} · {roleKo}
-        </p>
-        <p className="help more-hero-build">
-          {serverMode ? "서버 연동" : "로컬 저장"} · 빌드 {buildTag}
-        </p>
-      </section>
-
-      <section className="card more-actions-card">
-        <h3 className="more-section-title">바로 가기</h3>
-        <div className="more-link-grid">
-          <Link to="/account" className="more-link-tile">
-            <span className="more-link-tile__title">비밀번호</span>
-            <span className="more-link-tile__sub">계정 설정</span>
-          </Link>
-          {currentUser?.role === "NURSE" ? (
-            <Link to="/request" className="more-link-tile">
-              <span className="more-link-tile__title">신청 화면</span>
-              <span className="more-link-tile__sub">날짜만 바꿔 신청</span>
-            </Link>
-          ) : null}
-        </div>
-        <button type="button" className="more-logout-btn" onClick={onLogout}>
-          로그아웃
-        </button>
-      </section>
-
-      {currentUser?.role === "NURSE" ? (
-        <section className="card notification-card">
-          <div className="notification-head">
-            <h3>
-              알림 {unreadNotificationCount > 0 ? <span className="notification-badge">{unreadNotificationCount}</span> : null}
-            </h3>
+    <div className="notifications-page">
+      <section className="card">
+        <h2 className="screen-title">알림</h2>
+        <p className="help page-lead">읽지 않은 알림이 상단 종 아이콘에 숫자로 표시됩니다.</p>
+        {currentUser?.role === "NURSE" ? (
+          <div className="notification-head notification-head--page">
             <div className="notification-head-actions">
               {serverMode ? (
                 <button type="button" className="notification-readall-btn" onClick={() => void enablePushNotifications()} disabled={pushBusy || pushEnabled}>
@@ -3073,39 +3049,33 @@ function MorePage({
               </button>
             </div>
           </div>
-          {myNotifications.length === 0 ? (
-            <p className="help">새 알림이 없습니다.</p>
-          ) : (
-            <ul className="notification-list">
-              {myNotifications.slice(0, 12).map((n) => (
-                <li
-                  key={n.id}
-                  className="notification-item notification-item--unread"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => {
-                    void markNotificationRead(n.id);
-                    const td = String(n.targetDate ?? n.target_date ?? "").trim();
-                    if (!/^\d{4}-\d{2}-\d{2}$/.test(td)) return;
-                    window.location.hash = `#/calendar?ymd=${td}`;
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key !== "Enter" && e.key !== " ") return;
-                    e.preventDefault();
-                    void markNotificationRead(n.id);
-                    const td = String(n.targetDate ?? n.target_date ?? "").trim();
-                    if (!/^\d{4}-\d{2}-\d{2}$/.test(td)) return;
-                    window.location.hash = `#/calendar?ymd=${td}`;
-                  }}
-                >
-                  <p>{n.message}</p>
-                  <span>{new Date(n.createdAt).toLocaleString("ko-KR")}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      ) : null}
+        ) : null}
+        {currentUser?.role !== "NURSE" ? (
+          <p className="help">간호사 계정에서 수신한 알림이 여기에 표시됩니다.</p>
+        ) : myNotifications.length === 0 ? (
+          <p className="help">새 알림이 없습니다.</p>
+        ) : (
+          <ul className="notification-list">
+            {myNotifications.slice(0, 24).map((n) => (
+              <li
+                key={n.id}
+                className="notification-item notification-item--unread"
+                role="button"
+                tabIndex={0}
+                onClick={() => openNotificationTarget(n)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter" && e.key !== " ") return;
+                  e.preventDefault();
+                  openNotificationTarget(n);
+                }}
+              >
+                <p>{n.message}</p>
+                <span>{new Date(n.createdAt).toLocaleString("ko-KR")}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }
@@ -3688,6 +3658,30 @@ function CalendarPage({
     setLeaveDate(ymd);
   }
 
+  const calendarYMParts = useMemo(() => {
+    const [yy, mm] = String(calendarMonth || "").split("-");
+    let y = parseInt(yy, 10);
+    let m = parseInt(mm, 10);
+    if (!Number.isInteger(y) || !Number.isInteger(m) || m < 1 || m > 12) {
+      const n = new Date();
+      y = n.getFullYear();
+      m = n.getMonth() + 1;
+    }
+    return { y, mPad: String(m).padStart(2, "0") };
+  }, [calendarMonth]);
+
+  const calendarYearOptions = useMemo(() => {
+    const cy = calendarYMParts.y;
+    const nowY = new Date().getFullYear();
+    const from = Math.min(cy - 3, nowY - 2);
+    const to = Math.max(cy + 4, nowY + 3);
+    const lo = Math.min(from, cy);
+    const hi = Math.max(to, cy);
+    const list = [];
+    for (let yr = lo; yr <= hi; yr += 1) list.push(yr);
+    return list;
+  }, [calendarYMParts.y]);
+
   return (
     <section className="card calendar-page-card">
       <div className="calendar-page">
@@ -3698,23 +3692,52 @@ function CalendarPage({
           ? "날짜를 탭하면 아래에서 승인·메모를 처리할 수 있습니다."
           : "날짜를 탭하면 신청·현황을 확인할 수 있습니다."}
       </p>
-      <div className="calendar-nav" role="navigation" aria-label="달력 월 이동">
-        <button type="button" className="calendar-nav-btn" onClick={() => moveCalendarMonth(-1)} aria-label="이전 달">
-          ‹
-        </button>
-        <input
-          type="month"
-          className="calendar-nav-month"
-          value={calendarMonth}
-          onChange={(e) => setCalendarMonth(e.target.value)}
-          aria-label="표시할 연월"
-        />
-        <button type="button" className="calendar-nav-btn" onClick={() => moveCalendarMonth(1)} aria-label="다음 달">
-          ›
-        </button>
-        <button type="button" className="calendar-nav-today" onClick={goToToday} aria-label="오늘 날짜로 이동">
-          today
-        </button>
+      <div className="calendar-nav calendar-nav--stack" role="navigation" aria-label="달력 월 이동">
+        <div className="calendar-nav-month-block">
+          <div className="calendar-nav-month-row">
+            <button type="button" className="calendar-nav-btn" onClick={() => moveCalendarMonth(-1)} aria-label="이전 달">
+              ‹
+            </button>
+            <div className="calendar-nav-month-box">
+              <select
+                className="calendar-nav-month-select"
+                value={calendarYMParts.y}
+                onChange={(e) => {
+                  const nextY = parseInt(e.target.value, 10);
+                  if (!Number.isInteger(nextY)) return;
+                  setCalendarMonth(`${nextY}-${calendarYMParts.mPad}`);
+                }}
+                aria-label="연도"
+              >
+                {calendarYearOptions.map((yr) => (
+                  <option key={yr} value={yr}>
+                    {yr}년
+                  </option>
+                ))}
+              </select>
+              <select
+                className="calendar-nav-month-select"
+                value={calendarYMParts.mPad}
+                onChange={(e) => setCalendarMonth(`${calendarYMParts.y}-${e.target.value}`)}
+                aria-label="월"
+              >
+                {Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, "0")).map((mp) => (
+                  <option key={mp} value={mp}>
+                    {parseInt(mp, 10)}월
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button type="button" className="calendar-nav-btn" onClick={() => moveCalendarMonth(1)} aria-label="다음 달">
+              ›
+            </button>
+          </div>
+          <div className="calendar-nav-month-footer">
+            <button type="button" className="calendar-nav-today" onClick={goToToday} aria-label="오늘 날짜로 이동">
+              today
+            </button>
+          </div>
+        </div>
       </div>
       <div className="calendar">
         {["일", "월", "화", "수", "목", "금", "토"].map((d) => (
