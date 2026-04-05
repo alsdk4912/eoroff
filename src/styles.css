@@ -4,6 +4,10 @@
    Palette: --accent (blue), --surface, --bg-page (3-tone) + 휴가유형 색 유지 블록
    ============================================================================= */
 
+html {
+  overflow-x: hidden;
+}
+
 :root {
   --bg-page: #f2f2f7;
   --surface: #ffffff;
@@ -38,7 +42,11 @@
 body {
   margin: 0;
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--bg-page);
+  /* 본문(.app-main)만 스크롤 — 페이지(배경) 전체가 따라 움직이는 현상 완화 */
+  overflow-x: hidden;
+  overscroll-behavior-y: none;
 }
 
 body::before {
@@ -53,12 +61,14 @@ body::before {
   padding: max(12px, env(safe-area-inset-top)) 16px 28px;
 }
 
-/* ----- 앱 셸: 스크롤은 본문만, 하단 탭 고정 ----- */
+/* ----- 앱 셸: 뷰포트 높이 고정 → 스크롤은 .app-main 한 곳만(배경 흔들림 방지) ----- */
 .app.app-shell {
   display: flex;
   flex-direction: column;
-  min-height: 100dvh;
-  min-height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
   padding: max(8px, env(safe-area-inset-top)) 16px 0;
   box-sizing: border-box;
 }
@@ -69,6 +79,7 @@ body::before {
   overflow-x: hidden;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   /* 하단 고정 탭·홈 인디케이터 — 본문 아래 회색 빈칸은 surface로 메움, 여백은 탭 실높이에 맞춤 */
   padding-bottom: calc(78px + env(safe-area-inset-bottom));
   background: var(--surface);
@@ -192,8 +203,9 @@ button.app-header-update-btn:hover {
 .app-bottom-nav {
   position: fixed;
   bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  margin: 0 auto;
   z-index: 100;
   width: 100%;
   max-width: 1100px;
@@ -1249,10 +1261,12 @@ button.login-secondary-button:hover {
 /* ----- Login ----- */
 .login-wrap {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
+  box-sizing: border-box;
 }
 
 .login-card {
