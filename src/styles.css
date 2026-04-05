@@ -1416,17 +1416,21 @@ tbody tr:last-child td {
     border-bottom: none;
   }
 
-  /* 취소 건: 한 줄 전체가 회색 박스(유형 칩은 위에서 투명 처리) */
+  /* 취소 건: 둥근 박스 없이 행 전체만 동일 회색으로 채움(일반 행과 동일한 구분선) */
   .my-requests-table tbody tr.request-cancelled-row {
     background: #e5e7eb !important;
-    border: 1px solid #d1d5db !important;
-    border-radius: var(--radius-md);
-    border-bottom: none !important;
-    margin-bottom: 10px;
+    border-radius: 0;
+    border: none;
+    margin-bottom: 0;
+    border-bottom: 1px solid var(--separator);
   }
 
   .my-requests-table tbody tr.request-cancelled-row td {
     background: transparent !important;
+  }
+
+  .my-requests-table tbody tr.request-cancelled-row:last-child {
+    border-bottom: none;
   }
 
   .my-requests-table tbody tr.request-cancelled-row td.my-requests-cancelled-merge {
