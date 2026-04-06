@@ -4063,21 +4063,6 @@ function CalendarPage({
           />
         ) : null}
         <div className={`calendar-page__detail${detailModalOpen ? " calendar-page__detail--modal" : ""}`}>
-      {detailModalOpen ? (
-        <div className="calendar-detail-modal-head">
-          <strong>{selectedYmd || "상세"}</strong>
-          <button
-            type="button"
-            className="calendar-detail-modal-close"
-            onClick={() => {
-              setDetailModalOpen(false);
-              setSelectedYmd("");
-            }}
-          >
-            닫기
-          </button>
-        </div>
-      ) : null}
       <div className="calendar-detail">
         {!selectedYmd ? (
           <p className="help calendar-detail-placeholder">달력에서 날짜를 선택하세요.</p>
