@@ -1325,19 +1325,21 @@ function App() {
         await api.selectRequest(requestId, payload);
         await bootstrap();
         if (target) {
-          createNotificationForNurses(
-            `휴가 처리 결과 안내: 휴가 확정 ${target.leaveDate} · ${leaveTypeLabel(target.leaveType)}`,
-            { type: "REQUEST_APPROVED", targetDate: target.leaveDate, leaveRequestId: target.id }
-          );
+          createNotificationForNurses(`${target.leaveDate} 휴가자 발표`, {
+            type: "REQUEST_APPROVED",
+            targetDate: target.leaveDate,
+            leaveRequestId: target.id,
+          });
         }
       } catch (e) {
         window.alert?.(`선정 반영 실패: ${e?.message || e}`);
       }
     } else if (target) {
-      createNotificationForNurses(
-        `휴가 처리 결과 안내: 휴가 확정 ${target.leaveDate} · ${leaveTypeLabel(target.leaveType)}`,
-        { type: "REQUEST_APPROVED", targetDate: target.leaveDate, leaveRequestId: target.id }
-      );
+      createNotificationForNurses(`${target.leaveDate} 휴가자 발표`, {
+        type: "REQUEST_APPROVED",
+        targetDate: target.leaveDate,
+        leaveRequestId: target.id,
+      });
     }
   }
 
@@ -1399,19 +1401,21 @@ function App() {
         await api.rejectRequest(requestId, { actorUserId: auth.userId });
         await bootstrap();
         if (target) {
-          createNotificationForNurses(
-            `휴가 처리 결과 안내: 반려 ${target.leaveDate} · ${leaveTypeLabel(target.leaveType)}`,
-            { type: "REQUEST_REJECTED", targetDate: target.leaveDate, leaveRequestId: target.id }
-          );
+          createNotificationForNurses(`${target.leaveDate} 휴가 반려`, {
+            type: "REQUEST_REJECTED",
+            targetDate: target.leaveDate,
+            leaveRequestId: target.id,
+          });
         }
       } catch (e) {
         window.alert?.(`휴가 반려 반영 실패: ${e?.message || e}`);
       }
     } else if (target) {
-      createNotificationForNurses(
-        `휴가 처리 결과 안내: 반려 ${target.leaveDate} · ${leaveTypeLabel(target.leaveType)}`,
-        { type: "REQUEST_REJECTED", targetDate: target.leaveDate, leaveRequestId: target.id }
-      );
+      createNotificationForNurses(`${target.leaveDate} 휴가 반려`, {
+        type: "REQUEST_REJECTED",
+        targetDate: target.leaveDate,
+        leaveRequestId: target.id,
+      });
     }
   }
 
@@ -1448,7 +1452,7 @@ function App() {
         }
         notifyDone("저장되었습니다.");
         if (currentUser?.role === "ADMIN") {
-          createNotificationForNurses(`새 메모 등록: ${ymd}`, { type: "ADMIN_MEMO", targetDate: ymd });
+          createNotificationForNurses(`${ymd} 메모 등록`, { type: "ADMIN_MEMO", targetDate: ymd });
         }
         return;
       } catch (e) {
@@ -1466,7 +1470,7 @@ function App() {
     }));
     notifyDone("저장되었습니다.");
     if (currentUser?.role === "ADMIN") {
-      createNotificationForNurses(`새 메모 등록: ${ymd}`, { type: "ADMIN_MEMO", targetDate: ymd });
+      createNotificationForNurses(`${ymd} 메모 등록`, { type: "ADMIN_MEMO", targetDate: ymd });
     }
   }
 
@@ -1497,7 +1501,7 @@ function App() {
     };
     setDayComments((prev) => [newRow, ...(Array.isArray(prev) ? prev : [])]);
     if (currentUser?.role === "ADMIN") {
-      createNotificationForNurses(`새 댓글 등록: ${ymd}`, { type: "DAY_COMMENT", targetDate: ymd });
+      createNotificationForNurses(`${ymd} 새 댓글 등록`, { type: "DAY_COMMENT", targetDate: ymd });
     }
     notifyDone("댓글이 등록되었습니다.");
   }
@@ -3146,7 +3150,15 @@ function NotificationsPage({
     void markNotificationRead(n.id);
     const td = String(n.targetDate ?? n.target_date ?? "").trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(td)) return;
-    navigate(`/calendar?ymd=${td}`);
+    const type = String(n.type ?? "").trim();
+    let focus = "";
+    if (type === "DAY_COMMENT") focus = "comments";
+    else if (type === "ADMIN_MEMO") focus = "memo";
+    const q = new URLSearchParams();
+    q.set("ymd", td);
+    q.set("detail", "1");
+    if (focus) q.set("focus", focus);
+    navigate(`/calendar?${q.toString()}`);
   }
 
   return (
@@ -3782,6 +3794,7 @@ function CalendarPage({
   deleteDayComment,
 }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [detailTab, setDetailTab] = useState("list");
   const [ymModalOpen, setYmModalOpen] = useState(false);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
@@ -3797,6 +3810,30 @@ function CalendarPage({
       setDetailModalOpen(false);
     }
   }, [selectedYmd]);
+
+  /** 알림·푸시에서 /calendar?ymd=&detail=1 로 진입 시 해당 날짜 상세 모달을 연다 */
+  useEffect(() => {
+    if (location.pathname !== "/calendar") return;
+    const sp = new URLSearchParams(location.search ?? "");
+    if (sp.get("detail") !== "1") return;
+    const ymd = String(sp.get("ymd") ?? "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return;
+    if (String(selectedYmd ?? "") !== ymd) return;
+
+    const focus = String(sp.get("focus") ?? "").trim();
+    setDetailModalOpen(true);
+    setDetailTab("list");
+    navigate(`/calendar?ymd=${encodeURIComponent(ymd)}`, { replace: true });
+
+    if (focus === "comments" || focus === "memo") {
+      window.setTimeout(() => {
+        const body = document.querySelector(".calendar-detail-modal-body");
+        const sel =
+          focus === "comments" ? "[data-calendar-scroll-target=\"comments\"]" : "[data-calendar-scroll-target=\"duty-memo\"]";
+        body?.querySelector(sel)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }, 280);
+    }
+  }, [location.pathname, location.search, selectedYmd, navigate]);
 
   const selectedCell = selectedYmd ? calendarData.find((c) => c.date === selectedYmd) : null;
   const nurseUsers = users.filter((u) => u.role === "NURSE").sort((a, b) => a.name.localeCompare(b.name, "ko"));
@@ -4459,7 +4496,7 @@ function CalendarPage({
               )}
             </div>
           </div>
-          <div style={{ marginTop: 10 }}>
+          <div style={{ marginTop: 10 }} data-calendar-scroll-target="duty-memo">
             <h4>듀티 메모</h4>
             {isAdmin ? (
               <>
@@ -4474,7 +4511,7 @@ function CalendarPage({
               <p className="help" style={{ whiteSpace: "pre-wrap" }}>{adminDayMemos?.[selectedYmd] || "등록된 메모가 없습니다."}</p>
             )}
           </div>
-          <div className="day-comment-section" style={{ marginTop: 12 }}>
+          <div className="day-comment-section" style={{ marginTop: 12 }} data-calendar-scroll-target="comments">
             {selectedDayComments.length === 0 ? (
               <p className="help">등록된 추가 메모가 없습니다.</p>
             ) : (
