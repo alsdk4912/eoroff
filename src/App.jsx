@@ -3725,6 +3725,7 @@ function CalendarPage({
   const [commentDraft, setCommentDraft] = useState("");
   const [editingCommentId, setEditingCommentId] = useState("");
   const [editingCommentDraft, setEditingCommentDraft] = useState("");
+  const [calendarSubRows, setCalendarSubRows] = useState([]);
 
   useEffect(() => {
     if (!selectedYmd || !selectedCell?.isOffDay) {
@@ -3752,6 +3753,27 @@ function CalendarPage({
     setEditingCommentId("");
     setEditingCommentDraft("");
   }, [selectedYmd]);
+
+  useEffect(() => {
+    if (!selectedYmd) {
+      setCalendarSubRows([]);
+      return;
+    }
+    const targets = (Array.isArray(dayRequests) ? dayRequests : []).filter(
+      (r) => String(r.leaveDate ?? "").slice(0, 10) === selectedYmd && (r.status === "APPLIED" || isWinnerStatus(r.status))
+    );
+    setCalendarSubRows(
+      targets.map((r, idx) => {
+        const first = getSubstituteRecordsForRequest(substituteAssignments, r.id)[0];
+        return {
+          rowId: `cal_sub_${r.id}_${idx}`,
+          requestId: r.id,
+          substituteUserId: String(first?.substituteUserId ?? ""),
+          shiftCode: String(first?.shiftCode ?? ""),
+        };
+      })
+    );
+  }, [selectedYmd, dayRequests, substituteAssignments]);
 
   const selectedDayComments = useMemo(() => {
     if (!selectedYmd) return [];
@@ -3830,6 +3852,49 @@ function CalendarPage({
     setCalendarMonth(ym);
     setSelectedYmd(ymd);
     setLeaveDate(ymd);
+  }
+
+  function updateCalendarSubRow(rowId, key, value) {
+    setCalendarSubRows((prev) => prev.map((r) => (r.rowId === rowId ? { ...r, [key]: value } : r)));
+  }
+
+  function addCalendarSubRow() {
+    const targets = (Array.isArray(dayRequests) ? dayRequests : []).filter(
+      (r) => String(r.leaveDate ?? "").slice(0, 10) === selectedYmd && (r.status === "APPLIED" || isWinnerStatus(r.status))
+    );
+    const used = new Set(calendarSubRows.map((r) => r.requestId));
+    const nextTarget = targets.find((r) => !used.has(r.id));
+    if (!nextTarget) {
+      window.alert?.("추가할 휴가 신청이 없습니다.");
+      return;
+    }
+    setCalendarSubRows((prev) => [
+      ...prev,
+      {
+        rowId: `cal_sub_${nextTarget.id}_${Date.now()}`,
+        requestId: nextTarget.id,
+        substituteUserId: "",
+        shiftCode: "",
+      },
+    ]);
+  }
+
+  async function applyCalendarSubRow(row) {
+    const requestId = String(row?.requestId ?? "");
+    if (!requestId) return;
+    const target = (Array.isArray(dayRequests) ? dayRequests : []).find((r) => r.id === requestId);
+    if (!target) return;
+    const items =
+      row.substituteUserId && row.shiftCode
+        ? [{ substituteUserId: String(row.substituteUserId), shiftCode: String(row.shiftCode) }]
+        : [];
+    if (target.status === "APPLIED") {
+      await selectRequest(requestId, { substituteItems: items });
+      return;
+    }
+    if (isWinnerStatus(target.status)) {
+      saveSubstituteForApprovedRequest(requestId, { substituteItems: items });
+    }
   }
 
   const calendarYMParts = useMemo(() => {
@@ -4142,24 +4207,42 @@ function CalendarPage({
                             <div className="admin-calendar-substitute-section">
                               <h4 className="admin-calendar-substitute-title">대체 근무 지정</h4>
                               <p className="help admin-calendar-substitute-lead">
-                                목록 오른쪽 <strong>확정</strong>은 대체 없이 바로 확정합니다. 대체 인력·코드를 넣은 뒤 확정하려면 아래에서 선택하고 <strong>확정(대체 반영)</strong>을 누르세요.
+                                휴가자 선택 없이 대체 인력/코드만 입력 후 저장합니다.
                               </p>
                               <div className="admin-calendar-substitute-stack">
-                                {dayRequests
-                                  .filter((r) => r.status === "APPLIED" || isWinnerStatus(r.status))
-                                  .map((r) => (
-                                    <AdminDayRequestCard
-                                      key={r.id}
-                                      requestRow={r}
-                                      nurseUsers={nurseUsers}
-                                      users={users}
-                                      substituteRecs={getSubstituteRecordsForRequest(substituteAssignments, r.id)}
-                                      selectRequest={selectRequest}
-                                      rejectRequest={rejectRequest}
-                                      saveSubstituteForApprovedRequest={saveSubstituteForApprovedRequest}
-                                      substituteLayout="calendarPanel"
-                                    />
-                                  ))}
+                                {calendarSubRows.map((row, idx) => (
+                                  <div key={row.rowId} className="admin-calendar-sub-bulk-row">
+                                    <span className="admin-calendar-sub-bulk-label">대체 인력 {idx + 1}</span>
+                                    <select
+                                      value={row.substituteUserId}
+                                      onChange={(e) => updateCalendarSubRow(row.rowId, "substituteUserId", e.target.value)}
+                                    >
+                                      <option value="">대체자 선택</option>
+                                      {nurseUsers.map((u) => (
+                                        <option key={u.id} value={u.id}>
+                                          {u.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <select
+                                      value={row.shiftCode}
+                                      onChange={(e) => updateCalendarSubRow(row.rowId, "shiftCode", e.target.value)}
+                                    >
+                                      <option value="">대체 근무 코드</option>
+                                      {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
+                                        <option key={opt} value={opt}>
+                                          {opt}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <button type="button" onClick={() => void applyCalendarSubRow(row)}>
+                                      저장
+                                    </button>
+                                  </div>
+                                ))}
+                                <button type="button" onClick={addCalendarSubRow}>
+                                  대체 인력 추가
+                                </button>
                               </div>
                             </div>
                           ) : null}
@@ -4226,6 +4309,37 @@ function CalendarPage({
               ))
             )}
           </ul>
+          <div className="admin-day-substitute-grid-wrap">
+            <h4>대체자</h4>
+            <div className="admin-day-substitute-grid">
+              <div className="admin-day-substitute-grid__head">휴가자</div>
+              <div className="admin-day-substitute-grid__head">대체자</div>
+              <div className="admin-day-substitute-grid__head">코드</div>
+              {selectedCell.approvedApplicants.length === 0 ? (
+                <div className="help" style={{ gridColumn: "1 / -1" }}>없음</div>
+              ) : (
+                selectedCell.approvedApplicants.flatMap((item) => {
+                  const subs = getSubstituteRecordsForRequest(substituteAssignments, item.id);
+                  if (!subs.length) {
+                    return [
+                      <span key={`${item.id}_name`} className="admin-day-substitute-grid__cell">{item.name}</span>,
+                      <span key={`${item.id}_sub`} className="admin-day-substitute-grid__cell">-</span>,
+                      <span key={`${item.id}_code`} className="admin-day-substitute-grid__cell">-</span>,
+                    ];
+                  }
+                  return subs.flatMap((s, i) => {
+                    const subName = users.find((u) => u.id === s.substituteUserId)?.name ?? s.substituteUserId;
+                    const code = String(s.shiftCode ?? "").trim() || "-";
+                    return [
+                      <span key={`${item.id}_${i}_name`} className="admin-day-substitute-grid__cell">{i === 0 ? item.name : ""}</span>,
+                      <span key={`${item.id}_${i}_sub`} className="admin-day-substitute-grid__cell">{subName}</span>,
+                      <span key={`${item.id}_${i}_code`} className="admin-day-substitute-grid__cell">{code}</span>,
+                    ];
+                  });
+                })
+              )}
+            </div>
+          </div>
           <div style={{ marginTop: 10 }}>
             <h4>듀티 메모</h4>
             {isAdmin ? (
@@ -4442,11 +4556,11 @@ function AdminPage({ allRequests, users, notes, goldkeys, cancellations, serverM
             기본 기간은 전체 신청 범위입니다. 시작일·종료일을 조정하면 모든 신청/이력 CSV를 내려받을 수 있습니다.
           </p>
           <div className="row wrap export-action-row" style={{ alignItems: "center", gap: 8, marginBottom: 8 }}>
-            <label>
+            <label className="export-date-field">
               시작일{" "}
               <input type="date" value={exportFrom} onChange={(e) => setExportFrom(e.target.value)} />
             </label>
-            <label>
+            <label className="export-date-field">
               종료일{" "}
               <input type="date" value={exportTo} onChange={(e) => setExportTo(e.target.value)} />
             </label>
@@ -4565,54 +4679,10 @@ function AdminPage({ allRequests, users, notes, goldkeys, cancellations, serverM
   );
 }
 
-function SettingsPage({
-  apiKey,
-  setApiKey,
-  syncYear,
-  setSyncYear,
-  syncMonth,
-  setSyncMonth,
-  syncHolidays,
-  holidays,
-  apiMessage,
-  backupMessage,
-  restoreSqlText,
-  setRestoreSqlText,
-  onBackup,
-  onRestore,
-  managedUsers,
-  onResetPassword,
-  accountMessage,
-  onResetLeaveData,
-  resetDataMessage,
-}) {
+function SettingsPage({ managedUsers, onResetPassword, accountMessage }) {
   return (
     <section className="card">
       <h2 className="screen-title">설정</h2>
-      <h3 className="settings-subheading">공휴일 API 동기화</h3>
-      <div className="grid-api">
-        <input type="password" placeholder="(옵션) 서비스키 - 현재는 미사용" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
-        <input type="number" placeholder="연도" value={syncYear} onChange={(e) => setSyncYear(e.target.value)} />
-        <input type="text" placeholder="월(01-12)" value={syncMonth} onChange={(e) => setSyncMonth(e.target.value.padStart(2, "0").slice(0, 2))} />
-        <button onClick={syncHolidays}>동기화 실행</button>
-      </div>
-      <p className="help">현재 저장된 공휴일 수: {holidays.length}건</p>
-      {apiMessage ? <p className="msg">{apiMessage}</p> : null}
-      <hr className="divider" />
-      <h3 className="settings-subheading">SQLite 백업/복구</h3>
-      <div className="row"><button onClick={onBackup}>백업 SQL 다운로드</button></div>
-      <textarea className="sql-textarea" placeholder="복구할 SQL을 여기에 붙여넣고 복구 실행" value={restoreSqlText} onChange={(e) => setRestoreSqlText(e.target.value)} />
-      <div className="row"><button onClick={onRestore}>복구 실행</button></div>
-      {backupMessage ? <p className="msg">{backupMessage}</p> : null}
-      <hr className="divider" />
-      <h3 className="settings-subheading">휴가·골드키 데이터 초기화</h3>
-      <div className="row">
-        <button type="button" onClick={() => void onResetLeaveData()}>
-          휴가·골드키 초기화 실행
-        </button>
-      </div>
-      {resetDataMessage ? <p className="msg">{resetDataMessage}</p> : null}
-      <hr className="divider" />
       <h3 className="settings-subheading">사용자 비밀번호 초기화</h3>
       <ul className="settings-password-reset-list">
         {managedUsers.map((u) => (
