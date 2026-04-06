@@ -3191,6 +3191,7 @@ function laneColor(index) {
 }
 
 function LadderGamePage({ users, requests, ladderResults, createLadderResult, applyLadderResultToNegotiationOrder, currentUserId }) {
+  const location = useLocation();
   const now = toLocalYMD(new Date());
   const [leaveDate, setLeaveDate] = useState(now);
   const [leaveType, setLeaveType] = useState("GENERAL_PRIORITY");
@@ -3252,6 +3253,14 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
     [requests, leaveDate, leaveType]
   );
   const applicantUserIds = useMemo(() => [...new Set(applicantsForTarget)], [applicantsForTarget]);
+
+  useEffect(() => {
+    const qs = new URLSearchParams(location.search || "");
+    const qDate = String(qs.get("leaveDate") ?? "").trim();
+    const qType = String(qs.get("leaveType") ?? "").trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(qDate)) setLeaveDate(qDate);
+    if (["GENERAL_PRIORITY", "GENERAL_NORMAL", "GOLDKEY", "HALF_DAY"].includes(qType)) setLeaveType(qType);
+  }, [location.search]);
 
   function toggleUser(userId) {
     setSelectedUserIds((prev) => (prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]));
@@ -3704,6 +3713,7 @@ function CalendarPage({
   updateDayComment,
   deleteDayComment,
 }) {
+  const navigate = useNavigate();
   const [detailTab, setDetailTab] = useState("list");
   const [ymModalOpen, setYmModalOpen] = useState(false);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
@@ -4208,6 +4218,21 @@ function CalendarPage({
                                     <span className={`negotiation-mode-pill ${isAuto ? "negotiation-mode-pill--auto" : ""}`}>
                                       {isNegotiate ? "협의" : "신청순"}
                                     </span>
+                                  ) : null}
+                                  {isNegotiate && r.status === "APPLIED" ? (
+                                    <button
+                                      type="button"
+                                      className="calendar-ladder-quick-btn"
+                                      onClick={() =>
+                                        navigate(
+                                          `/ladder?leaveDate=${encodeURIComponent(String(r.leaveDate ?? ""))}&leaveType=${encodeURIComponent(
+                                            String(r.leaveType ?? "")
+                                          )}`
+                                        )
+                                      }
+                                    >
+                                      사다리
+                                    </button>
                                   ) : null}
                                   <span
                                     className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status)}`}
