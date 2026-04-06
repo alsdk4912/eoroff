@@ -245,6 +245,20 @@ CREATE INDEX IF NOT EXISTS idx_leave_request_audit_req
 CREATE INDEX IF NOT EXISTS idx_leave_request_audit_created
   ON leave_request_audit(created_at);
 
+-- 관리자 위험 작업 감사(리셋/비밀키 리셋/복구 등)
+CREATE TABLE IF NOT EXISTS admin_ops_audit (
+  id TEXT PRIMARY KEY,
+  action TEXT NOT NULL,
+  actor_user_id TEXT NOT NULL,
+  target_id TEXT,
+  reason TEXT,
+  metadata_json TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_ops_audit_created
+  ON admin_ops_audit(created_at);
+
 -- Web Push 구독(간호사 디바이스)
 CREATE TABLE IF NOT EXISTS push_subscriptions (
   id TEXT PRIMARY KEY,

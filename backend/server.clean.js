@@ -25,6 +25,8 @@ const VAPID_PUBLIC_KEY = String(process.env.VAPID_PUBLIC_KEY || "").trim();
 const VAPID_PRIVATE_KEY = String(process.env.VAPID_PRIVATE_KEY || "").trim();
 const VAPID_SUBJECT = String(process.env.VAPID_SUBJECT || "mailto:admin@example.com").trim();
 const PUSH_ENABLED = Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
+const RESET_CONFIRM_PHRASE = String(process.env.RESET_CONFIRM_PHRASE || "RESET_LEAVE_DATA").trim();
+const ENABLE_SECRET_RESET = String(process.env.ENABLE_SECRET_RESET || "").trim().toLowerCase() === "true";
 if (PUSH_ENABLED) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 } else {
@@ -171,6 +173,31 @@ async function requireAdminUser(actorUserId) {
   const uid = String(actorUserId ?? "").trim();
   if (!uid) return null;
   return await queryOne("SELECT id FROM users WHERE id = ? AND role = 'ADMIN'", uid);
+}
+
+function newAdminAuditId() {
+  return `aop_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+async function insertAdminOpsAudit({
+  action,
+  actorUserId,
+  targetId = null,
+  reason = null,
+  metadata = null,
+  createdAt = new Date().toISOString(),
+}) {
+  await execute(
+    `INSERT INTO admin_ops_audit (id, action, actor_user_id, target_id, reason, metadata_json, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    newAdminAuditId(),
+    String(action || "").trim() || "UNKNOWN",
+    String(actorUserId || "").trim() || "unknown",
+    targetId == null ? null : String(targetId),
+    reason == null ? null : String(reason),
+    metadata == null ? null : JSON.stringify(metadata),
+    String(createdAt || new Date().toISOString())
+  );
 }
 
 async function createNotificationsForAllNurses({ type, message, targetDate = "", leaveRequestId = "" }) {
@@ -717,11 +744,20 @@ app.post("/api/day-comments/:id/delete", async (req, res) => {
 });
 
 app.post("/api/admin/reset-leave-data", async (req, res) => {
-  const { adminUserId } = req.body ?? {};
+  const { adminUserId, confirmPhrase, reason } = req.body ?? {};
   const admin = await queryOne("SELECT id FROM users WHERE id = ? AND role = 'ADMIN'", adminUserId);
   if (!admin) return res.status(403).json({ error: "관리자 권한이 필요합니다." });
+  if (String(confirmPhrase ?? "").trim() !== RESET_CONFIRM_PHRASE) {
+    return res.status(400).json({ error: `confirmPhrase가 올바르지 않습니다. (${RESET_CONFIRM_PHRASE})` });
+  }
   try {
     await resetLeaveDataToDefaults();
+    await insertAdminOpsAudit({
+      action: "RESET_LEAVE_DATA",
+      actorUserId: adminUserId,
+      reason: String(reason ?? "").trim() || "manual-admin-reset",
+      metadata: { endpoint: "/api/admin/reset-leave-data" },
+    });
     res.json({ ok: true });
   } catch (err) {
     console.error("POST /api/admin/reset-leave-data", err);
@@ -735,6 +771,9 @@ app.post("/api/admin/reset-leave-data", async (req, res) => {
  * curl -sS -X POST "$API/api/admin/reset-leave-data-by-secret" -H "Authorization: Bearer $DATA_RESET_SECRET"
  */
 app.post("/api/admin/reset-leave-data-by-secret", async (req, res) => {
+  if (!ENABLE_SECRET_RESET) {
+    return res.status(403).json({ error: "비밀키 리셋 경로가 비활성화되어 있습니다." });
+  }
   const secret = String(process.env.DATA_RESET_SECRET ?? "").trim();
   if (!secret || secret.length < 8) {
     return res.status(503).json({ error: "DATA_RESET_SECRET이 서버에 설정되지 않았습니다." });
@@ -744,8 +783,18 @@ app.post("/api/admin/reset-leave-data-by-secret", async (req, res) => {
   if (token !== secret) {
     return res.status(403).json({ error: "인증에 실패했습니다." });
   }
+  const confirmPhrase = String(req.body?.confirmPhrase ?? "").trim();
+  if (confirmPhrase !== RESET_CONFIRM_PHRASE) {
+    return res.status(400).json({ error: `confirmPhrase가 올바르지 않습니다. (${RESET_CONFIRM_PHRASE})` });
+  }
   try {
     await resetLeaveDataToDefaults();
+    await insertAdminOpsAudit({
+      action: "RESET_LEAVE_DATA_BY_SECRET",
+      actorUserId: "system:secret-reset",
+      reason: String(req.body?.reason ?? "").trim() || "secret-reset",
+      metadata: { endpoint: "/api/admin/reset-leave-data-by-secret" },
+    });
     res.json({ ok: true });
   } catch (err) {
     console.error("POST /api/admin/reset-leave-data-by-secret", err);
@@ -1486,6 +1535,78 @@ app.get("/api/admin/leave-audit-export.csv", async (req, res) => {
   } catch (err) {
     console.error("GET /api/admin/leave-audit-export.csv", err);
     res.status(500).send(String(err?.message || err));
+  }
+});
+
+/**
+ * 관리자 누락 탐지 리포트(패턴 기반):
+ * leave_type + leave_month(YYYY-MM) + requested_date(YYYY-MM-DD) 조합에서 사용자별 신청 건수와 기준치 미달 여부 반환
+ * query: actorUserId(ADMIN), leaveType, leaveMonth, requestedDate, expectedCount(기본 4), onlyNonZero(기본 true)
+ */
+app.get("/api/admin/request-gap-report", async (req, res) => {
+  try {
+    const actorUserId = String(req.query.actorUserId ?? "").trim();
+    if (!(await requireAdminUser(actorUserId))) return res.status(403).json({ error: "관리자 권한이 필요합니다." });
+
+    const leaveType = String(req.query.leaveType ?? "GENERAL_PRIORITY").trim();
+    const leaveMonth = String(req.query.leaveMonth ?? "").trim();
+    const requestedDate = String(req.query.requestedDate ?? "").trim();
+    const expectedCount = Math.max(1, Number(req.query.expectedCount ?? 4));
+    const onlyNonZero = String(req.query.onlyNonZero ?? "true").trim().toLowerCase() !== "false";
+
+    if (!/^\d{4}-\d{2}$/.test(leaveMonth)) {
+      return res.status(400).json({ error: "leaveMonth 형식이 올바르지 않습니다. (YYYY-MM)" });
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
+      return res.status(400).json({ error: "requestedDate 형식이 올바르지 않습니다. (YYYY-MM-DD)" });
+    }
+
+    const nurses = await queryAll("SELECT id, name FROM users WHERE role = 'NURSE' ORDER BY name ASC");
+    const rows = await queryAll(
+      `SELECT user_id, leave_date, requested_at, id
+       FROM requests
+       WHERE deleted_at IS NULL
+         AND leave_type = ?
+         AND SUBSTR(leave_date, 1, 7) = ?
+         AND SUBSTR(requested_at, 1, 10) = ?`,
+      leaveType,
+      leaveMonth,
+      requestedDate
+    );
+    const byUser = new Map();
+    for (const r of rows) {
+      const uid = String(r.user_id ?? "");
+      if (!uid) continue;
+      if (!byUser.has(uid)) byUser.set(uid, []);
+      byUser.get(uid).push(r);
+    }
+
+    const reportRows = [];
+    for (const n of nurses) {
+      const userRows = byUser.get(String(n.id)) || [];
+      if (onlyNonZero && userRows.length === 0) continue;
+      reportRows.push({
+        userId: n.id,
+        userName: n.name,
+        count: userRows.length,
+        expectedCount,
+        missingCount: Math.max(0, expectedCount - userRows.length),
+        dates: userRows.map((r) => String(r.leave_date)).sort(),
+        requestIds: userRows.map((r) => String(r.id)),
+      });
+    }
+
+    const missingUsers = reportRows.filter((r) => r.count < expectedCount);
+    return res.json({
+      ok: true,
+      filters: { leaveType, leaveMonth, requestedDate, expectedCount, onlyNonZero },
+      totalUsers: reportRows.length,
+      missingUsers: missingUsers.length,
+      rows: reportRows,
+    });
+  } catch (err) {
+    console.error("GET /api/admin/request-gap-report", err);
+    return res.status(500).json({ error: String(err?.message || err) });
   }
 });
 
