@@ -155,6 +155,24 @@ function notifyDone(message) {
   window.alert?.(msg);
 }
 
+/** iOS 사파리: 로그인 입력 자동확대/수동확대가 다음 화면에 남는 현상 완화 */
+function resetViewportScaleAfterLogin() {
+  try {
+    const ae = document.activeElement;
+    if (ae && typeof ae.blur === "function") ae.blur();
+    const meta = document.querySelector('meta[name="viewport"]');
+    if (!meta) return;
+    const original = meta.getAttribute("content") || "width=device-width, initial-scale=1.0";
+    meta.setAttribute("content", "width=device-width, initial-scale=1, maximum-scale=1");
+    window.setTimeout(() => {
+      meta.setAttribute("content", original);
+      window.scrollTo(0, 0);
+    }, 80);
+  } catch {
+    /* ignore */
+  }
+}
+
 function urlBase64ToUint8Array(base64String) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -968,6 +986,7 @@ function App() {
 
     try {
       const data = await api.login({ loginName: trimmed, password });
+      resetViewportScaleAfterLogin();
       setAuth({ userId: data.user.id });
       return;
     } catch (e) {
@@ -997,6 +1016,7 @@ function App() {
       if (String(password) !== "1234") {
         throw new Error("이름 또는 비밀번호가 올바르지 않습니다.");
       }
+      resetViewportScaleAfterLogin();
       setAuth({ userId: matches[0].id });
     }
   }

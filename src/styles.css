@@ -1285,6 +1285,11 @@ button.login-secondary-button:hover {
   gap: 12px;
 }
 
+/* iOS Safari 자동 확대 방지(로그인 입력은 16px 이상) */
+.login-form input:not([type="checkbox"]) {
+  font-size: 16px;
+}
+
 /* ----- Tables ----- */
 .table-wrap {
   overflow-x: auto;
