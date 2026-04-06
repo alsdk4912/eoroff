@@ -27,7 +27,7 @@ import { defaultGoldkeyQuotaForName } from "./data/goldkeyQuotas.js";
 import { consumeManualVersionReloadToast, restoreHashAfterReload, useAppUpdate } from "./useAppUpdate.js";
 
 /** 오프라인 저장소 버전 — 배포 시 키 올리면 예전 휴가·골드키 캐시 무시(빈 신청·기본 골드키로 로드) */
-const LS_REQUESTS = "or.requests.v3";
+const LS_REQUESTS = "or.requests.v4";
 const LS_NOTES = "or.notes.v3";
 const LS_CANCELLATIONS = "or.cancellations.v3";
 const LS_SELECTIONS = "or.selections.v3";
@@ -49,6 +49,7 @@ function dropStaleOfflineLeaveKeys() {
     [
       "or.requests",
       "or.requests.v2",
+      "or.requests.v3",
       "or.notes",
       "or.notes.v2",
       "or.cancellations",
@@ -590,7 +591,12 @@ function App() {
 
   function applyBootstrapPayload(data) {
     setUsers(data.users.map((u) => ({ id: u.id, name: u.name, role: u.role, employeeNo: u.employee_no })));
-    setRequests(data.requests.map(mapRequestRow));
+    const mappedReqs = (data.requests ?? []).map(mapRequestRow);
+    const uniqById = new Map();
+    for (const r of mappedReqs) {
+      if (r?.id && !uniqById.has(r.id)) uniqById.set(r.id, r);
+    }
+    setRequests([...uniqById.values()]);
     setNotes(data.notes.map((n) => ({ id: n.id, leaveRequestId: n.leave_request_id, content: n.content, agreedOrder: n.agreed_order })));
     setCancellations(
       data.cancellations.map((c) => ({
@@ -4914,6 +4920,19 @@ function useLocalStorage(key, initialValue) {
   return [value, setValue];
 }
 
+/** 같은 날·같은 사람·같은 상태·같은 유형의 중복 행(로컬 캐시 등)은 칩 하나만 표시 */
+function dedupeRequestsForCalendarChips(sortedDayReqs) {
+  const seen = new Set();
+  const out = [];
+  for (const r of sortedDayReqs) {
+    const key = `${String(r.userId ?? "")}|${String(r.leaveDate ?? "")}|${String(r.status ?? "")}|${String(r.leaveType ?? "")}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(r);
+  }
+  return out;
+}
+
 function buildMonthMatrix(year, month, allRequests, users, holidaysCache) {
   const first = new Date(year, month - 1, 1);
   const start = new Date(first);
@@ -4940,7 +4959,8 @@ function buildMonthMatrix(year, month, allRequests, users, holidaysCache) {
     const activeDayReqs = dayReqs.filter((r) => r.status !== "CANCELLED");
     const hasGoldkeyRequest = activeDayReqs.some((r) => r.leaveType === "GOLDKEY");
     const sortedDayReqs = [...dayReqs].sort((a, b) => compareSameLeaveDateRequests(a, b, users));
-    const displayApplicants = sortedDayReqs.map((r) => ({
+    const forDisplay = dedupeRequestsForCalendarChips(sortedDayReqs);
+    const displayApplicants = forDisplay.map((r) => ({
       id: r.id,
       userId: r.userId,
       leaveType: r.leaveType,
