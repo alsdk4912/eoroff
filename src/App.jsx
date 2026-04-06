@@ -2053,17 +2053,15 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
                 }
                 return "-";
               })();
-              const strike = (node) => (isCancelled ? <span className="my-requests-cancelled-strike">{node}</span> : node);
-              const typePill = (
-                <span className={`leave-type-pill ${buildLeaveChipClass(r.leaveType, r.status)}`}>{leaveTypeLabel(r.leaveType)}</span>
-              );
               return (
                 <tr key={r.id} className={isCancelled ? "request-cancelled-row" : ""}>
-                  <td className="my-requests-col my-requests-col--date">{strike(formatLeaveDateShort(r.leaveDate))}</td>
-                  <td className="my-requests-col my-requests-col--type">{strike(typePill)}</td>
-                  <td className="my-requests-col my-requests-col--nature">{strike(leaveNatureLabel(r.leaveNature))}</td>
-                  <td className="my-requests-col my-requests-col--status">{strike(statusLabel(r.status))}</td>
-                  <td className="my-requests-col my-requests-col--time">{strike(formatRequestedAtCompact(r.requestedAt))}</td>
+                  <td className="my-requests-col my-requests-col--date">{formatLeaveDateShort(r.leaveDate)}</td>
+                  <td className="my-requests-col my-requests-col--type">
+                    <span className={`leave-type-pill ${buildLeaveChipClass(r.leaveType, r.status)}`}>{leaveTypeLabel(r.leaveType)}</span>
+                  </td>
+                  <td className="my-requests-col my-requests-col--nature">{leaveNatureLabel(r.leaveNature)}</td>
+                  <td className="my-requests-col my-requests-col--status">{statusLabel(r.status)}</td>
+                  <td className="my-requests-col my-requests-col--time">{formatRequestedAtCompact(r.requestedAt)}</td>
                   <td className="my-requests-col my-requests-col--action">{actionCell}</td>
                 </tr>
               );
