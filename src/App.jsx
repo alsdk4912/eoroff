@@ -1236,22 +1236,35 @@ function App() {
   async function selectRequest(requestId, substituteOpts = null) {
     const target = requests.find((r) => r.id === requestId);
     if (!target) return;
-    const subUid = substituteOpts?.substituteUserId ? String(substituteOpts.substituteUserId).trim() : "";
-    const subCode = substituteOpts?.shiftCode ? String(substituteOpts.shiftCode).trim() : "";
-    if (subUid || subCode) {
+    const rawItems = Array.isArray(substituteOpts?.substituteItems)
+      ? substituteOpts.substituteItems
+      : [{ substituteUserId: substituteOpts?.substituteUserId ?? "", shiftCode: substituteOpts?.shiftCode ?? "" }];
+    const normalizedItems = rawItems
+      .map((it, idx) => ({
+        id: String(it?.id ?? `sub_${Date.now()}_${idx}`).trim(),
+        requestId,
+        leaveDate: target.leaveDate,
+        leaveUserId: target.userId,
+        substituteUserId: String(it?.substituteUserId ?? "").trim(),
+        shiftCode: String(it?.shiftCode ?? "").trim(),
+      }))
+      .filter((it) => it.substituteUserId || it.shiftCode);
+    const subItems = [];
+    for (const it of normalizedItems) {
       const err = validateSubstitutePayload({
         leaveDate: target.leaveDate,
         leaveUserId: target.userId,
-        substituteUserId: subUid,
-        shiftCode: subCode,
+        substituteUserId: it.substituteUserId,
+        shiftCode: it.shiftCode,
         requests,
-        substituteAssignments,
+        substituteAssignments: [...(Array.isArray(substituteAssignments) ? substituteAssignments : []), ...subItems],
         excludeRequestId: requestId,
       });
       if (err) {
         window.alert?.(err);
         return;
       }
+      subItems.push(it);
     }
     const payload = {
       selectionId: `ls_${Date.now()}`,
@@ -1262,19 +1275,8 @@ function App() {
     setSelections((prev) => [...prev, { id: payload.selectionId, leaveRequestId: requestId, ...payload }]);
     setSubstituteAssignments((prev) => {
       const rest = (Array.isArray(prev) ? prev : []).filter((x) => x.requestId !== requestId);
-      if (!subUid || !subCode) return rest;
-      const existing = (Array.isArray(prev) ? prev : []).find((x) => x.requestId === requestId);
-      return [
-        ...rest,
-        {
-          id: existing?.id ?? `sub_${Date.now()}`,
-          requestId,
-          leaveDate: target.leaveDate,
-          leaveUserId: target.userId,
-          substituteUserId: subUid,
-          shiftCode: subCode,
-        },
-      ];
+      if (subItems.length === 0) return rest;
+      return [...rest, ...subItems];
     });
     if (serverMode) {
       try {
@@ -1297,47 +1299,51 @@ function App() {
     }
   }
 
-  function saveSubstituteForApprovedRequest(requestId, { substituteUserId, shiftCode }) {
+  function saveSubstituteForApprovedRequest(requestId, { substituteItems = [], substituteUserId, shiftCode }) {
     const target = requests.find((r) => r.id === requestId);
     if (!target || !isWinnerStatus(target.status)) {
-      window.alert?.("승인된 신청만 대체 근무를 저장할 수 있습니다.");
+      window.alert?.("확정된 신청만 대체 근무를 저장할 수 있습니다.");
       return;
     }
-    const su = String(substituteUserId ?? "").trim();
-    const sc = String(shiftCode ?? "").trim();
-    if (!su && !sc) {
+    const rawItems = Array.isArray(substituteItems)
+      ? substituteItems
+      : [{ substituteUserId: substituteUserId ?? "", shiftCode: shiftCode ?? "" }];
+    const normalizedItems = rawItems
+      .map((it, idx) => ({
+        id: String(it?.id ?? `sub_${Date.now()}_${idx}`).trim(),
+        requestId,
+        leaveDate: target.leaveDate,
+        leaveUserId: target.userId,
+        substituteUserId: String(it?.substituteUserId ?? "").trim(),
+        shiftCode: String(it?.shiftCode ?? "").trim(),
+      }))
+      .filter((it) => it.substituteUserId || it.shiftCode);
+    if (normalizedItems.length === 0) {
       setSubstituteAssignments((prev) => (Array.isArray(prev) ? prev : []).filter((x) => x.requestId !== requestId));
       notifyDone("대체 근무 지정을 삭제했습니다.");
       return;
     }
-    const err = validateSubstitutePayload({
-      leaveDate: target.leaveDate,
-      leaveUserId: target.userId,
-      substituteUserId: su,
-      shiftCode: sc,
-      requests,
-      substituteAssignments,
-      excludeRequestId: requestId,
-    });
-    if (err) {
-      window.alert?.(err);
-      return;
+    const subItems = [];
+    for (const it of normalizedItems) {
+      const err = validateSubstitutePayload({
+        leaveDate: target.leaveDate,
+        leaveUserId: target.userId,
+        substituteUserId: it.substituteUserId,
+        shiftCode: it.shiftCode,
+        requests,
+        substituteAssignments: [...(Array.isArray(substituteAssignments) ? substituteAssignments : []), ...subItems],
+        excludeRequestId: requestId,
+      });
+      if (err) {
+        window.alert?.(err);
+        return;
+      }
+      subItems.push(it);
     }
     setSubstituteAssignments((prev) => {
       const list = Array.isArray(prev) ? prev : [];
       const rest = list.filter((x) => x.requestId !== requestId);
-      const existing = list.find((x) => x.requestId === requestId);
-      return [
-        ...rest,
-        {
-          id: existing?.id ?? `sub_${Date.now()}`,
-          requestId,
-          leaveDate: target.leaveDate,
-          leaveUserId: target.userId,
-          substituteUserId: su,
-          shiftCode: sc,
-        },
-      ];
+      return [...rest, ...subItems];
     });
     notifyDone("대체 근무가 저장되었습니다.");
   }
@@ -1352,7 +1358,7 @@ function App() {
         await bootstrap();
         if (target) {
           createNotificationForNurses(
-            `휴가 처리 결과 안내: 거절 ${target.leaveDate} · ${leaveTypeLabel(target.leaveType)}`,
+            `휴가 처리 결과 안내: 반려 ${target.leaveDate} · ${leaveTypeLabel(target.leaveType)}`,
             { type: "REQUEST_REJECTED", targetDate: target.leaveDate, leaveRequestId: target.id }
           );
         }
@@ -1361,7 +1367,7 @@ function App() {
       }
     } else if (target) {
       createNotificationForNurses(
-        `휴가 처리 결과 안내: 거절 ${target.leaveDate} · ${leaveTypeLabel(target.leaveType)}`,
+        `휴가 처리 결과 안내: 반려 ${target.leaveDate} · ${leaveTypeLabel(target.leaveType)}`,
         { type: "REQUEST_REJECTED", targetDate: target.leaveDate, leaveRequestId: target.id }
       );
     }
@@ -2142,8 +2148,8 @@ function baseMonthCodeForNurseName(name, ymd, workRows) {
   return v != null && String(v).trim() !== "" ? String(v).trim() : "—";
 }
 
-function getSubstituteRecordForRequest(substituteAssignments, requestId) {
-  return (Array.isArray(substituteAssignments) ? substituteAssignments : []).find((x) => x.requestId === requestId) ?? null;
+function getSubstituteRecordsForRequest(substituteAssignments, requestId) {
+  return (Array.isArray(substituteAssignments) ? substituteAssignments : []).filter((x) => x.requestId === requestId);
 }
 
 /**
@@ -2556,21 +2562,49 @@ function AdminDayRequestCard({
   requestRow,
   nurseUsers,
   users,
-  substituteRec,
+  substituteRecs,
   selectRequest,
   rejectRequest,
   saveSubstituteForApprovedRequest,
   substituteLayout = "default",
 }) {
-  const [subId, setSubId] = useState(substituteRec?.substituteUserId ?? "");
-  const [code, setCode] = useState(substituteRec?.shiftCode ?? "");
+  const [subRows, setSubRows] = useState([{ rowId: `sub_row_${requestRow.id}_0`, substituteUserId: "", shiftCode: "" }]);
   useEffect(() => {
-    setSubId(substituteRec?.substituteUserId ?? "");
-    setCode(substituteRec?.shiftCode ?? "");
-  }, [requestRow.id, substituteRec?.substituteUserId, substituteRec?.shiftCode]);
+    const seeded = Array.isArray(substituteRecs) ? substituteRecs : [];
+    if (seeded.length > 0) {
+      setSubRows(
+        seeded.map((s, idx) => ({
+          rowId: String(s?.id ?? `sub_row_${requestRow.id}_${idx}`),
+          substituteUserId: String(s?.substituteUserId ?? ""),
+          shiftCode: String(s?.shiftCode ?? ""),
+        }))
+      );
+      return;
+    }
+    setSubRows([{ rowId: `sub_row_${requestRow.id}_0`, substituteUserId: "", shiftCode: "" }]);
+  }, [requestRow.id, substituteRecs]);
   const nm = users.find((u) => u.id === requestRow.userId)?.name ?? requestRow.userId;
   const approved = isWinnerStatus(requestRow.status);
   const calendarPanel = substituteLayout === "calendarPanel";
+  function updateSubRow(rowId, key, value) {
+    setSubRows((prev) => prev.map((r) => (r.rowId === rowId ? { ...r, [key]: value } : r)));
+  }
+  function addSubRow() {
+    setSubRows((prev) => [...prev, { rowId: `sub_row_${requestRow.id}_${Date.now()}`, substituteUserId: "", shiftCode: "" }]);
+  }
+  function removeSubRow(rowId) {
+    setSubRows((prev) => {
+      const next = prev.filter((r) => r.rowId !== rowId);
+      return next.length > 0 ? next : [{ rowId: `sub_row_${requestRow.id}_fallback`, substituteUserId: "", shiftCode: "" }];
+    });
+  }
+  const saveItems = subRows
+    .map((r, idx) => ({
+      id: `sub_${requestRow.id}_${idx}`,
+      substituteUserId: String(r.substituteUserId ?? "").trim(),
+      shiftCode: String(r.shiftCode ?? "").trim(),
+    }))
+    .filter((r) => r.substituteUserId && r.shiftCode);
   return (
     <div className={`admin-day-request-item${calendarPanel ? " admin-day-request-item--calendar-panel" : ""}`}>
       <div className="admin-day-request-head">
@@ -2581,35 +2615,45 @@ function AdminDayRequestCard({
       </div>
       {requestRow.status === "APPLIED" ? (
         <div className="admin-day-sub-grid">
-          <label className="admin-day-field">
-            <span className="field-label">대체 인력</span>
-            <select value={subId} onChange={(e) => setSubId(e.target.value)}>
-              <option value="">(선택 없이 승인 가능)</option>
-              {nurseUsers.map((u) => (
-                <option key={u.id} value={u.id} disabled={u.id === requestRow.userId}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="admin-day-field">
-            <span className="field-label">대체 근무 코드</span>
-            <select value={code} onChange={(e) => setCode(e.target.value)}>
-              <option value="">—</option>
-              {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
-          </label>
+          {subRows.map((row, idx) => (
+            <div key={row.rowId} className="admin-day-sub-row">
+              <label className="admin-day-field">
+                <span className="field-label">대체 인력 {idx + 1}</span>
+                <select value={row.substituteUserId} onChange={(e) => updateSubRow(row.rowId, "substituteUserId", e.target.value)}>
+                  <option value="">(선택 없이 확정 가능)</option>
+                  {nurseUsers.map((u) => (
+                    <option key={u.id} value={u.id} disabled={u.id === requestRow.userId}>
+                      {u.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="admin-day-field">
+                <span className="field-label">대체 근무 코드</span>
+                <select value={row.shiftCode} onChange={(e) => updateSubRow(row.rowId, "shiftCode", e.target.value)}>
+                  <option value="">—</option>
+                  {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button type="button" className="admin-day-sub-remove-btn" onClick={() => removeSubRow(row.rowId)}>
+                삭제
+              </button>
+            </div>
+          ))}
           <div className="admin-day-actions">
-            <button type="button" className="admin-day-primary-btn" onClick={() => void selectRequest(requestRow.id, { substituteUserId: subId, shiftCode: code })}>
-              {calendarPanel ? "승인(대체 반영)" : "승인 후 저장"}
+            <button type="button" onClick={addSubRow}>
+              대체 인력 추가
+            </button>
+            <button type="button" className="admin-day-primary-btn" onClick={() => void selectRequest(requestRow.id, { substituteItems: saveItems })}>
+              {calendarPanel ? "확정(대체 반영)" : "확정 후 저장"}
             </button>
             {calendarPanel ? null : (
               <button type="button" onClick={() => void rejectRequest(requestRow.id)}>
-                거절
+                반려
               </button>
             )}
           </div>
@@ -2617,41 +2661,51 @@ function AdminDayRequestCard({
       ) : null}
       {approved ? (
         <div className="admin-day-sub-grid admin-day-sub-grid--approved">
-          <p className="help admin-day-hint">승인됨 · 대체 근무만 수정·삭제할 수 있습니다.</p>
-          <label className="admin-day-field">
-            <span className="field-label">대체 인력</span>
-            <select value={subId} onChange={(e) => setSubId(e.target.value)}>
-              <option value="">—</option>
-              {nurseUsers.map((u) => (
-                <option key={u.id} value={u.id} disabled={u.id === requestRow.userId}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="admin-day-field">
-            <span className="field-label">대체 근무 코드</span>
-            <select value={code} onChange={(e) => setCode(e.target.value)}>
-              <option value="">—</option>
-              {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
-          </label>
+          <p className="help admin-day-hint">확정됨 · 대체 근무만 수정·삭제할 수 있습니다.</p>
+          {subRows.map((row, idx) => (
+            <div key={row.rowId} className="admin-day-sub-row">
+              <label className="admin-day-field">
+                <span className="field-label">대체 인력 {idx + 1}</span>
+                <select value={row.substituteUserId} onChange={(e) => updateSubRow(row.rowId, "substituteUserId", e.target.value)}>
+                  <option value="">—</option>
+                  {nurseUsers.map((u) => (
+                    <option key={u.id} value={u.id} disabled={u.id === requestRow.userId}>
+                      {u.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="admin-day-field">
+                <span className="field-label">대체 근무 코드</span>
+                <select value={row.shiftCode} onChange={(e) => updateSubRow(row.rowId, "shiftCode", e.target.value)}>
+                  <option value="">—</option>
+                  {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button type="button" className="admin-day-sub-remove-btn" onClick={() => removeSubRow(row.rowId)}>
+                삭제
+              </button>
+            </div>
+          ))}
           <div className="admin-day-actions">
-            <button type="button" className="admin-day-primary-btn" onClick={() => saveSubstituteForApprovedRequest(requestRow.id, { substituteUserId: subId, shiftCode: code })}>
+            <button type="button" onClick={addSubRow}>
+              대체 인력 추가
+            </button>
+            <button type="button" className="admin-day-primary-btn" onClick={() => saveSubstituteForApprovedRequest(requestRow.id, { substituteItems: saveItems })}>
               대체 저장
             </button>
-            <button type="button" onClick={() => saveSubstituteForApprovedRequest(requestRow.id, { substituteUserId: "", shiftCode: "" })}>
+            <button type="button" onClick={() => saveSubstituteForApprovedRequest(requestRow.id, { substituteItems: [] })}>
               대체 삭제
             </button>
           </div>
         </div>
       ) : null}
       {requestRow.status === "REJECTED" ? (
-        <p className="help">거절된 신청입니다.</p>
+        <p className="help">반려된 신청입니다.</p>
       ) : null}
     </div>
   );
@@ -2669,8 +2723,8 @@ function AdminDayReviewTab({ users, requests, substituteAssignments, selectReque
 
   return (
     <section className="card admin-day-review-card">
-      <h2 className="screen-title">승인 · 대체 근무</h2>
-      <p className="help page-lead">날짜를 고른 뒤, 신청별로 승인·거절과 대체 번표를 한 번에 처리합니다.</p>
+      <h2 className="screen-title">확정 · 대체 근무</h2>
+      <p className="help page-lead">날짜를 고른 뒤, 신청별로 확정·반려와 대체 번표를 한 번에 처리합니다.</p>
       <div className="weekly-toolbar row wrap">
         <label className="weekly-date-label">
           처리 날짜
@@ -2687,7 +2741,7 @@ function AdminDayReviewTab({ users, requests, substituteAssignments, selectReque
                 requestRow={r}
                 nurseUsers={nurseUsers}
                 users={users}
-                substituteRec={getSubstituteRecordForRequest(substituteAssignments, r.id)}
+                substituteRecs={getSubstituteRecordsForRequest(substituteAssignments, r.id)}
                 selectRequest={selectRequest}
                 rejectRequest={rejectRequest}
                 saveSubstituteForApprovedRequest={saveSubstituteForApprovedRequest}
@@ -2798,17 +2852,6 @@ function DashboardPage({
           >
             주간 번표
           </button>
-          {isAdmin ? (
-            <button
-              type="button"
-              role="tab"
-              aria-selected={dashTab === "adminDay"}
-              className={`segmented-btn${dashTab === "adminDay" ? " segmented-btn--active" : ""}`}
-              onClick={() => setDashTab("adminDay")}
-            >
-              승인·대체
-            </button>
-          ) : null}
         </div>
       ) : (
         <div className="segmented-wrap segmented-wrap--multi" role="tablist" aria-label="현황 구분">
@@ -2839,17 +2882,6 @@ function DashboardPage({
           >
             주간 번표
           </button>
-          {isAdmin ? (
-            <button
-              type="button"
-              role="tab"
-              aria-selected={dashTab === "adminDay"}
-              className={`segmented-btn${dashTab === "adminDay" ? " segmented-btn--active" : ""}`}
-              onClick={() => setDashTab("adminDay")}
-            >
-              승인·대체
-            </button>
-          ) : null}
         </div>
       )}
       {currentRole !== "ANESTHESIA" && dashTab === "summary" ? (
@@ -2967,16 +2999,6 @@ function DashboardPage({
           isAdmin={isAdmin}
         />
       ) : null}
-      {isAdmin && dashTab === "adminDay" ? (
-        <AdminDayReviewTab
-          users={users}
-          requests={requests}
-          substituteAssignments={substituteAssignments}
-          selectRequest={selectRequest}
-          rejectRequest={rejectRequest}
-          saveSubstituteForApprovedRequest={saveSubstituteForApprovedRequest}
-        />
-      ) : null}
     </>
   );
 }
@@ -3031,7 +3053,7 @@ function AppBottomNav({ isAdmin, role }) {
           현황
         </NavLink>
         <NavLink to="/admin" className={navLinkClass}>
-          배정
+          기록
         </NavLink>
         <NavLink to="/ladder" className={navLinkClass}>
           추첨
@@ -4104,10 +4126,10 @@ function CalendarPage({
                                   {isAdmin && r.status === "APPLIED" ? (
                                     <div className="admin-calendar-applicant-actions">
                                       <button type="button" className="admin-calendar-btn admin-calendar-btn--approve" onClick={() => void selectRequest(r.id, {})}>
-                                        승인
+                                        확정
                                       </button>
                                       <button type="button" className="admin-calendar-btn admin-calendar-btn--reject" onClick={() => void rejectRequest(r.id)}>
-                                        거절
+                                        반려
                                       </button>
                                     </div>
                                   ) : null}
@@ -4120,7 +4142,7 @@ function CalendarPage({
                             <div className="admin-calendar-substitute-section">
                               <h4 className="admin-calendar-substitute-title">대체 근무 지정</h4>
                               <p className="help admin-calendar-substitute-lead">
-                                목록 오른쪽 <strong>승인</strong>은 대체 없이 바로 승인합니다. 대체 인력·코드를 넣은 뒤 승인하려면 아래에서 선택하고 <strong>승인(대체 반영)</strong>을 누르세요.
+                                목록 오른쪽 <strong>확정</strong>은 대체 없이 바로 확정합니다. 대체 인력·코드를 넣은 뒤 확정하려면 아래에서 선택하고 <strong>확정(대체 반영)</strong>을 누르세요.
                               </p>
                               <div className="admin-calendar-substitute-stack">
                                 {dayRequests
@@ -4131,7 +4153,7 @@ function CalendarPage({
                                       requestRow={r}
                                       nurseUsers={nurseUsers}
                                       users={users}
-                                      substituteRec={getSubstituteRecordForRequest(substituteAssignments, r.id)}
+                                      substituteRecs={getSubstituteRecordsForRequest(substituteAssignments, r.id)}
                                       selectRequest={selectRequest}
                                       rejectRequest={rejectRequest}
                                       saveSubstituteForApprovedRequest={saveSubstituteForApprovedRequest}
@@ -4188,6 +4210,18 @@ function CalendarPage({
               selectedCell.approvedApplicants.map((item) => (
                 <li key={item.id}>
                   {item.name} ({typeFullLabel(item.leaveType)})
+                  {(() => {
+                    const subs = getSubstituteRecordsForRequest(substituteAssignments, item.id);
+                    if (!subs.length) return "";
+                    const labels = subs
+                      .map((s) => {
+                        const subName = users.find((u) => u.id === s.substituteUserId)?.name ?? s.substituteUserId;
+                        const code = String(s.shiftCode ?? "").trim();
+                        return code ? `${subName}(${code})` : subName;
+                      })
+                      .join(", ");
+                    return ` · 대체: ${labels}`;
+                  })()}
                 </li>
               ))
             )}
@@ -4308,15 +4342,64 @@ function CalendarPage({
 }
 
 function AdminPage({ allRequests, users, notes, goldkeys, cancellations, serverMode, adminUserId }) {
+  const [adminSubTab, setAdminSubTab] = useState("export");
   const [nameSearch, setNameSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("ALL");
+  const [recordTypeFilter, setRecordTypeFilter] = useState("ALL");
+  const minLeaveDate = useMemo(() => {
+    const dates = (Array.isArray(allRequests) ? allRequests : []).map((r) => String(r.leaveDate ?? "").slice(0, 10)).filter(Boolean);
+    if (dates.length === 0) return `${new Date().getFullYear()}-01-01`;
+    return dates.sort()[0];
+  }, [allRequests]);
+  const maxLeaveDate = useMemo(() => {
+    const dates = (Array.isArray(allRequests) ? allRequests : []).map((r) => String(r.leaveDate ?? "").slice(0, 10)).filter(Boolean);
+    if (dates.length === 0) return `${new Date().getFullYear()}-12-31`;
+    return dates.sort()[dates.length - 1];
+  }, [allRequests]);
   const [exportFrom, setExportFrom] = useState(() => {
-    const y = new Date().getFullYear();
-    return `${y}-01-01`;
+    const dates = (Array.isArray(allRequests) ? allRequests : []).map((r) => String(r.leaveDate ?? "").slice(0, 10)).filter(Boolean);
+    if (dates.length === 0) return `${new Date().getFullYear()}-01-01`;
+    return dates.sort()[0];
   });
-  const [exportTo, setExportTo] = useState(() => toLocalYMD(new Date()));
-  const rows = allRequests
-    .filter((r) => r.status === "APPROVED" || r.status === "REJECTED")
+  const [exportTo, setExportTo] = useState(() => {
+    const dates = (Array.isArray(allRequests) ? allRequests : []).map((r) => String(r.leaveDate ?? "").slice(0, 10)).filter(Boolean);
+    if (dates.length === 0) return `${new Date().getFullYear()}-12-31`;
+    return dates.sort()[dates.length - 1];
+  });
+  const applyRows = (Array.isArray(allRequests) ? allRequests : []).map((r) => ({
+    id: `apply_${r.id}`,
+    requestId: r.id,
+    recordType: "APPLY",
+    userId: r.userId,
+    leaveDate: r.leaveDate,
+    leaveType: r.leaveType,
+    leaveNature: r.leaveNature,
+    status: r.status,
+    eventAt: r.requestedAt,
+    note: "",
+    negotiationOrder: r.negotiationOrder,
+  }));
+  const cancelRows = (Array.isArray(cancellations) ? cancellations : [])
+    .map((c) => {
+      const req = allRequests.find((r) => r.id === c.leaveRequestId);
+      if (!req) return null;
+      return {
+        id: `cancel_${c.id}`,
+        requestId: req.id,
+        recordType: "CANCEL",
+        userId: req.userId,
+        leaveDate: req.leaveDate,
+        leaveType: req.leaveType,
+        leaveNature: req.leaveNature,
+        status: req.status,
+        eventAt: c.cancelledAt,
+        note: c.cancelReason || "",
+        negotiationOrder: req.negotiationOrder,
+      };
+    })
+    .filter(Boolean);
+  const rows = [...applyRows, ...cancelRows]
+    .filter((r) => (recordTypeFilter === "ALL" ? true : r.recordType === recordTypeFilter))
     .filter((r) => {
       const name = users.find((u) => u.id === r.userId)?.name ?? "";
       const matchedName = name.toLowerCase().includes(nameSearch.toLowerCase());
@@ -4325,31 +4408,40 @@ function AdminPage({ allRequests, users, notes, goldkeys, cancellations, serverM
     })
     .sort((a, b) => {
       if (a.leaveDate !== b.leaveDate) return a.leaveDate.localeCompare(b.leaveDate);
-      return a.requestedAt.localeCompare(b.requestedAt);
+      return String(a.eventAt ?? "").localeCompare(String(b.eventAt ?? ""));
     });
-  const cancellationRows = (Array.isArray(cancellations) ? cancellations : [])
-    .map((c) => {
-      const req = allRequests.find((r) => r.id === c.leaveRequestId);
-      if (!req) return null;
-      return {
-        ...c,
-        leaveDate: req.leaveDate,
-        leaveType: req.leaveType,
-        userId: req.userId,
-      };
-    })
-    .filter(Boolean)
-    .filter((c) => c.leaveType === "GOLDKEY")
-    .sort((a, b) => String(b.cancelledAt ?? "").localeCompare(String(a.cancelledAt ?? "")));
   return (
     <>
-      {serverMode && adminUserId ? (
+      <section className="card">
+        <div className="segmented-wrap segmented-wrap--multi" role="tablist" aria-label="기록 하위 탭">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={adminSubTab === "export"}
+            className={`segmented-btn${adminSubTab === "export" ? " segmented-btn--active" : ""}`}
+            onClick={() => setAdminSubTab("export")}
+          >
+            이력출력
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={adminSubTab === "records"}
+            className={`segmented-btn${adminSubTab === "records" ? " segmented-btn--active" : ""}`}
+            onClick={() => setAdminSubTab("records")}
+          >
+            신청·취소기록
+          </button>
+        </div>
+      </section>
+
+      {adminSubTab === "export" && serverMode && adminUserId ? (
         <section className="card">
-          <h2 className="screen-title">데이터 내보내기 (CSV)</h2>
+          <h2 className="screen-title">이력 출력 (CSV)</h2>
           <p className="help page-lead">
-            휴가일 또는 처리 시각 구간을 지정해 Excel에서 열 수 있는 CSV를 받습니다. 원장 복구는 Turso 등 DB 백업이 기준이며, CSV는 감사·열람용입니다.
+            기본 기간은 전체 신청 범위입니다. 시작일·종료일을 조정하면 모든 신청/이력 CSV를 내려받을 수 있습니다.
           </p>
-          <div className="row wrap" style={{ alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <div className="row wrap export-action-row" style={{ alignItems: "center", gap: 8, marginBottom: 8 }}>
             <label>
               시작일{" "}
               <input type="date" value={exportFrom} onChange={(e) => setExportFrom(e.target.value)} />
@@ -4358,6 +4450,12 @@ function AdminPage({ allRequests, users, notes, goldkeys, cancellations, serverM
               종료일{" "}
               <input type="date" value={exportTo} onChange={(e) => setExportTo(e.target.value)} />
             </label>
+            <button type="button" onClick={() => {
+              setExportFrom(minLeaveDate);
+              setExportTo(maxLeaveDate);
+            }}>
+              전체 기간
+            </button>
             <button
               type="button"
               onClick={async () => {
@@ -4379,7 +4477,7 @@ function AdminPage({ allRequests, users, notes, goldkeys, cancellations, serverM
                 }
               }}
             >
-              신청·상태 CSV
+              신청·상태
             </button>
             <button
               type="button"
@@ -4402,16 +4500,23 @@ function AdminPage({ allRequests, users, notes, goldkeys, cancellations, serverM
                 }
               }}
             >
-              상태 변경 이력 CSV
+              상태변경 이력
             </button>
           </div>
         </section>
       ) : null}
+
+      {adminSubTab === "records" ? (
       <section className="card">
-        <h2 className="screen-title">승인·거절 기록</h2>
+        <h2 className="screen-title">신청·취소 기록</h2>
         <p className="help page-lead">휴가일 기준으로 정렬됩니다. 이름·유형으로 좁힐 수 있습니다.</p>
         <div className="row wrap">
           <input placeholder="간호사 이름 검색" value={nameSearch} onChange={(e) => setNameSearch(e.target.value)} />
+          <select value={recordTypeFilter} onChange={(e) => setRecordTypeFilter(e.target.value)}>
+            <option value="ALL">전체 기록</option>
+            <option value="APPLY">휴가신청건</option>
+            <option value="CANCEL">휴가취소건</option>
+          </select>
           <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
             <option value="ALL">전체 유형</option>
             <option value="GOLDKEY">골드키</option>
@@ -4424,18 +4529,21 @@ function AdminPage({ allRequests, users, notes, goldkeys, cancellations, serverM
           <table className="admin-approval-table">
             <thead>
               <tr>
+                <th>기록구분</th>
                 <th>간호사</th>
                 <th>휴가일</th>
                 <th>유형</th>
                 <th>성격</th>
                 <th>상태</th>
                 <th>협의순</th>
-                <th>신청시각</th>
+                <th>기록시각</th>
+                <th>비고</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
+                  <td>{r.recordType === "APPLY" ? "휴가신청건" : "휴가취소건"}</td>
                   <td>{users.find((u) => u.id === r.userId)?.name}</td>
                   <td>{r.leaveDate}</td>
                   <td>
@@ -4444,51 +4552,15 @@ function AdminPage({ allRequests, users, notes, goldkeys, cancellations, serverM
                   <td>{leaveNatureLabel(r.leaveNature)}</td>
                   <td>{statusLabel(r.status)}</td>
                   <td>{r.negotiationOrder != null ? r.negotiationOrder : "—"}</td>
-                  <td>{new Date(r.requestedAt).toLocaleString("ko-KR")}</td>
+                  <td>{new Date(r.eventAt).toLocaleString("ko-KR")}</td>
+                  <td>{r.note || "—"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </section>
-      <section className="card">
-        <h2>골드키 취소 이력</h2>
-        <p className="help" style={{ marginBottom: 10 }}>
-          장기휴가 모집기간(4/1~4/10) 예외가 적용된 취소는 차감 처리에 별도로 표시됩니다.
-        </p>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>간호사</th>
-                <th>휴가일</th>
-                <th>유형</th>
-                <th>취소시각</th>
-                <th>차감처리</th>
-                <th>취소사유</th>
-              </tr>
-            </thead>
-            <tbody>
-              {cancellationRows.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="help">취소 이력이 없습니다.</td>
-                </tr>
-              ) : (
-                cancellationRows.map((c) => (
-                  <tr key={c.id}>
-                    <td>{users.find((u) => u.id === c.userId)?.name ?? c.userId}</td>
-                    <td>{c.leaveDate}</td>
-                    <td>{leaveTypeLabel(c.leaveType)}</td>
-                    <td>{new Date(c.cancelledAt).toLocaleString("ko-KR")}</td>
-                    <td>{c.deductionExempt ? c.deductionNote || "차감 제외 처리됨(장기휴가 모집기간)" : "기존 규칙(차감 유지)"}</td>
-                    <td>{c.cancelReason}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      ) : null}
     </>
   );
 }

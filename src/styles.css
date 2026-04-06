@@ -600,8 +600,19 @@ button.app-header-update-btn:hover {
   align-items: end;
 }
 
+.admin-day-sub-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+  align-items: end;
+}
+
 @media (max-width: 640px) {
   .admin-day-sub-grid {
+    grid-template-columns: 1fr;
+  }
+  .admin-day-sub-row {
     grid-template-columns: 1fr;
   }
 }
@@ -621,6 +632,10 @@ button.app-header-update-btn:hover {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 4px;
+}
+
+.admin-day-sub-remove-btn {
+  height: 40px;
 }
 
 .admin-day-primary-btn {
@@ -1344,6 +1359,16 @@ tbody tr:last-child td {
 
 .admin-approval-table .leave-type-pill {
   white-space: nowrap;
+}
+
+.export-action-row {
+  flex-wrap: nowrap !important;
+  overflow-x: auto;
+}
+
+.export-action-row > * {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .work-schedule-save-row {
