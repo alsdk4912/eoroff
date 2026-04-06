@@ -4293,18 +4293,6 @@ function CalendarPage({
               selectedCell.approvedApplicants.map((item) => (
                 <li key={item.id}>
                   {item.name} ({typeFullLabel(item.leaveType)})
-                  {(() => {
-                    const subs = getSubstituteRecordsForRequest(substituteAssignments, item.id);
-                    if (!subs.length) return "";
-                    const labels = subs
-                      .map((s) => {
-                        const subName = users.find((u) => u.id === s.substituteUserId)?.name ?? s.substituteUserId;
-                        const code = String(s.shiftCode ?? "").trim();
-                        return code ? `${subName}(${code})` : subName;
-                      })
-                      .join(", ");
-                    return ` · 대체: ${labels}`;
-                  })()}
                 </li>
               ))
             )}
