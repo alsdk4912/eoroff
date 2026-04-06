@@ -4151,6 +4151,7 @@ function CalendarPage({
           />
         ) : null}
         <div className={`calendar-page__detail${detailModalOpen ? " calendar-page__detail--modal" : ""}`}>
+      <div className={detailModalOpen ? "calendar-detail-modal-body" : undefined}>
       <div className="calendar-detail">
         {!selectedYmd ? null : (
           <>
@@ -4415,20 +4416,6 @@ function CalendarPage({
           </>
         )}
       </div>
-      {detailModalOpen ? (
-        <div className="calendar-detail-modal-footer">
-          <button
-            type="button"
-            className="calendar-detail-modal-close"
-            onClick={() => {
-              setDetailModalOpen(false);
-              setSelectedYmd("");
-            }}
-          >
-            닫기
-          </button>
-        </div>
-      ) : null}
 
       {selectedYmd && selectedCell?.inMonth && (isAdmin || !selectedCell?.isOffDay) ? (
         <section className="admin-day-panel">
@@ -4580,6 +4567,22 @@ function CalendarPage({
             </div>
           </div>
         </section>
+      ) : null}
+      </div>
+
+      {detailModalOpen ? (
+        <div className="calendar-detail-modal-footer">
+          <button
+            type="button"
+            className="calendar-detail-modal-close"
+            onClick={() => {
+              setDetailModalOpen(false);
+              setSelectedYmd("");
+            }}
+          >
+            닫기
+          </button>
+        </div>
       ) : null}
         </div>
       </div>
