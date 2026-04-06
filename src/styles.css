@@ -3010,6 +3010,12 @@ tr.request-dimmed-row .leave-type-pill.selected-item {
   border-color: #9ca3af !important;
 }
 
+/* 캘린더: 취소 건은 회색 스타일만 유지(줄긋기 제외) */
+.calendar-day-chip.selected-item.request-cancelled,
+.calendar-applicant-name.selected-item.request-cancelled {
+  text-decoration: none !important;
+}
+
 tr.request-cancelled-row td {
   color: #4b5563 !important;
   background: #e5e7eb !important;
