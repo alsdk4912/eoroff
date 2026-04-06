@@ -1185,7 +1185,7 @@ app.post("/api/requests/:id/select", async (req, res) => {
       return res.json({ ok: true, alreadyApproved: true });
     }
     if (String(row.status) !== "APPLIED") {
-      return res.status(409).json({ error: "승인할 수 있는 상태가 아닙니다.", status: row.status });
+      return res.status(409).json({ error: "휴가 확정할 수 있는 상태가 아닙니다.", status: row.status });
     }
 
     const selectedBy = String(req.body?.selectedBy ?? "").trim();
@@ -1224,13 +1224,13 @@ app.post("/api/requests/:id/select", async (req, res) => {
 
     await createNotificationsForAllNurses({
       type: "REQUEST_APPROVED",
-      message: `휴가 처리 결과 안내: 승인 ${row.leave_date} · ${leaveTypeLabel(row.leave_type)}`,
+      message: `휴가 처리 결과 안내: 휴가 확정 ${row.leave_date} · ${leaveTypeLabel(row.leave_type)}`,
       targetDate: row.leave_date,
       leaveRequestId: row.id,
     });
     await sendPushToAllNurses({
       title: "휴가 처리 결과 안내",
-      body: `휴가 처리 결과 안내: 승인 ${row.leave_date} · ${leaveTypeLabel(row.leave_type)}`,
+      body: `휴가 처리 결과 안내: 휴가 확정 ${row.leave_date} · ${leaveTypeLabel(row.leave_type)}`,
       url: `#/calendar?ymd=${encodeURIComponent(row.leave_date)}`,
     });
     res.json({ ok: true });
@@ -1261,7 +1261,7 @@ app.post("/api/requests/:id/reject", async (req, res) => {
       return res.json({ ok: true, alreadyRejected: true });
     }
     if (String(row.status) !== "APPLIED") {
-      return res.status(409).json({ error: "거절할 수 있는 상태가 아닙니다.", status: row.status });
+      return res.status(409).json({ error: "휴가 반려할 수 있는 상태가 아닙니다.", status: row.status });
     }
 
     const actorUserId = String(req.body?.actorUserId ?? "").trim();
@@ -1291,13 +1291,13 @@ app.post("/api/requests/:id/reject", async (req, res) => {
 
     await createNotificationsForAllNurses({
       type: "REQUEST_REJECTED",
-      message: `휴가 처리 결과 안내: 거절 ${row.leave_date} · ${leaveTypeLabel(row.leave_type)}`,
+      message: `휴가 처리 결과 안내: 휴가 반려 ${row.leave_date} · ${leaveTypeLabel(row.leave_type)}`,
       targetDate: row.leave_date,
       leaveRequestId: row.id,
     });
     await sendPushToAllNurses({
       title: "휴가 처리 결과 안내",
-      body: `휴가 처리 결과 안내: 거절 ${row.leave_date} · ${leaveTypeLabel(row.leave_type)}`,
+      body: `휴가 처리 결과 안내: 휴가 반려 ${row.leave_date} · ${leaveTypeLabel(row.leave_type)}`,
       url: `#/calendar?ymd=${encodeURIComponent(row.leave_date)}`,
     });
     res.json({ ok: true });

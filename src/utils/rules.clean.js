@@ -15,10 +15,10 @@ export const ALLOWED_LEAVE_NATURE = new Set(Object.keys(LEAVE_NATURE_LABEL));
 
 const STATUS_LABEL = {
   APPLIED: "신청",
-  SELECTED: "선정",
-  APPROVED: "승인",
+  SELECTED: "휴가 확정",
+  APPROVED: "휴가 확정",
   CANCELLED: "취소",
-  REJECTED: "미선정",
+  REJECTED: "휴가 반려",
 };
 
 export function toMonthString(dateLike) {

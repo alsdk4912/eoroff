@@ -1284,7 +1284,7 @@ function App() {
         await bootstrap();
         if (target) {
           createNotificationForNurses(
-            `휴가 처리 결과 안내: 승인 ${target.leaveDate} · ${leaveTypeLabel(target.leaveType)}`,
+            `휴가 처리 결과 안내: 휴가 확정 ${target.leaveDate} · ${leaveTypeLabel(target.leaveType)}`,
             { type: "REQUEST_APPROVED", targetDate: target.leaveDate, leaveRequestId: target.id }
           );
         }
@@ -1293,7 +1293,7 @@ function App() {
       }
     } else if (target) {
       createNotificationForNurses(
-        `휴가 처리 결과 안내: 승인 ${target.leaveDate} · ${leaveTypeLabel(target.leaveType)}`,
+        `휴가 처리 결과 안내: 휴가 확정 ${target.leaveDate} · ${leaveTypeLabel(target.leaveType)}`,
         { type: "REQUEST_APPROVED", targetDate: target.leaveDate, leaveRequestId: target.id }
       );
     }
@@ -1363,7 +1363,7 @@ function App() {
           );
         }
       } catch (e) {
-        window.alert?.(`미선정 반영 실패: ${e?.message || e}`);
+        window.alert?.(`휴가 반려 반영 실패: ${e?.message || e}`);
       }
     } else if (target) {
       createNotificationForNurses(
@@ -1951,9 +1951,9 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="ALL">전체 상태</option>
           <option value="APPLIED">신청</option>
-          <option value="SELECTED">휴가선정</option>
+          <option value="SELECTED">휴가 확정</option>
           <option value="CANCELLED">취소</option>
-          <option value="REJECTED">휴가미선정</option>
+          <option value="REJECTED">휴가 반려</option>
         </select>
         <input placeholder="날짜/유형/상태 검색" value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
@@ -2182,7 +2182,7 @@ function validateSubstitutePayload({
       r.status !== "REJECTED" &&
       (r.status === "APPLIED" || isWinnerStatus(r.status))
   );
-  if (blocking) return "선택한 간호사는 해당 날짜에 휴가 신청·승인이 있어 대체 근무를 맡기 어렵습니다. 다른 사람을 선택하세요.";
+  if (blocking) return "선택한 간호사는 해당 날짜에 휴가 신청·확정이 있어 대체 근무를 맡기 어렵습니다. 다른 사람을 선택하세요.";
   return null;
 }
 
@@ -2451,7 +2451,7 @@ function WeeklyScheduleTab({
     const ok = window.confirm(
       "저장하시겠습니까?\n\n" +
         "· 수동으로 바꾼 셀만 이 브라우저에 저장됩니다.\n" +
-        "· 근무 칸은 월간 근무표·승인 휴가·대체 근무·달력 당직(토·일·공휴·명절)을 반영해 채워집니다."
+        "· 근무 칸은 월간 근무표·휴가 확정·대체 근무·달력 당직(토·일·공휴·명절)을 반영해 채워집니다."
     );
     if (!ok) return;
     setWeeklyCellOverrides(draftOverrides);
@@ -4312,7 +4312,6 @@ function CalendarPage({
           <div className="admin-day-substitute-grid-wrap">
             <h4>{selectedYmd} 대체자</h4>
             <div className="admin-day-substitute-grid">
-              <div className="admin-day-substitute-grid__head">휴가자</div>
               <div className="admin-day-substitute-grid__head">대체자</div>
               <div className="admin-day-substitute-grid__head">코드</div>
               {selectedCell.approvedApplicants.length === 0 ? (
@@ -4322,7 +4321,6 @@ function CalendarPage({
                   const subs = getSubstituteRecordsForRequest(substituteAssignments, item.id);
                   if (!subs.length) {
                     return [
-                      <span key={`${item.id}_name`} className="admin-day-substitute-grid__cell">{item.name}</span>,
                       <span key={`${item.id}_sub`} className="admin-day-substitute-grid__cell">-</span>,
                       <span key={`${item.id}_code`} className="admin-day-substitute-grid__cell">-</span>,
                     ];
@@ -4331,7 +4329,6 @@ function CalendarPage({
                     const subName = users.find((u) => u.id === s.substituteUserId)?.name ?? s.substituteUserId;
                     const code = String(s.shiftCode ?? "").trim() || "-";
                     return [
-                      <span key={`${item.id}_${i}_name`} className="admin-day-substitute-grid__cell">{i === 0 ? item.name : ""}</span>,
                       <span key={`${item.id}_${i}_sub`} className="admin-day-substitute-grid__cell">{subName}</span>,
                       <span key={`${item.id}_${i}_code`} className="admin-day-substitute-grid__cell">{code}</span>,
                     ];
