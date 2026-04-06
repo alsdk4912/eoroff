@@ -3706,12 +3706,19 @@ function CalendarPage({
 }) {
   const [detailTab, setDetailTab] = useState("list");
   const [ymModalOpen, setYmModalOpen] = useState(false);
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
   const CALENDAR_DAY_CHIP_MAX = 4;
 
   useEffect(() => {
     if (!selectedYmd) return;
     setLeaveDate(selectedYmd);
   }, [selectedYmd, setLeaveDate]);
+
+  useEffect(() => {
+    if (!selectedYmd) {
+      setDetailModalOpen(false);
+    }
+  }, [selectedYmd]);
 
   const selectedCell = selectedYmd ? calendarData.find((c) => c.date === selectedYmd) : null;
   const nurseUsers = users.filter((u) => u.role === "NURSE").sort((a, b) => a.name.localeCompare(b.name, "ko"));
@@ -3792,6 +3799,7 @@ function CalendarPage({
   const negotiationMetaByRequestId = useMemo(() => {
     const map = new Map();
     if (!selectedYmd) return map;
+    const todayYmd = toLocalYMD(new Date());
     const active = dayRequests.filter((r) => r.leaveDate === selectedYmd && r.status !== "CANCELLED");
     const byType = new Map();
     for (const r of active) {
@@ -3801,6 +3809,10 @@ function CalendarPage({
     for (const [, list] of byType) {
       if (list.length === 1) {
         const only = list[0];
+        if (only.leaveType === "GENERAL_NORMAL" && String(only.leaveDate ?? "").slice(0, 10) > todayYmd) {
+          map.set(only.id, { mode: "negotiate" });
+          continue;
+        }
         if (only.leaveType === "GOLDKEY" && isSecondHalfGoldkeyAprilConsultationRequest(only)) {
           map.set(only.id, { mode: "negotiate" });
         } else {
@@ -3999,6 +4011,7 @@ function CalendarPage({
                 setSelectedYmd(cell.date);
                 setLeaveDate(cell.date);
                 setDetailTab("list");
+                setDetailModalOpen(true);
               }}
               onKeyDown={(e) => {
                 if (!cell.inMonth) return;
@@ -4007,6 +4020,7 @@ function CalendarPage({
                   setSelectedYmd(cell.date);
                   setLeaveDate(cell.date);
                   setDetailTab("list");
+                  setDetailModalOpen(true);
                 }
               }}
             >
@@ -4039,7 +4053,31 @@ function CalendarPage({
       </div>
         </div>
 
-        <div className="calendar-page__detail">
+        {detailModalOpen ? (
+          <div
+            className="calendar-detail-modal-backdrop"
+            onClick={() => {
+              setDetailModalOpen(false);
+              setSelectedYmd("");
+            }}
+          />
+        ) : null}
+        <div className={`calendar-page__detail${detailModalOpen ? " calendar-page__detail--modal" : ""}`}>
+      {detailModalOpen ? (
+        <div className="calendar-detail-modal-head">
+          <strong>{selectedYmd || "상세"}</strong>
+          <button
+            type="button"
+            className="calendar-detail-modal-close"
+            onClick={() => {
+              setDetailModalOpen(false);
+              setSelectedYmd("");
+            }}
+          >
+            닫기
+          </button>
+        </div>
+      ) : null}
       <div className="calendar-detail">
         {!selectedYmd ? (
           <p className="help calendar-detail-placeholder">달력에서 날짜를 선택하세요.</p>
