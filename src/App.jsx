@@ -319,6 +319,7 @@ function App() {
   const [notifications, setNotifications] = useLocalStorage(LS_NOTIFICATIONS, []);
   const [serverNotifications, setServerNotifications] = useState([]);
   const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushEnabledByUser, setPushEnabledByUser] = useLocalStorage("or.pushEnabledByUser.v1", {});
   const [pushBusy, setPushBusy] = useState(false);
   const refreshBusyRef = useRef(false);
 
@@ -377,6 +378,7 @@ function App() {
   const myGoldkey = goldkeys.find((g) => g.userId === auth?.userId);
   const isLoggedIn = Boolean(auth?.userId);
   const prevIsLoggedInRef = useRef(false);
+  const rememberedPushEnabled = Boolean(auth?.userId && pushEnabledByUser?.[auth.userId]);
   const notificationsSource = serverMode ? serverNotifications : notifications;
   const myNotifications = useMemo(
     () =>
@@ -406,8 +408,13 @@ function App() {
   useEffect(() => {
     let cancelled = false;
     const checkPush = async () => {
-      if (!isLoggedIn || currentUser?.role !== "NURSE" || !serverMode) {
+      if (!isLoggedIn || currentUser?.role !== "NURSE") {
         if (!cancelled) setPushEnabled(false);
+        return;
+      }
+      // 서버 연결 감지 전/일시 불안정 시에도 사용자가 켠 상태를 유지
+      if (!serverMode || !dataHydrated) {
+        if (!cancelled) setPushEnabled(rememberedPushEnabled);
         return;
       }
       try {
@@ -417,16 +424,22 @@ function App() {
         }
         const reg = await navigator.serviceWorker.ready;
         const sub = await reg.pushManager.getSubscription();
-        if (!cancelled) setPushEnabled(Boolean(sub));
+        if (!cancelled) {
+          const enabledNow = Boolean(sub) || rememberedPushEnabled;
+          setPushEnabled(enabledNow);
+          if (Boolean(sub) && auth?.userId) {
+            setPushEnabledByUser((prev) => ({ ...(prev ?? {}), [auth.userId]: true }));
+          }
+        }
       } catch {
-        if (!cancelled) setPushEnabled(false);
+        if (!cancelled) setPushEnabled(rememberedPushEnabled);
       }
     };
     void checkPush();
     return () => {
       cancelled = true;
     };
-  }, [isLoggedIn, currentUser?.role, serverMode]);
+  }, [isLoggedIn, currentUser?.role, serverMode, dataHydrated, rememberedPushEnabled, auth?.userId, setPushEnabledByUser]);
 
   function createNotificationForNurses(message, payload = {}) {
     // 2단계: 서버 모드에서는 백엔드가 알림을 생성/동기화하므로
@@ -562,6 +575,9 @@ function App() {
         subscription: sub.toJSON(),
       });
       await api.sendPushTestToSelf({ userId: auth?.userId });
+      if (auth?.userId) {
+        setPushEnabledByUser((prev) => ({ ...(prev ?? {}), [auth.userId]: true }));
+      }
       setPushEnabled(true);
       notifyDone("푸시 알림이 활성화되었습니다. 테스트 알림을 확인해 주세요.");
     } catch (e) {
