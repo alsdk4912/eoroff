@@ -3207,6 +3207,7 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
     typeof window !== "undefined" ? window.matchMedia("(max-width: 768px)").matches : false
   );
   const [ladderModalOpen, setLadderModalOpen] = useState(false);
+  const autoRunDoneRef = useRef("");
 
   useEffect(() => {
     if (!ladderModalOpen) return undefined;
@@ -3266,16 +3267,17 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
     setSelectedUserIds((prev) => (prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]));
   }
 
-  function runLadder() {
+  function runLadder(participantsOverride = null) {
     setLadderMsg("");
-    if (selectedUserIds.length < 2) {
+    const participants = Array.isArray(participantsOverride) && participantsOverride.length > 0 ? participantsOverride : selectedUserIds;
+    if (participants.length < 2) {
       window.alert?.("사다리 게임은 참여자 2명 이상이 필요합니다.");
-      return;
+      return null;
     }
-    const laneCount = selectedUserIds.length;
+    const laneCount = participants.length;
     const rowCount = narrowUi ? Math.max(4, laneCount * 2) : Math.max(5, laneCount * 3);
     const links = buildRandomLadderLinks(laneCount, rowCount);
-    const byStart = selectedUserIds.map((userId, startLane) => ({
+    const byStart = participants.map((userId, startLane) => ({
       userId,
       startLane,
       endLane: traceLadderLane(startLane, links, laneCount),
@@ -3284,13 +3286,14 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
       .slice()
       .sort((a, b) => a.endLane - b.endLane)
       .map((x) => x.userId);
-    setLadderSpec({ laneCount, rowCount, links, byStart, laneUsers: [...selectedUserIds], order });
+    setLadderSpec({ laneCount, rowCount, links, byStart, laneUsers: [...participants], order });
     setPreviewOrder(order);
     setRunnerState(null);
     setAnimating(false);
     setActiveRunnerId("");
     setActivePathKeys({});
     setLadderModalOpen(true);
+    return { laneCount, rowCount, links, byStart, laneUsers: [...participants], order };
   }
 
   async function playLadderAnimation(targetUserId, specArg) {
@@ -3325,13 +3328,15 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
     setAnimating(false);
   }
 
-  async function saveResult() {
+  async function saveResult({ selectedUserIdsOverride = null, previewOrderOverride = null } = {}) {
     setLadderMsg("");
-    if (previewOrder.length < 2) {
+    const selected = Array.isArray(selectedUserIdsOverride) ? selectedUserIdsOverride : selectedUserIds;
+    const order = Array.isArray(previewOrderOverride) ? previewOrderOverride : previewOrder;
+    if (order.length < 2) {
       window.alert?.("먼저 사다리 실행을 눌러 순번을 생성하세요.");
       return;
     }
-    const selectedSet = new Set(selectedUserIds);
+    const selectedSet = new Set(selected);
     const applicantSet = new Set(applicantUserIds);
     const isSameSize = selectedSet.size === applicantSet.size;
     const isSameMember = isSameSize && [...selectedSet].every((id) => applicantSet.has(id));
@@ -3345,8 +3350,8 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
       id: `lrg_${Date.now()}`,
       leaveDate,
       leaveType,
-      participants: selectedUserIds,
-      order: previewOrder,
+      participants: selected,
+      order,
       createdBy: currentUserId,
       createdAt: new Date().toISOString(),
     };
@@ -3354,13 +3359,34 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
     await applyLadderResultToNegotiationOrder({
       leaveDate,
       leaveType,
-      orderUserIds: previewOrder,
+      orderUserIds: order,
     });
     setLadderMsg("사다리 결과를 저장하고 달력 협의 순번에 자동 반영했습니다.");
     notifyDone("결과가 저장되었습니다.");
   }
 
   const svgMinH = narrowUi ? 260 : 420;
+
+  useEffect(() => {
+    const qs = new URLSearchParams(location.search || "");
+    const autoRun = String(qs.get("autoRun") ?? "").trim() === "1";
+    const autoSave = String(qs.get("autoSave") ?? "").trim() === "1";
+    if (!autoRun) return;
+    const runKey = `${leaveDate}|${leaveType}|${location.search}`;
+    if (autoRunDoneRef.current === runKey) return;
+    if (!Array.isArray(applicantUserIds) || applicantUserIds.length < 2) return;
+    autoRunDoneRef.current = runKey;
+    const participants = [...applicantUserIds];
+    setSelectedUserIds(participants);
+    window.setTimeout(async () => {
+      const spec = runLadder(participants);
+      if (!spec || !Array.isArray(spec.order) || spec.order.length < 1) return;
+      await playLadderAnimation(spec.order[0], spec);
+      if (autoSave) {
+        await saveResult({ selectedUserIdsOverride: participants, previewOrderOverride: spec.order });
+      }
+    }, 0);
+  }, [location.search, leaveDate, leaveType, applicantUserIds]);
 
   function renderLadderSvg(spec) {
     if (!spec) return null;
@@ -3862,6 +3888,18 @@ function CalendarPage({
     return map;
   }, [selectedYmd, dayRequests]);
 
+  const quickLadderTargets = useMemo(() => {
+    const byType = new Map();
+    for (const r of dayRequests || []) {
+      const meta = negotiationMetaByRequestId.get(r.id);
+      if (!meta || meta.mode !== "negotiate" || r.status !== "APPLIED") continue;
+      const k = `${r.leaveDate}|${r.leaveType}`;
+      if (!byType.has(k)) byType.set(k, { leaveDate: r.leaveDate, leaveType: r.leaveType, count: 0 });
+      byType.get(k).count += 1;
+    }
+    return [...byType.values()];
+  }, [dayRequests, negotiationMetaByRequestId]);
+
   function moveCalendarMonth(offset) {
     const [yy, mm] = String(calendarMonth || "").split("-").map(Number);
     if (!Number.isInteger(yy) || !Number.isInteger(mm)) return;
@@ -4174,6 +4212,26 @@ function CalendarPage({
                         <p className="help">이 날짜에 등록된 신청이 없습니다.</p>
                       ) : (
                         <>
+                          {quickLadderTargets.length > 0 ? (
+                            <div className="calendar-ladder-quick-bar">
+                              {quickLadderTargets.map((t) => (
+                                <button
+                                  key={`${t.leaveDate}-${t.leaveType}`}
+                                  type="button"
+                                  className="calendar-ladder-quick-btn"
+                                  onClick={() =>
+                                    navigate(
+                                      `/ladder?leaveDate=${encodeURIComponent(String(t.leaveDate ?? ""))}&leaveType=${encodeURIComponent(
+                                        String(t.leaveType ?? "")
+                                      )}&autoRun=1&autoSave=1`
+                                    )
+                                  }
+                                >
+                                  {typeFullLabel(t.leaveType)} 사다리
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
                           <ul className="calendar-applicant-list">
                             {dayRequests.map((r) => {
                               const nm = users.find((u) => u.id === r.userId)?.name ?? r.userId;
@@ -4214,21 +4272,6 @@ function CalendarPage({
                                     <span className={`negotiation-mode-pill ${isAuto ? "negotiation-mode-pill--auto" : ""}`}>
                                       {isNegotiate ? "협의" : "신청순"}
                                     </span>
-                                  ) : null}
-                                  {isNegotiate && r.status === "APPLIED" ? (
-                                    <button
-                                      type="button"
-                                      className="calendar-ladder-quick-btn"
-                                      onClick={() =>
-                                        navigate(
-                                          `/ladder?leaveDate=${encodeURIComponent(String(r.leaveDate ?? ""))}&leaveType=${encodeURIComponent(
-                                            String(r.leaveType ?? "")
-                                          )}`
-                                        )
-                                      }
-                                    >
-                                      사다리
-                                    </button>
                                   ) : null}
                                   <span
                                     className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status)}`}

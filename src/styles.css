@@ -719,6 +719,13 @@ button.app-header-update-btn:hover {
   cursor: pointer;
 }
 
+.calendar-ladder-quick-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
 .admin-calendar-substitute-section {
   margin-top: 16px;
   padding-top: 14px;
