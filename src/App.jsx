@@ -4187,7 +4187,7 @@ function CalendarPage({
                               return (
                                 <li
                                   key={r.id}
-                                  className={`calendar-applicant-item calendar-applicant-item--row${isAdmin ? " calendar-applicant-item--admin" : ""}`}
+                                  className={`calendar-applicant-item calendar-applicant-item--row${isAdmin ? " calendar-applicant-item--admin" : ""}${r.status === "REJECTED" ? " calendar-applicant-item--rejected" : ""}`}
                                 >
                                   <div className="negotiation-order-cell">
                                     {isNegotiate && r.status !== "CANCELLED" ? (
