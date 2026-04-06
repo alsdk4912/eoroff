@@ -27,7 +27,7 @@ import { defaultGoldkeyQuotaForName } from "./data/goldkeyQuotas.js";
 import { consumeManualVersionReloadToast, restoreHashAfterReload, useAppUpdate } from "./useAppUpdate.js";
 
 /** 오프라인 저장소 버전 — 배포 시 키 올리면 예전 휴가·골드키 캐시 무시(빈 신청·기본 골드키로 로드) */
-const LS_REQUESTS = "or.requests.v4";
+const LS_REQUESTS = "or.requests.v5";
 const LS_NOTES = "or.notes.v3";
 const LS_CANCELLATIONS = "or.cancellations.v3";
 const LS_SELECTIONS = "or.selections.v3";
@@ -50,6 +50,7 @@ function dropStaleOfflineLeaveKeys() {
       "or.requests",
       "or.requests.v2",
       "or.requests.v3",
+      "or.requests.v4",
       "or.notes",
       "or.notes.v2",
       "or.cancellations",
@@ -1117,9 +1118,10 @@ function App() {
 
   const calendarDayRequests = useMemo(() => {
     if (!calendarSelectedYmd) return [];
-    return [...requests]
+    const sorted = [...requests]
       .filter((r) => r.leaveDate === calendarSelectedYmd)
       .sort((a, b) => compareSameLeaveDateRequests(a, b, users));
+    return dedupeRequestsForCalendarChips(sorted);
   }, [requests, calendarSelectedYmd, users]);
 
   async function submitRequest(e) {
@@ -4920,12 +4922,12 @@ function useLocalStorage(key, initialValue) {
   return [value, setValue];
 }
 
-/** 같은 날·같은 사람·같은 상태·같은 유형의 중복 행(로컬 캐시 등)은 칩 하나만 표시 */
+/** 월 달력 칩: 같은 날·같은 사람은 1칩만 (로컬 캐시에 id만 다른 중복·유형 혼합 중복 방지) */
 function dedupeRequestsForCalendarChips(sortedDayReqs) {
   const seen = new Set();
   const out = [];
   for (const r of sortedDayReqs) {
-    const key = `${String(r.userId ?? "")}|${String(r.leaveDate ?? "")}|${String(r.status ?? "")}|${String(r.leaveType ?? "")}`;
+    const key = `${String(r.userId ?? "")}|${String(r.leaveDate ?? "")}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(r);
