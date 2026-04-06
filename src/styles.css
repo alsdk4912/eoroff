@@ -777,20 +777,20 @@ button.app-header-update-btn:hover {
 .calendar-detail-modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.38);
+  background: rgba(15, 23, 42, 0.16);
   z-index: 70;
 }
 
 .calendar-page__detail--modal {
   position: fixed;
   left: 50%;
-  top: 50%;
+  top: 52%;
   transform: translate(-50%, -50%);
-  width: min(980px, calc(100vw - 20px));
-  max-height: calc(100dvh - 28px);
+  width: min(820px, calc(100vw - 28px));
+  max-height: 82dvh;
   overflow-y: auto;
-  padding: 10px 10px 16px;
-  border-radius: 14px;
+  padding: 10px 10px 10px;
+  border-radius: 16px;
   background: var(--bg-page);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
   z-index: 80;
@@ -812,6 +812,23 @@ button.app-header-update-btn:hover {
 .calendar-detail-modal-close {
   padding: 7px 10px !important;
   font-size: 12px !important;
+}
+
+.calendar-detail-modal-footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 4px 2px;
+  background: linear-gradient(to top, var(--bg-page) 70%, rgba(242, 242, 247, 0));
+}
+
+@media (max-width: 768px) {
+  .calendar-page__detail--modal {
+    width: calc(100vw - 20px);
+    max-height: 80dvh;
+    top: 54%;
+  }
 }
 
 /* 더보기 */
