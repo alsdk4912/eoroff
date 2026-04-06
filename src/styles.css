@@ -834,7 +834,13 @@ button.app-header-update-btn:hover {
   display: flex;
   justify-content: flex-end;
   padding: 8px 4px 2px;
-  background: linear-gradient(to top, var(--bg-page) 70%, rgba(242, 242, 247, 0));
+  background: transparent;
+  box-shadow: none;
+  pointer-events: none;
+}
+
+.calendar-detail-modal-footer .calendar-detail-modal-close {
+  pointer-events: auto;
 }
 
 @media (max-width: 768px) {
@@ -2647,6 +2653,32 @@ button.ym-wheel-check:hover {
   border-radius: var(--radius-md);
   padding: 14px;
   background: #fafafa;
+}
+
+.calendar-extra-details {
+  margin-top: 14px;
+}
+
+.calendar-extra-details__summary {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.calendar-extra-details__summary::-webkit-details-marker {
+  display: none;
+}
+
+.calendar-extra-details__summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 6px;
+}
+
+.calendar-extra-details[open] .calendar-extra-details__summary::before {
+  content: "▾";
 }
 
 .admin-day-panel h3 {
