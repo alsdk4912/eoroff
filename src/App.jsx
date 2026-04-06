@@ -155,19 +155,37 @@ function notifyDone(message) {
   window.alert?.(msg);
 }
 
-/** iOS 사파리: 로그인 입력 자동확대/수동확대가 다음 화면에 남는 현상 완화 */
-function resetViewportScaleAfterLogin() {
+/** iOS Safari: 로그인 화면에서의 자동·수동 확대가 캘린더에 그대로 남는 현상 완화(뷰포트 재적용 + 스크롤 원점) */
+function resetViewportScaleToDefault() {
   try {
     const ae = document.activeElement;
     if (ae && typeof ae.blur === "function") ae.blur();
+
+    const scrollAllToTop = () => {
+      window.scrollTo(0, 0);
+      try {
+        document.documentElement.scrollLeft = 0;
+        document.documentElement.scrollTop = 0;
+        document.body.scrollLeft = 0;
+        document.body.scrollTop = 0;
+      } catch {
+        /* ignore */
+      }
+    };
+
     const meta = document.querySelector('meta[name="viewport"]');
     if (!meta) return;
     const original = meta.getAttribute("content") || "width=device-width, initial-scale=1.0";
-    meta.setAttribute("content", "width=device-width, initial-scale=1, maximum-scale=1");
+    const locked =
+      "width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, viewport-fit=cover";
+
+    meta.setAttribute("content", locked);
+    scrollAllToTop();
+
     window.setTimeout(() => {
       meta.setAttribute("content", original);
-      window.scrollTo(0, 0);
-    }, 80);
+      scrollAllToTop();
+    }, 110);
   } catch {
     /* ignore */
   }
@@ -358,6 +376,7 @@ function App() {
   const canEditHolidayDuty = currentUser?.role === "NURSE" || currentUser?.role === "ADMIN" || currentUser?.role === "ANESTHESIA";
   const myGoldkey = goldkeys.find((g) => g.userId === auth?.userId);
   const isLoggedIn = Boolean(auth?.userId);
+  const prevIsLoggedInRef = useRef(false);
   const notificationsSource = serverMode ? serverNotifications : notifications;
   const myNotifications = useMemo(
     () =>
@@ -368,6 +387,21 @@ function App() {
     [notificationsSource, auth?.userId]
   );
   const unreadNotificationCount = myNotifications.length;
+
+  /** 로그인 직후 첫 화면(캘린더)이 그려진 뒤에 실행 — 동기 handleLogin만으로는 iOS에서 배율이 남는 경우가 있음 */
+  useLayoutEffect(() => {
+    if (isLoggedIn && !prevIsLoggedInRef.current) {
+      prevIsLoggedInRef.current = true;
+      resetViewportScaleToDefault();
+      const t1 = window.setTimeout(() => resetViewportScaleToDefault(), 220);
+      const t2 = window.setTimeout(() => resetViewportScaleToDefault(), 520);
+      return () => {
+        window.clearTimeout(t1);
+        window.clearTimeout(t2);
+      };
+    }
+    if (!isLoggedIn) prevIsLoggedInRef.current = false;
+  }, [isLoggedIn]);
 
   useEffect(() => {
     let cancelled = false;
@@ -986,7 +1020,11 @@ function App() {
 
     try {
       const data = await api.login({ loginName: trimmed, password });
-      resetViewportScaleAfterLogin();
+      try {
+        document.activeElement?.blur?.();
+      } catch {
+        /* ignore */
+      }
       setAuth({ userId: data.user.id });
       return;
     } catch (e) {
@@ -1016,7 +1054,11 @@ function App() {
       if (String(password) !== "1234") {
         throw new Error("이름 또는 비밀번호가 올바르지 않습니다.");
       }
-      resetViewportScaleAfterLogin();
+      try {
+        document.activeElement?.blur?.();
+      } catch {
+        /* ignore */
+      }
       setAuth({ userId: matches[0].id });
     }
   }
