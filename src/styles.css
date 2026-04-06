@@ -1424,6 +1424,13 @@ tbody tr:last-child td {
 @media (max-width: 768px) {
   .export-action-row {
     gap: 4px !important;
+    flex-wrap: wrap !important;
+  }
+  .export-action-row .export-date-field {
+    flex: 1 1 calc(50% - 4px);
+  }
+  .export-action-row .export-btn {
+    flex: 1 1 calc(33.333% - 4px);
   }
   .export-action-row button {
     padding: 7px 8px !important;

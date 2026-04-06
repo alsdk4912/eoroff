@@ -4310,7 +4310,7 @@ function CalendarPage({
             )}
           </ul>
           <div className="admin-day-substitute-grid-wrap">
-            <h4>대체자</h4>
+            <h4>{selectedYmd} 대체자</h4>
             <div className="admin-day-substitute-grid">
               <div className="admin-day-substitute-grid__head">휴가자</div>
               <div className="admin-day-substitute-grid__head">대체자</div>
@@ -4564,13 +4564,14 @@ function AdminPage({ allRequests, users, notes, goldkeys, cancellations, serverM
               종료일{" "}
               <input type="date" value={exportTo} onChange={(e) => setExportTo(e.target.value)} />
             </label>
-            <button type="button" onClick={() => {
+            <button type="button" className="export-btn export-btn--range" onClick={() => {
               setExportFrom(minLeaveDate);
               setExportTo(maxLeaveDate);
             }}>
               전체 기간
             </button>
             <button
+              className="export-btn export-btn--leave"
               type="button"
               onClick={async () => {
                 try {
@@ -4594,6 +4595,7 @@ function AdminPage({ allRequests, users, notes, goldkeys, cancellations, serverM
               신청·상태
             </button>
             <button
+              className="export-btn export-btn--audit"
               type="button"
               onClick={async () => {
                 try {
