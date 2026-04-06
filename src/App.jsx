@@ -4013,18 +4013,16 @@ function CalendarPage({
           return (
             <div
               key={`${cell.date}-${idx}`}
-              role={cell.inMonth ? "button" : undefined}
-              tabIndex={cell.inMonth ? 0 : undefined}
-              className={`calendar-cell ${cell.inMonth ? "calendar-cell--clickable" : "muted"}${myDutyClass}${isSel ? " calendar-cell--selected" : ""}`}
+              role="button"
+              tabIndex={0}
+              className={`calendar-cell calendar-cell--clickable ${cell.inMonth ? "" : "muted"}${myDutyClass}${isSel ? " calendar-cell--selected" : ""}`}
               onClick={() => {
-                if (!cell.inMonth) return;
                 setSelectedYmd(cell.date);
                 setLeaveDate(cell.date);
                 setDetailTab("list");
                 setDetailModalOpen(true);
               }}
               onKeyDown={(e) => {
-                if (!cell.inMonth) return;
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
                   setSelectedYmd(cell.date);
@@ -4074,9 +4072,7 @@ function CalendarPage({
         ) : null}
         <div className={`calendar-page__detail${detailModalOpen ? " calendar-page__detail--modal" : ""}`}>
       <div className="calendar-detail">
-        {!selectedYmd ? (
-          <p className="help calendar-detail-placeholder">달력에서 날짜를 선택하세요.</p>
-        ) : (
+        {!selectedYmd ? null : (
           <>
             <h3 className="calendar-detail-title">{selectedYmd} 상세</h3>
               {canEditHolidayDuty && selectedCell?.isOffDay ? (

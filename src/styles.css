@@ -778,10 +778,11 @@ button.app-header-update-btn:hover {
 
 .calendar-page-card {
   overflow: hidden;
+  padding: 10px 12px !important;
 }
 
 .calendar-page__detail {
-  margin-top: 8px;
+  margin-top: 4px;
 }
 
 @media (max-width: 900px) {
@@ -1754,8 +1755,8 @@ tbody tr:last-child td {
 
 /* ----- Calendar ----- */
 .calendar-nav {
-  margin-top: 12px;
-  margin-bottom: 8px;
+  margin-top: 4px;
+  margin-bottom: 4px;
 }
 
 .calendar-nav-month-row {
