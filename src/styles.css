@@ -812,9 +812,9 @@ button.app-header-update-btn:hover {
 
 @media (max-width: 768px) {
   .calendar-page__detail--modal {
-    width: calc(100vw - 64px);
-    max-height: 70dvh;
-    top: 52%;
+    width: calc(100vw - 100px);
+    max-height: 62dvh;
+    top: 50%;
   }
 }
 
