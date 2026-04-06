@@ -238,6 +238,7 @@ function isWinnerStatus(status) {
 function buildLeaveChipClass(leaveType, status) {
   const parts = ["selected-item", leaveTypeCssClass(leaveType)];
   if (status === "CANCELLED") parts.push("request-cancelled");
+  else if (status === "REJECTED") parts.push("request-rejected");
   else if (isWinnerStatus(status)) parts.push("request-approved");
   return parts.join(" ");
 }

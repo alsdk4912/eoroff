@@ -707,6 +707,14 @@ button.app-header-update-btn:hover {
   text-decoration-skip-ink: none;
 }
 
+/* 캘린더 월칸 칩/상세 신청현황 모두 반려건 줄긋기 통일 */
+.calendar-day-chip.selected-item.request-rejected,
+.calendar-applicant-name.selected-item.request-rejected {
+  text-decoration: line-through !important;
+  text-decoration-thickness: 1.5px;
+  text-decoration-skip-ink: none;
+}
+
 .calendar-ladder-quick-btn {
   flex-shrink: 0;
   padding: 5px 8px;
