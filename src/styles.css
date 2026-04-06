@@ -3025,6 +3025,14 @@ tr.request-cancelled-row td button {
 }
 
 @media (max-width: 768px) {
+  .app.app-shell {
+    padding: max(4px, env(safe-area-inset-top)) 10px 0;
+  }
+
+  .app-header--shell {
+    margin-bottom: 6px;
+  }
+
   .app-nav {
     flex-wrap: nowrap;
     gap: 6px;
@@ -3053,20 +3061,25 @@ tr.request-cancelled-row td button {
   }
 
   .app {
-    padding: 12px 12px 24px;
+    padding: 8px 10px 18px;
   }
 
   .app-header {
-    padding: 15px 16px;
+    padding: 10px 12px;
   }
 
   .app-header-title {
-    font-size: 20px;
-    letter-spacing: 0.1em;
+    font-size: 18px;
+    letter-spacing: 0.08em;
   }
 
   .app-header-row {
-    gap: 14px;
+    gap: 10px;
+  }
+
+  .app-header-userline {
+    margin-top: 2px;
+    font-size: 12px;
   }
 
   .grid,
@@ -3081,7 +3094,8 @@ tr.request-cancelled-row td button {
   }
 
   .calendar-cell {
-    min-height: 72px;
+    min-height: 64px;
+    padding: 3px 2px 4px;
   }
 
   .selected-item {
@@ -3106,14 +3120,14 @@ tr.request-cancelled-row td button {
   }
 
   button.calendar-nav-month-trigger {
-    font-size: 14px;
-    padding: 9px 10px;
+    font-size: 13px;
+    padding: 7px 8px;
   }
 
   .calendar-nav-btn {
-    width: 36px;
-    height: 36px;
-    font-size: 20px !important;
+    width: 32px;
+    height: 32px;
+    font-size: 18px !important;
   }
 
   .admin-day-grid {
