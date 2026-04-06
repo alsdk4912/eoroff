@@ -3740,25 +3740,10 @@ function CalendarPage({
   deleteDayComment,
 }) {
   const navigate = useNavigate();
-  const [compactMobileDetail, setCompactMobileDetail] = useState(() =>
-    typeof window !== "undefined" ? window.matchMedia("(max-width: 768px)").matches : false
-  );
   const [detailTab, setDetailTab] = useState("list");
   const [ymModalOpen, setYmModalOpen] = useState(false);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const CALENDAR_DAY_CHIP_MAX = 4;
-
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    const mq = window.matchMedia("(max-width: 768px)");
-    const onChange = () => setCompactMobileDetail(mq.matches);
-    if (typeof mq.addEventListener === "function") {
-      mq.addEventListener("change", onChange);
-      return () => mq.removeEventListener("change", onChange);
-    }
-    mq.addListener(onChange);
-    return () => mq.removeListener(onChange);
-  }, []);
 
   useEffect(() => {
     if (!selectedYmd) return;
@@ -4404,8 +4389,6 @@ function CalendarPage({
       ) : null}
 
       {selectedYmd && selectedCell?.inMonth && (isAdmin || !selectedCell?.isOffDay) ? (
-        <details className="calendar-extra-details" open={!compactMobileDetail}>
-          <summary className="calendar-extra-details__summary">휴가자·대체자·메모</summary>
         <section className="admin-day-panel">
           <h3>{selectedYmd} 휴가자</h3>
           <ul>
@@ -4555,7 +4538,6 @@ function CalendarPage({
             </div>
           </div>
         </section>
-        </details>
       ) : null}
         </div>
       </div>
