@@ -2237,7 +2237,7 @@ function effectiveWeeklyCell(userId, nurseName, ymd, workScheduleRows, requests,
     (r) => r.userId === userId && String(r.leaveDate ?? "").slice(0, 10) === ld && isWinnerStatus(r.status)
   );
   if (approvedLeave) {
-    return { kind: "leave", main: "휴가", sub: "" };
+    return { kind: "leave", main: "Off", sub: "" };
   }
   const offLike = isWeekendYmd(ld) || isPublicHolidayYmd(ld, holidays);
   if (offLike) {
@@ -2245,7 +2245,7 @@ function effectiveWeeklyCell(userId, nurseName, ymd, workScheduleRows, requests,
     if (duties.has(String(userId))) {
       return { kind: "duty", main: "당직", sub: "" };
     }
-    return { kind: "leave", main: "휴가", sub: "" };
+    return { kind: "leave", main: "Off", sub: "" };
   }
   return { kind: "base", main: baseMonthCodeForNurseName(nurseName, ld, workScheduleRows), sub: "" };
 }
@@ -2256,7 +2256,7 @@ function weeklyCellKey(userId, ymd) {
 
 function parseWeeklyOverrideSelectValue(val) {
   if (!val || val === "__auto__") return null;
-  if (val === "__leave__") return { mode: "manual", kind: "leave", main: "휴가", sub: "" };
+  if (val === "__leave__") return { mode: "manual", kind: "leave", main: "Off", sub: "" };
   if (val.startsWith("__sub__:")) {
     const code = val.slice(7);
     return { mode: "manual", kind: "sub", main: code, sub: "" };
