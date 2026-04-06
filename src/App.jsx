@@ -1872,16 +1872,14 @@ function RequestPage({
   );
 }
 
-/** 내 신청내역: 한 줄 가독성용 짧은 표기 */
+/** 내 신청내역: 연도 포함 표기(사용자 혼동 방지) */
 function formatLeaveDateShort(ymd) {
   const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(String(ymd ?? "").trim());
   if (!m) return String(ymd ?? "");
   const y = Number(m[1]);
   const mo = Number(m[2]);
   const d = Number(m[3]);
-  const cy = new Date().getFullYear();
-  if (y !== cy) return `${y}.${mo}/${d}`;
-  return `${mo}/${d}`;
+  return `${y}/${mo}/${d}`;
 }
 
 function formatRequestedAtCompact(iso) {
