@@ -617,6 +617,41 @@ app.post("/api/admin/users/:id/reset-password", async (req, res) => {
   res.json({ ok: true });
 });
 
+/** 단일 휴가 요청 소프트 삭제(목록·부트스트랩에서 제외). 운영 데이터 정리용. */
+app.post("/api/admin/requests/:id/soft-delete", async (req, res) => {
+  try {
+    const requestId = decodeURIComponent(String(req.params.id ?? "").trim());
+    const { adminUserId, reason } = req.body ?? {};
+    const admin = await requireAdminUser(adminUserId);
+    if (!admin) return res.status(403).json({ error: "관리자 권한이 필요합니다." });
+    if (!requestId) return res.status(400).json({ error: "request id가 필요합니다." });
+    const row = await queryOne(
+      `SELECT id, user_id, leave_date, leave_type, status FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`,
+      requestId
+    );
+    if (!row) return res.status(404).json({ error: "요청을 찾을 수 없습니다." });
+    const nowIso = new Date().toISOString();
+    await execute("UPDATE requests SET deleted_at = ? WHERE id = ?", nowIso, requestId);
+    await insertAdminOpsAudit({
+      action: "SOFT_DELETE_REQUEST",
+      actorUserId: adminUserId,
+      targetId: requestId,
+      reason: String(reason ?? "").trim() || "admin soft-delete",
+      metadata: {
+        leave_date: row.leave_date,
+        user_id: row.user_id,
+        leave_type: row.leave_type,
+        prev_status: row.status,
+      },
+    });
+    await reconcileGoldkeyUsageByPolicy(new Date().toISOString());
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /api/admin/requests/:id/soft-delete", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
 app.post("/api/admin/day-memos", async (req, res) => {
   try {
     const { actorUserId, targetDate, content } = req.body ?? {};
