@@ -3925,16 +3925,31 @@ function CalendarPage({
     setEditingCommentDraft("");
   }, [selectedYmd]);
 
+  const calendarSubTargetRequests = useMemo(() => {
+    if (!selectedYmd) return [];
+    const rows = (Array.isArray(dayRequests) ? dayRequests : []).filter(
+      (r) => String(r.leaveDate ?? "").slice(0, 10) === selectedYmd && r.status !== "CANCELLED"
+    );
+    if (rows.length === 0) return [];
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    const targetIds = new Set(rows.filter((r) => r.status === "APPLIED" || isWinnerStatus(r.status)).map((r) => r.id));
+    for (const s of Array.isArray(substituteAssignments) ? substituteAssignments : []) {
+      if (String(s.leaveDate ?? "").slice(0, 10) !== selectedYmd) continue;
+      const reqId = String(s.requestId ?? "");
+      if (reqId && byId.has(reqId)) targetIds.add(reqId);
+    }
+    return rows.filter((r) => targetIds.has(r.id));
+  }, [selectedYmd, dayRequests, substituteAssignments]);
+
   useEffect(() => {
     if (!selectedYmd) {
       setCalendarSubRows([]);
       return;
     }
-    const targets = (Array.isArray(dayRequests) ? dayRequests : []).filter(
-      (r) => String(r.leaveDate ?? "").slice(0, 10) === selectedYmd && (r.status === "APPLIED" || isWinnerStatus(r.status))
-    );
+    const targets = calendarSubTargetRequests;
     if (targets.length === 0) {
-      setCalendarSubRows([]);
+      // 휴가 신청 대상이 없는 날짜도 관리자가 박스를 볼 수 있게 기본 1행 표시
+      setCalendarSubRows([{ rowId: `cal_sub_empty_${selectedYmd}`, requestId: "", substituteUserId: "", shiftCode: "" }]);
       return;
     }
 
@@ -3968,7 +3983,7 @@ function CalendarPage({
         shiftCode: "",
       },
     ]);
-  }, [selectedYmd, dayRequests, substituteAssignments]);
+  }, [selectedYmd, calendarSubTargetRequests, substituteAssignments]);
 
   const selectedDayComments = useMemo(() => {
     if (!selectedYmd) return [];
@@ -4107,9 +4122,18 @@ function CalendarPage({
   }
 
   function addCalendarSubRow() {
-    const targets = (Array.isArray(dayRequests) ? dayRequests : []).filter(
-      (r) => String(r.leaveDate ?? "").slice(0, 10) === selectedYmd && (r.status === "APPLIED" || isWinnerStatus(r.status))
-    );
+    const targets = calendarSubTargetRequests;
+    if (!Array.isArray(calendarSubRows) || calendarSubRows.length === 0) {
+      setCalendarSubRows([{ rowId: `cal_sub_empty_${Date.now()}`, requestId: "", substituteUserId: "", shiftCode: "" }]);
+      return;
+    }
+    if (targets.length === 0) {
+      setCalendarSubRows((prev) => [
+        ...(Array.isArray(prev) ? prev : []),
+        { rowId: `cal_sub_empty_${Date.now()}`, requestId: "", substituteUserId: "", shiftCode: "" },
+      ]);
+      return;
+    }
     const used = new Set(calendarSubRows.map((r) => r.requestId));
     const nextTarget = targets.find((r) => !used.has(r.id));
     if (!nextTarget) {
@@ -4129,7 +4153,10 @@ function CalendarPage({
 
   async function applyCalendarSubRow(row) {
     const requestId = String(row?.requestId ?? "");
-    if (!requestId) return;
+    if (!requestId) {
+      window.alert?.("해당 날짜의 휴가 신청 대상이 없어 저장할 수 없습니다.");
+      return;
+    }
     const target = (Array.isArray(dayRequests) ? dayRequests : []).find((r) => r.id === requestId);
     if (!target) return;
     const items =
@@ -4387,20 +4414,22 @@ function CalendarPage({
                     >
                       신청 현황
                     </button>
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={detailTab === "apply"}
-                      className={detailTab === "apply" ? "calendar-tab calendar-tab--active" : "calendar-tab"}
-                      onClick={() => {
-                        setDetailTab("apply");
-                        if (selectedYmd) setLeaveDate(selectedYmd);
-                      }}
-                    >
-                      휴가 신청
-                    </button>
+                    {!isAdmin ? (
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={detailTab === "apply"}
+                        className={detailTab === "apply" ? "calendar-tab calendar-tab--active" : "calendar-tab"}
+                        onClick={() => {
+                          setDetailTab("apply");
+                          if (selectedYmd) setLeaveDate(selectedYmd);
+                        }}
+                      >
+                        휴가 신청
+                      </button>
+                    ) : null}
                   </div>
-                  {detailTab === "list" ? (
+                  {detailTab === "list" || isAdmin ? (
                     <div className="calendar-detail-body" role="tabpanel">
                       {dayRequests.length === 0 ? (
                         <p className="help">이 날짜에 등록된 신청이 없습니다.</p>
@@ -4498,52 +4527,54 @@ function CalendarPage({
                               );
                             })}
                           </ul>
-                          {isAdmin &&
-                          dayRequests.some((r) => r.status !== "CANCELLED" && (r.status === "APPLIED" || isWinnerStatus(r.status))) ? (
-                            <div className="admin-calendar-substitute-section">
-                              <h4 className="admin-calendar-substitute-title">대체 근무 지정</h4>
-                              <p className="help admin-calendar-substitute-lead">
-                                휴가자 선택 없이 대체 인력/코드만 입력 후 저장합니다.
-                              </p>
-                              <div className="admin-calendar-substitute-stack">
-                                {calendarSubRows.map((row, idx) => (
-                                  <div key={row.rowId} className="admin-calendar-sub-bulk-row">
-                                    <span className="admin-calendar-sub-bulk-label">대체 인력 {idx + 1}</span>
-                                    <select
-                                      value={row.substituteUserId}
-                                      onChange={(e) => updateCalendarSubRow(row.rowId, "substituteUserId", e.target.value)}
-                                    >
-                                      <option value="">대체자 선택</option>
-                                      {nurseUsers.map((u) => (
-                                        <option key={u.id} value={u.id}>
-                                          {u.name}
-                                        </option>
-                                      ))}
-                                    </select>
-                                    <select
-                                      value={row.shiftCode}
-                                      onChange={(e) => updateCalendarSubRow(row.rowId, "shiftCode", e.target.value)}
-                                    >
-                                      <option value="">대체 근무 코드</option>
-                                      {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
-                                        <option key={opt} value={opt}>
-                                          {opt}
-                                        </option>
-                                      ))}
-                                    </select>
-                                    <button type="button" onClick={() => void applyCalendarSubRow(row)}>
-                                      저장
-                                    </button>
-                                  </div>
-                                ))}
-                                <button type="button" onClick={addCalendarSubRow}>
-                                  대체 인력 추가
-                                </button>
-                              </div>
-                            </div>
-                          ) : null}
                         </>
                       )}
+                      {isAdmin ? (
+                        <div className="admin-calendar-substitute-section">
+                          <h4 className="admin-calendar-substitute-title">대체 근무 지정</h4>
+                          <p className="help admin-calendar-substitute-lead">
+                            휴가자 선택 없이 대체 인력/코드만 입력 후 저장합니다.
+                          </p>
+                          {calendarSubTargetRequests.length === 0 ? (
+                            <p className="help admin-calendar-substitute-lead">해당 날짜에 연결할 휴가 신청 대상이 없어 저장은 불가합니다.</p>
+                          ) : null}
+                          <div className="admin-calendar-substitute-stack">
+                            {calendarSubRows.map((row, idx) => (
+                              <div key={row.rowId} className="admin-calendar-sub-bulk-row">
+                                <span className="admin-calendar-sub-bulk-label">대체 인력 {idx + 1}</span>
+                                <select
+                                  value={row.substituteUserId}
+                                  onChange={(e) => updateCalendarSubRow(row.rowId, "substituteUserId", e.target.value)}
+                                >
+                                  <option value="">대체자 선택</option>
+                                  {nurseUsers.map((u) => (
+                                    <option key={u.id} value={u.id}>
+                                      {u.name}
+                                    </option>
+                                  ))}
+                                </select>
+                                <select
+                                  value={row.shiftCode}
+                                  onChange={(e) => updateCalendarSubRow(row.rowId, "shiftCode", e.target.value)}
+                                >
+                                  <option value="">대체 근무 코드</option>
+                                  {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
+                                    <option key={opt} value={opt}>
+                                      {opt}
+                                    </option>
+                                  ))}
+                                </select>
+                                <button type="button" onClick={() => void applyCalendarSubRow(row)}>
+                                  저장
+                                </button>
+                              </div>
+                            ))}
+                            <button type="button" onClick={addCalendarSubRow}>
+                              대체 인력 추가
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   ) : (
                     <div className="calendar-detail-body calendar-detail-body--apply" role="tabpanel">
