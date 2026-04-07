@@ -2703,7 +2703,7 @@ function AdminDayRequestCard({
       <div className="admin-day-request-head">
         <strong>{nm}</strong>
         <span className="admin-day-meta">
-          {typeFullLabel(requestRow.leaveType)} · {statusLabel(requestRow.status)}
+          {typeFullLabel(requestRow.leaveType)} · {leaveNatureLabel(requestRow.leaveNature)} · {statusLabel(requestRow.status)}
         </span>
       </div>
       {requestRow.status === "APPLIED" ? (
@@ -4421,7 +4421,9 @@ function CalendarPage({
                               else if (isNegotiate && ord != null && ord !== "") prefix = `${ord}. `;
                               else if (meta.mode === "single" && ord != null && ord !== "") prefix = `${ord}. `;
 
-                              const lineText = `${prefix}${nm} · ${typeFullLabel(r.leaveType)} · ${statusLabel(r.status)}`;
+                              const lineText = isAdmin
+                                ? `${prefix}${nm} · ${typeFullLabel(r.leaveType)} · ${leaveNatureLabel(r.leaveNature)} · ${statusLabel(r.status)}`
+                                : `${prefix}${nm} · ${typeFullLabel(r.leaveType)} · ${statusLabel(r.status)}`;
                               return (
                                 <li
                                   key={r.id}

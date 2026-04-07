@@ -654,27 +654,29 @@ button.app-header-update-btn:hover {
   margin: 0 0 4px !important;
 }
 
-/* 관리자: 한 줄 유지 + 가로 스크롤로 전체 텍스트 확인 (잘림 방지) */
+/* 관리자: 2행(내용 + 버튼) 구조로 전체 텍스트 노출 */
 .calendar-applicant-item--admin.calendar-applicant-item--row {
-  flex-wrap: nowrap;
-  align-items: center;
+  flex-wrap: wrap;
+  align-items: flex-start;
   min-width: 0;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  padding-bottom: 2px;
+  overflow-x: visible;
+  padding-bottom: 0;
 }
 
 .calendar-applicant-item--admin .calendar-applicant-name {
-  flex: 0 0 auto;
-  min-width: max-content;
+  flex: 1 1 100%;
+  min-width: 0;
   overflow: visible;
-  text-overflow: clip;
-  white-space: nowrap;
+  text-overflow: initial;
+  white-space: normal;
+  word-break: keep-all;
 }
 
 .admin-calendar-applicant-actions {
   display: flex;
   gap: 6px;
+  flex: 0 0 100%;
+  flex-wrap: wrap;
   flex-shrink: 0;
   align-items: center;
 }
@@ -3181,19 +3183,18 @@ tr.request-cancelled-row td button {
     padding-bottom: 2px;
   }
 
-  /* 관리자(진기숙 포함): 한 줄 유지 + 가로 스크롤로 전체 내용 확인 */
+  /* 관리자(진기숙 포함): 2행에서 전체 내용 노출 */
   .calendar-applicant-item--admin.calendar-applicant-item--row {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    padding-bottom: 2px;
+    overflow-x: visible;
+    padding-bottom: 0;
   }
 
   .calendar-applicant-item--admin .calendar-applicant-name {
-    flex: 0 0 auto;
-    min-width: max-content;
+    flex: 1 1 100%;
+    min-width: 0;
     overflow: visible;
-    text-overflow: clip;
-    white-space: nowrap;
+    text-overflow: initial;
+    white-space: normal;
   }
 
   .negotiation-order-cell {
