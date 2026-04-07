@@ -3932,17 +3932,21 @@ function CalendarPage({
     const targets = (Array.isArray(dayRequests) ? dayRequests : []).filter(
       (r) => String(r.leaveDate ?? "").slice(0, 10) === selectedYmd && (r.status === "APPLIED" || isWinnerStatus(r.status))
     );
-    setCalendarSubRows(
-      targets.map((r, idx) => {
-        const first = getSubstituteRecordsForRequest(substituteAssignments, r.id)[0];
-        return {
-          rowId: `cal_sub_${r.id}_${idx}`,
-          requestId: r.id,
-          substituteUserId: String(first?.substituteUserId ?? ""),
-          shiftCode: String(first?.shiftCode ?? ""),
-        };
-      })
-    );
+    if (targets.length === 0) {
+      setCalendarSubRows([]);
+      return;
+    }
+    // 기본 노출은 1개만, 필요 시 "대체 인력 추가"로 요청 단위 확장
+    const firstTarget = targets[0];
+    const first = getSubstituteRecordsForRequest(substituteAssignments, firstTarget.id)[0];
+    setCalendarSubRows([
+      {
+        rowId: `cal_sub_${firstTarget.id}_0`,
+        requestId: firstTarget.id,
+        substituteUserId: String(first?.substituteUserId ?? ""),
+        shiftCode: String(first?.shiftCode ?? ""),
+      },
+    ]);
   }, [selectedYmd, dayRequests, substituteAssignments]);
 
   const selectedDayComments = useMemo(() => {
