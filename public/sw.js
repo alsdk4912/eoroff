@@ -1,5 +1,5 @@
 /* GitHub Pages: 예전 index.html이 캐시에 남으면 VITE_DEPLOY_TAG(빌드 SHA)가 영원히 안 바뀐 것처럼 보임 → HTML은 네트워크 우선 */
-const CACHE_NAME = "eor-pwa-v50-eoroff-sw-network-first";
+const CACHE_NAME = "eor-pwa-v51-branding-network-first";
 const APP_SHELL = [
   "./manifest.json",
   "./icon.svg",
@@ -84,7 +84,33 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  /* 그 외(아이콘 등): 캐시 우선 */
+  /* manifest·아이콘: 네트워크 우선(빌드마다 ?v=buildId 붙는 페일도 별도 캐시 키) → 옛 아이콘 고착 완화 */
+  const basePath = path.split("/").pop() || "";
+  const isBranding =
+    path.endsWith("/manifest.json") ||
+    basePath === "manifest.json" ||
+    basePath === "icon.svg" ||
+    basePath === "icon-192.png" ||
+    basePath === "icon-512.png" ||
+    basePath === "apple-touch-icon.png" ||
+    basePath === "favicon-32.png";
+
+  if (isBranding) {
+    event.respondWith(
+      fetch(event.request, { cache: "no-cache" })
+        .then((response) => {
+          if (response.ok) {
+            const cloned = response.clone();
+            void caches.open(CACHE_NAME).then((cache) => cache.put(event.request, cloned));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  /* 그 외: 캐시 우선 */
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;

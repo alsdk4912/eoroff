@@ -17,7 +17,8 @@ const SS_RELOAD_FOR = "eor.updateReloadForRemoteBuildId";
 /** 상단「최신 버전」수동 새로고침 직후 1회만 안내(자동 reload 와 구분) */
 const SS_MANUAL_VERSION_TOAST = "eor.manualVersionReloadToast";
 
-const CHECK_INTERVAL_MS = 60 * 1000;
+/** 배포 직후 갱신 인지 지연 완화 — 너무 짧으면 version.json 요청만 잦아짐 */
+const CHECK_INTERVAL_MS = 20 * 1000;
 const AUTO_RELOAD_DELAY_MS = 2000;
 const FETCH_TIMEOUT_MS = 12_000;
 
