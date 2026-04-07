@@ -3895,6 +3895,8 @@ function CalendarPage({
   const [editingCommentId, setEditingCommentId] = useState("");
   const [editingCommentDraft, setEditingCommentDraft] = useState("");
   const [calendarSubRows, setCalendarSubRows] = useState([]);
+  const calendarSwipeRef = useRef({ startX: 0, startY: 0, tracking: false, triggered: false });
+  const skipNextCalendarTapRef = useRef(false);
 
   useEffect(() => {
     if (!selectedYmd || !selectedCell?.isOffDay) {
@@ -4039,6 +4041,38 @@ function CalendarPage({
     setCalendarMonth(next);
   }
 
+  function handleCalendarSwipeTouchStart(e) {
+    const t = e.touches?.[0];
+    if (!t) return;
+    calendarSwipeRef.current = {
+      startX: Number(t.clientX || 0),
+      startY: Number(t.clientY || 0),
+      tracking: true,
+      triggered: false,
+    };
+  }
+
+  function handleCalendarSwipeTouchMove(e) {
+    const s = calendarSwipeRef.current;
+    if (!s.tracking || s.triggered) return;
+    const t = e.touches?.[0];
+    if (!t) return;
+    const dx = Number(t.clientX || 0) - s.startX;
+    const dy = Number(t.clientY || 0) - s.startY;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    // 세로 스크롤과 충돌 방지: 가로 이동이 충분히 큰 경우만 월 이동
+    if (absX >= 56 && absX > absY * 1.25) {
+      moveCalendarMonth(dx < 0 ? 1 : -1);
+      skipNextCalendarTapRef.current = true;
+      calendarSwipeRef.current = { ...s, triggered: true, tracking: false };
+    }
+  }
+
+  function handleCalendarSwipeTouchEnd() {
+    calendarSwipeRef.current = { startX: 0, startY: 0, tracking: false, triggered: false };
+  }
+
   function goToToday() {
     const n = new Date();
     const ymd = toLocalYMD(n);
@@ -4118,7 +4152,12 @@ function CalendarPage({
   return (
     <section className="card calendar-page-card">
       <div className="calendar-page">
-        <div className="calendar-page__top">
+        <div
+          className="calendar-page__top"
+          onTouchStart={handleCalendarSwipeTouchStart}
+          onTouchMove={handleCalendarSwipeTouchMove}
+          onTouchEnd={handleCalendarSwipeTouchEnd}
+        >
       <div className="calendar-nav" role="navigation" aria-label="달력 월 이동">
         <div className="calendar-nav-month-row">
           <button type="button" className="calendar-nav-btn" onClick={() => moveCalendarMonth(-1)} aria-label="이전 달">
@@ -4185,6 +4224,10 @@ function CalendarPage({
               tabIndex={0}
               className={`calendar-cell calendar-cell--clickable ${cell.inMonth ? "" : "muted"}${myDutyClass}${isSel ? " calendar-cell--selected" : ""}`}
               onClick={() => {
+                if (skipNextCalendarTapRef.current) {
+                  skipNextCalendarTapRef.current = false;
+                  return;
+                }
                 setSelectedYmd(cell.date);
                 setLeaveDate(cell.date);
                 setDetailTab("list");
