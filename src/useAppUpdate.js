@@ -14,11 +14,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 const SS_HASH = "eor.resumeHashAfterReload";
 const SS_RELOAD_FOR = "eor.updateReloadForRemoteBuildId";
-const SS_BACKOFF = "eor.versionCheckBackoffUntil";
 /** 상단「최신 버전」수동 새로고침 직후 1회만 안내(자동 reload 와 구분) */
 const SS_MANUAL_VERSION_TOAST = "eor.manualVersionReloadToast";
 
-const CHECK_INTERVAL_MS = 5 * 60 * 1000;
+const CHECK_INTERVAL_MS = 60 * 1000;
 const AUTO_RELOAD_DELAY_MS = 2000;
 const FETCH_TIMEOUT_MS = 12_000;
 
@@ -109,31 +108,15 @@ export function useAppUpdate() {
 
     async function tick() {
       if (cancelledRef.current) return;
-      try {
-        const until = parseInt(sessionStorage.getItem(SS_BACKOFF) || "0", 10);
-        if (until > Date.now()) return;
-      } catch {
-        /* ignore */
-      }
 
       let remoteId = "";
       try {
         remoteId = await fetchRemoteBuildId();
         failStreak = 0;
-        try {
-          sessionStorage.removeItem(SS_BACKOFF);
-        } catch {
-          /* ignore */
-        }
       } catch {
         failStreak += 1;
-        if (failStreak >= 4) {
-          try {
-            sessionStorage.setItem(SS_BACKOFF, String(Date.now() + 10 * 60 * 1000));
-          } catch {
-            /* ignore */
-          }
-        }
+        // 네트워크 순간 장애가 있어도 탭 재시작 전까지 갇히지 않게,
+        // 영구(세션) 백오프는 두지 않고 다음 이벤트/주기 tick에서 재시도한다.
         return;
       }
 
@@ -186,15 +169,24 @@ export function useAppUpdate() {
     }
 
     void tick();
-    const onVis = () => {
+    const onWake = () => {
       if (document.visibilityState === "visible") void tick();
     };
-    document.addEventListener("visibilitychange", onVis);
+    const onFocus = () => void tick();
+    const onPageShow = () => void tick();
+    const onOnline = () => void tick();
+    document.addEventListener("visibilitychange", onWake);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("pageshow", onPageShow);
+    window.addEventListener("online", onOnline);
     const iv = window.setInterval(() => void tick(), CHECK_INTERVAL_MS);
 
     return () => {
       cancelledRef.current = true;
-      document.removeEventListener("visibilitychange", onVis);
+      document.removeEventListener("visibilitychange", onWake);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("pageshow", onPageShow);
+      window.removeEventListener("online", onOnline);
       window.clearInterval(iv);
       if (autoTimerRef.current) {
         window.clearTimeout(autoTimerRef.current);
