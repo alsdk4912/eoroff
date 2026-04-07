@@ -3937,15 +3937,35 @@ function CalendarPage({
       setCalendarSubRows([]);
       return;
     }
-    // 기본 노출은 1개만, 필요 시 "대체 인력 추가"로 요청 단위 확장
+
+    // 저장된 대체자가 있으면 모두 다시 보여주고,
+    // 없을 때만 기본 1박스(대체인력1)만 노출한다.
+    const restored = [];
+    for (const t of targets) {
+      const recs = getSubstituteRecordsForRequest(substituteAssignments, t.id);
+      if (!Array.isArray(recs) || recs.length === 0) continue;
+      for (let idx = 0; idx < recs.length; idx += 1) {
+        const s = recs[idx];
+        restored.push({
+          rowId: `cal_sub_${t.id}_${idx}`,
+          requestId: t.id,
+          substituteUserId: String(s?.substituteUserId ?? ""),
+          shiftCode: String(s?.shiftCode ?? ""),
+        });
+      }
+    }
+    if (restored.length > 0) {
+      setCalendarSubRows(restored);
+      return;
+    }
+
     const firstTarget = targets[0];
-    const first = getSubstituteRecordsForRequest(substituteAssignments, firstTarget.id)[0];
     setCalendarSubRows([
       {
         rowId: `cal_sub_${firstTarget.id}_0`,
         requestId: firstTarget.id,
-        substituteUserId: String(first?.substituteUserId ?? ""),
-        shiftCode: String(first?.shiftCode ?? ""),
+        substituteUserId: "",
+        shiftCode: "",
       },
     ]);
   }, [selectedYmd, dayRequests, substituteAssignments]);
