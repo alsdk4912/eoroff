@@ -38,7 +38,7 @@ const LS_LADDER_RESULTS = "or.ladderResults.v1";
 const LS_ADMIN_DAY_MEMOS = "or.adminDayMemos.v1";
 const LS_DAY_COMMENTS = "or.dayComments.v1";
 const LS_WORK_SCHEDULE_2026 = "or.workSchedule2026.v1";
-/** 승인 시 지정하는 대체 근무(로컬). 서버 API 없음 — 주간 최종 번표 반영용 */
+/** 승인 시 지정하는 대체 근무(서버 동기화 + 로컬 캐시) */
 const LS_SUBSTITUTE_ASSIGNMENTS = "or.substituteAssignments.v1";
 const LS_WEEKLY_CELL_OVERRIDES = "or.weeklyCellOverrides.v1";
 const LS_NOTIFICATIONS = "or.notifications.v1";
@@ -634,6 +634,19 @@ function App() {
       return acc;
     }, {});
     setHolidayDuties(dutyByDate);
+    const subRows = Array.isArray(data.substituteAssignments) ? data.substituteAssignments : [];
+    setSubstituteAssignments(
+      subRows
+        .map((s) => ({
+          id: s.id,
+          requestId: s.request_id ?? s.requestId,
+          leaveDate: s.leave_date ?? s.leaveDate,
+          leaveUserId: s.leave_user_id ?? s.leaveUserId,
+          substituteUserId: s.substitute_user_id ?? s.substituteUserId,
+          shiftCode: s.shift_code ?? s.shiftCode,
+        }))
+        .filter((s) => s.id && s.requestId && s.leaveDate && s.substituteUserId && s.shiftCode)
+    );
     const memoRows = Array.isArray(data.adminDayMemos) ? data.adminDayMemos : [];
     const memoByDate = memoRows.reduce((acc, m) => {
       const ymd = m.target_date ?? m.targetDate;
@@ -1333,6 +1346,10 @@ function App() {
       }
       subItems.push(it);
     }
+    if (subItems.length > 0 && !serverMode) {
+      window.alert?.("서버 연결 상태에서만 대체 근무를 함께 저장할 수 있습니다. 잠시 후 다시 시도해 주세요.");
+      return;
+    }
     const payload = {
       selectionId: `ls_${Date.now()}`,
       selectedBy: auth.userId,
@@ -1348,6 +1365,14 @@ function App() {
     if (serverMode) {
       try {
         await api.selectRequest(requestId, payload);
+        await api.upsertSubstituteAssignments(requestId, {
+          actorUserId: auth.userId,
+          items: subItems.map((it) => ({
+            id: it.id,
+            substituteUserId: it.substituteUserId,
+            shiftCode: it.shiftCode,
+          })),
+        });
         await bootstrap();
         if (target) {
           createNotificationForNurses(`${target.leaveDate} 휴가자 발표`, {
@@ -1368,10 +1393,14 @@ function App() {
     }
   }
 
-  function saveSubstituteForApprovedRequest(requestId, { substituteItems = [], substituteUserId, shiftCode }) {
+  async function saveSubstituteForApprovedRequest(requestId, { substituteItems = [], substituteUserId, shiftCode }) {
     const target = requests.find((r) => r.id === requestId);
     if (!target || !isWinnerStatus(target.status)) {
       window.alert?.("확정된 신청만 대체 근무를 저장할 수 있습니다.");
+      return;
+    }
+    if (!serverMode) {
+      window.alert?.("서버 연결 상태에서만 대체 근무를 저장할 수 있습니다. 잠시 후 다시 시도해 주세요.");
       return;
     }
     const rawItems = Array.isArray(substituteItems)
@@ -1388,8 +1417,16 @@ function App() {
       }))
       .filter((it) => it.substituteUserId || it.shiftCode);
     if (normalizedItems.length === 0) {
+      const prevSnapshot = Array.isArray(substituteAssignments) ? substituteAssignments : [];
       setSubstituteAssignments((prev) => (Array.isArray(prev) ? prev : []).filter((x) => x.requestId !== requestId));
-      notifyDone("대체 근무 지정을 삭제했습니다.");
+      try {
+        await api.upsertSubstituteAssignments(requestId, { actorUserId: auth?.userId, items: [] });
+        await bootstrap();
+        notifyDone("대체 근무 지정을 삭제했습니다.");
+      } catch (e) {
+        setSubstituteAssignments(prevSnapshot);
+        window.alert?.(`대체 근무 삭제 실패: ${e?.message || e}`);
+      }
       return;
     }
     const subItems = [];
@@ -1409,12 +1446,27 @@ function App() {
       }
       subItems.push(it);
     }
+    const prevSnapshot = Array.isArray(substituteAssignments) ? substituteAssignments : [];
     setSubstituteAssignments((prev) => {
       const list = Array.isArray(prev) ? prev : [];
       const rest = list.filter((x) => x.requestId !== requestId);
       return [...rest, ...subItems];
     });
-    notifyDone("대체 근무가 저장되었습니다.");
+    try {
+      await api.upsertSubstituteAssignments(requestId, {
+        actorUserId: auth?.userId,
+        items: subItems.map((it) => ({
+          id: it.id,
+          substituteUserId: it.substituteUserId,
+          shiftCode: it.shiftCode,
+        })),
+      });
+      await bootstrap();
+      notifyDone("대체 근무가 저장되었습니다.");
+    } catch (e) {
+      setSubstituteAssignments(prevSnapshot);
+      window.alert?.(`대체 근무 저장 실패: ${e?.message || e}`);
+    }
   }
 
   async function rejectRequest(requestId) {

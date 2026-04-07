@@ -182,6 +182,25 @@ CREATE TABLE IF NOT EXISTS holiday_duties (
   anesthesia_user_id TEXT
 );
 
+-- 휴가 확정 건별 대체 근무 배정(여러 명 가능)
+CREATE TABLE IF NOT EXISTS substitute_assignments (
+  id TEXT PRIMARY KEY,
+  request_id TEXT NOT NULL,
+  leave_date TEXT NOT NULL,
+  leave_user_id TEXT NOT NULL,
+  substitute_user_id TEXT NOT NULL,
+  shift_code TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_substitute_assignments_request
+  ON substitute_assignments(request_id);
+
+CREATE INDEX IF NOT EXISTS idx_substitute_assignments_date_user
+  ON substitute_assignments(leave_date, substitute_user_id);
+
 -- 협의 순번 사다리 결과
 CREATE TABLE IF NOT EXISTS ladder_results (
   id TEXT PRIMARY KEY,

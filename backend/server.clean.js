@@ -378,6 +378,7 @@ app.get("/api/bootstrap", async (_, res) => {
       users: await queryAll("SELECT id, name, employee_no, role FROM users"),
       goldkeys: await queryAll("SELECT * FROM goldkeys"),
       requests: await queryAll(`SELECT * FROM requests WHERE ${SQL_REQ_ACTIVE}`),
+      substituteAssignments: await queryAll("SELECT * FROM substitute_assignments"),
       notes: await queryAll("SELECT * FROM notes"),
       cancellations: await queryAll("SELECT * FROM cancellations WHERE revoked_at IS NULL"),
       selections: await queryAll("SELECT * FROM selections"),
@@ -876,6 +877,114 @@ app.post("/api/admin/holiday-duties", async (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     console.error("POST /api/admin/holiday-duties", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
+/**
+ * 확정(APPROVED) 휴가 건의 대체 근무를 요청 단위로 교체 저장.
+ * actor: ADMIN/NURSE/ANESTHESIA (실사용은 관리자 화면)
+ */
+app.post("/api/substitute-assignments/:requestId/upsert", async (req, res) => {
+  try {
+    const requestId = decodeURIComponent(String(req.params.requestId ?? "").trim());
+    const actorUserId = String(req.body?.actorUserId ?? "").trim();
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (!requestId) return res.status(400).json({ error: "requestId가 필요합니다." });
+    if (!actorUserId) return res.status(400).json({ error: "actorUserId가 필요합니다." });
+    const actor = await queryOne(
+      "SELECT id FROM users WHERE id = ? AND role IN ('ADMIN', 'NURSE', 'ANESTHESIA')",
+      actorUserId
+    );
+    if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
+
+    const reqRow = await queryOne(
+      `SELECT id, user_id, leave_date, status FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`,
+      requestId
+    );
+    if (!reqRow) return res.status(404).json({ error: "휴가 신청을 찾을 수 없습니다." });
+    if (String(reqRow.status) !== "APPROVED") {
+      return res.status(409).json({ error: "확정(APPROVED)된 신청만 대체 근무를 저장할 수 있습니다." });
+    }
+
+    const normalized = [];
+    for (let i = 0; i < items.length; i += 1) {
+      const it = items[i] ?? {};
+      const substituteUserId = String(it.substituteUserId ?? "").trim();
+      const shiftCode = String(it.shiftCode ?? "").trim();
+      if (!substituteUserId && !shiftCode) continue;
+      if (!substituteUserId || !shiftCode) {
+        return res.status(400).json({ error: "대체 인력과 근무 코드를 모두 입력해야 합니다." });
+      }
+      if (substituteUserId === String(reqRow.user_id)) {
+        return res.status(400).json({ error: "휴가자 본인을 대체 인력으로 지정할 수 없습니다." });
+      }
+      normalized.push({
+        id: String(it.id ?? `sub_${Date.now()}_${i}`).trim() || `sub_${Date.now()}_${i}`,
+        requestId,
+        leaveDate: String(reqRow.leave_date),
+        leaveUserId: String(reqRow.user_id),
+        substituteUserId,
+        shiftCode,
+      });
+    }
+
+    if (normalized.length > 0) {
+      const subIds = [...new Set(normalized.map((it) => it.substituteUserId))];
+      const ph = subIds.map(() => "?").join(", ");
+      const validSubs = await queryAll(`SELECT id FROM users WHERE role = 'NURSE' AND id IN (${ph})`, ...subIds);
+      if (validSubs.length !== subIds.length) {
+        return res.status(400).json({ error: "대체 인력은 간호사 계정만 지정할 수 있습니다." });
+      }
+    }
+
+    await runTransaction(async (tx) => {
+      // 같은 요청은 통째로 교체 저장
+      await tx.execute("DELETE FROM substitute_assignments WHERE request_id = ?", requestId);
+
+      // 같은 날짜에 같은 대체 인력이 다른 요청에 이미 배정되어 있으면 거절
+      for (const it of normalized) {
+        const conflict = await tx.queryOne(
+          `SELECT id, request_id
+           FROM substitute_assignments
+           WHERE leave_date = ? AND substitute_user_id = ? AND request_id <> ?
+           LIMIT 1`,
+          it.leaveDate,
+          it.substituteUserId,
+          requestId
+        );
+        if (conflict?.id) {
+          throw Object.assign(new Error("선택한 간호사는 같은 날짜에 이미 다른 대체 근무가 지정되어 있습니다."), {
+            code: "SUB_CONFLICT",
+          });
+        }
+      }
+
+      const nowIso = new Date().toISOString();
+      for (const it of normalized) {
+        await tx.execute(
+          `INSERT INTO substitute_assignments
+             (id, request_id, leave_date, leave_user_id, substitute_user_id, shift_code, created_by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          it.id,
+          it.requestId,
+          it.leaveDate,
+          it.leaveUserId,
+          it.substituteUserId,
+          it.shiftCode,
+          actorUserId,
+          nowIso,
+          nowIso
+        );
+      }
+    });
+
+    return res.json({ ok: true, count: normalized.length });
+  } catch (err) {
+    if (err?.code === "SUB_CONFLICT") {
+      return res.status(409).json({ error: String(err?.message || err) });
+    }
+    console.error("POST /api/substitute-assignments/:requestId/upsert", err);
     return res.status(500).json({ error: String(err?.message || err) });
   }
 });

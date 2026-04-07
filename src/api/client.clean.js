@@ -104,6 +104,11 @@ export const api = {
     requestJson("/admin/reset-leave-data", { method: "POST", body: JSON.stringify(payload) }),
   upsertHolidayDuty: (payload) =>
     requestJson("/admin/holiday-duties", { method: "POST", body: JSON.stringify(payload) }),
+  upsertSubstituteAssignments: (requestId, payload) =>
+    requestJson(`/substitute-assignments/${encodeURIComponent(String(requestId ?? ""))}/upsert`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   createLadderResult: (payload) =>
     requestJson("/ladder-results", { method: "POST", body: JSON.stringify(payload) }),
   upsertAdminDayMemo: (payload) =>
