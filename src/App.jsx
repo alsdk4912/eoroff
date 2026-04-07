@@ -4421,8 +4421,10 @@ function CalendarPage({
                               else if (isNegotiate && ord != null && ord !== "") prefix = `${ord}. `;
                               else if (meta.mode === "single" && ord != null && ord !== "") prefix = `${ord}. `;
 
+                              const adminTopText = `${prefix}${nm} · ${typeFullLabel(r.leaveType)}`;
+                              const adminBottomText = `${leaveNatureLabel(r.leaveNature)} · ${statusLabel(r.status)}`;
                               const lineText = isAdmin
-                                ? `${prefix}${nm} · ${typeFullLabel(r.leaveType)} · ${leaveNatureLabel(r.leaveNature)} · ${statusLabel(r.status)}`
+                                ? `${adminTopText} · ${adminBottomText}`
                                 : `${prefix}${nm} · ${typeFullLabel(r.leaveType)} · ${statusLabel(r.status)}`;
                               return (
                                 <li
@@ -4453,7 +4455,14 @@ function CalendarPage({
                                     className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status)}`}
                                     title={lineText}
                                   >
-                                    {lineText}
+                                    {isAdmin ? (
+                                      <>
+                                        <span className="admin-applicant-line admin-applicant-line--top">{adminTopText}</span>
+                                        <span className="admin-applicant-line admin-applicant-line--bottom">{adminBottomText}</span>
+                                      </>
+                                    ) : (
+                                      lineText
+                                    )}
                                   </span>
                                   {isAdmin && r.status === "APPLIED" ? (
                                     <div className="admin-calendar-applicant-actions">
