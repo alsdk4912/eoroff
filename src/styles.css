@@ -2142,7 +2142,9 @@ button.ym-wheel-check:hover {
 }
 
 .calendar-cell--today {
-  box-shadow: inset 0 0 0 2px #2563eb !important;
+  background: #f3f0ff !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 
 .calendar-cell--selected {
@@ -2152,7 +2154,9 @@ button.ym-wheel-check:hover {
 }
 
 .calendar-cell--today.calendar-cell--selected {
-  box-shadow: inset 0 0 0 2px #2563eb !important;
+  background: #ece7ff !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 
 .calendar-cell--my-duty {
