@@ -19,7 +19,8 @@ app.use(express.json());
 
 // v1과 동시 실행 시 포트 분리(로컬 4015). Render 등은 PORT 환경변수 사용.
 const PORT = Number(process.env.PORT) || 4015;
-const HOST = process.env.HOST || "0.0.0.0";
+// Render에서는 반드시 0.0.0.0 바인딩이어야 외부 트래픽이 연결된다(localhost 바인딩 시 521 가능).
+const HOST = process.env.RENDER === "true" ? "0.0.0.0" : process.env.HOST || "0.0.0.0";
 
 const VAPID_PUBLIC_KEY = String(process.env.VAPID_PUBLIC_KEY || "").trim();
 const VAPID_PRIVATE_KEY = String(process.env.VAPID_PRIVATE_KEY || "").trim();
