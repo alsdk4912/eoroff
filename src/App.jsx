@@ -2027,7 +2027,16 @@ function formatLeaveDateShort(ymd) {
   const y = Number(m[1]);
   const mo = Number(m[2]);
   const d = Number(m[3]);
-  return `${y}/${mo}/${d}`;
+  return `${y}년${mo}월${d}일`;
+}
+
+function buildLeaveDateSearchTokens(ymd) {
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(String(ymd ?? "").trim());
+  if (!m) return [];
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  return [`${y}`, `${y}년`, `${mo}월`, `${d}일`, `${mo}월 ${d}일`, `${y}년 ${mo}월 ${d}일`];
 }
 
 function formatRequestedAtCompact(iso) {
@@ -2056,7 +2065,7 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
     .filter(
       (r) =>
         matchesStatusFilter(r) &&
-        `${r.leaveDate} ${leaveTypeLabel(r.leaveType)} ${leaveNatureLabel(r.leaveNature)} ${statusLabel(r.status)}`
+        `${r.leaveDate} ${formatLeaveDateShort(r.leaveDate)} ${buildLeaveDateSearchTokens(r.leaveDate).join(" ")} ${leaveTypeLabel(r.leaveType)} ${leaveNatureLabel(r.leaveNature)} ${statusLabel(r.status)}`
           .toLowerCase()
           .includes(search.toLowerCase())
     )
@@ -2259,7 +2268,7 @@ function validateSubstitutePayload({
 }) {
   const hasSub = Boolean(substituteUserId) || Boolean(shiftCode);
   if (!hasSub) return null;
-  if (!substituteUserId || !shiftCode) return "대체 근무를 쓰려면 간호사와 근무 코드를 모두 선택하세요.";
+  if (!substituteUserId || !shiftCode) return "대체 근무를 쓰려면 간호사와 번표를 모두 선택하세요.";
   if (substituteUserId === leaveUserId) return "휴가자 본인을 대체 인력으로 지정할 수 없습니다.";
   const ld = String(leaveDate ?? "").slice(0, 10);
   const others = (Array.isArray(substituteAssignments) ? substituteAssignments : []).filter((s) => s.requestId !== excludeRequestId);
@@ -2722,7 +2731,7 @@ function AdminDayRequestCard({
                 </select>
               </label>
               <label className="admin-day-field">
-                <span className="field-label">대체 근무 코드</span>
+                <span className="field-label">대체 근무 번표</span>
                 <select value={row.shiftCode} onChange={(e) => updateSubRow(row.rowId, "shiftCode", e.target.value)}>
                   <option value="">—</option>
                   {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
@@ -2769,7 +2778,7 @@ function AdminDayRequestCard({
                 </select>
               </label>
               <label className="admin-day-field">
-                <span className="field-label">대체 근무 코드</span>
+                <span className="field-label">대체 근무 번표</span>
                 <select value={row.shiftCode} onChange={(e) => updateSubRow(row.rowId, "shiftCode", e.target.value)}>
                   <option value="">—</option>
                   {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
@@ -4250,6 +4259,7 @@ function CalendarPage({
           </div>
         ))}
         {calendarData.map((cell, idx) => {
+          const isToday = cell.inMonth && cell.date === toLocalYMD(new Date());
           const isSel = cell.inMonth && selectedYmd === cell.date;
           const duty = holidayDuties?.[cell.date];
           const hasDuty = Boolean(
@@ -4269,7 +4279,7 @@ function CalendarPage({
               key={`${cell.date}-${idx}`}
               role="button"
               tabIndex={0}
-              className={`calendar-cell calendar-cell--clickable ${cell.inMonth ? "" : "muted"}${myDutyClass}${isSel ? " calendar-cell--selected" : ""}`}
+              className={`calendar-cell calendar-cell--clickable ${cell.inMonth ? "" : "muted"}${myDutyClass}${isToday ? " calendar-cell--today" : ""}${isSel ? " calendar-cell--selected" : ""}`}
               onClick={() => {
                 if (skipNextCalendarTapRef.current) {
                   skipNextCalendarTapRef.current = false;
@@ -4533,7 +4543,7 @@ function CalendarPage({
                         <div className="admin-calendar-substitute-section">
                           <h4 className="admin-calendar-substitute-title">대체 근무 지정</h4>
                           <p className="help admin-calendar-substitute-lead">
-                            휴가자 선택 없이 대체 인력/코드만 입력 후 저장합니다.
+                            휴가자 선택 없이 대체 인력/번표만 입력 후 저장합니다.
                           </p>
                           {calendarSubTargetRequests.length === 0 ? (
                             <p className="help admin-calendar-substitute-lead">해당 날짜에 연결할 휴가 신청 대상이 없어 저장은 불가합니다.</p>
@@ -4557,7 +4567,7 @@ function CalendarPage({
                                   value={row.shiftCode}
                                   onChange={(e) => updateCalendarSubRow(row.rowId, "shiftCode", e.target.value)}
                                 >
-                                  <option value="">대체 근무 코드</option>
+                                  <option value="">대체 근무 번표</option>
                                   {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
                                     <option key={opt} value={opt}>
                                       {opt}
@@ -4628,7 +4638,7 @@ function CalendarPage({
             <h4>{selectedYmd} 대체자</h4>
             <div className="admin-day-substitute-grid">
               <div className="admin-day-substitute-grid__head">대체자</div>
-              <div className="admin-day-substitute-grid__head">코드</div>
+              <div className="admin-day-substitute-grid__head">번표</div>
               {selectedCell.approvedApplicants.length === 0 ? (
                 <div className="help" style={{ gridColumn: "1 / -1" }}>없음</div>
               ) : (
