@@ -1843,6 +1843,7 @@ function App() {
               createDayComment={createDayComment}
               updateDayComment={updateDayComment}
               deleteDayComment={deleteDayComment}
+              ladderResults={ladderResults}
             />
           }
         />
@@ -3302,6 +3303,7 @@ function laneColor(index) {
 
 function LadderGamePage({ users, requests, ladderResults, createLadderResult, applyLadderResultToNegotiationOrder, currentUserId }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const now = toLocalYMD(new Date());
   const [leaveDate, setLeaveDate] = useState(now);
   const [leaveType, setLeaveType] = useState("GENERAL_PRIORITY");
@@ -3318,15 +3320,19 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
   );
   const [ladderModalOpen, setLadderModalOpen] = useState(false);
   const autoRunDoneRef = useRef("");
+  const queryFromCalendar = useMemo(() => {
+    const qs = new URLSearchParams(location.search || "");
+    return String(qs.get("from") ?? "").trim() === "calendar";
+  }, [location.search]);
 
   useEffect(() => {
     if (!ladderModalOpen) return undefined;
     const onKey = (e) => {
-      if (e.key === "Escape") setLadderModalOpen(false);
+      if (e.key === "Escape") closeLadderModal();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [ladderModalOpen]);
+  }, [ladderModalOpen, closeLadderModal]);
 
   useEffect(() => {
     if (!ladderModalOpen) return undefined;
@@ -3364,6 +3370,27 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
     [requests, leaveDate, leaveType]
   );
   const applicantUserIds = useMemo(() => [...new Set(applicantsForTarget)], [applicantsForTarget]);
+  const savedLadderKeySet = useMemo(() => {
+    const set = new Set();
+    for (const row of Array.isArray(ladderResults) ? ladderResults : []) {
+      const d = String(row?.leaveDate ?? "").trim();
+      const t = String(row?.leaveType ?? "").trim();
+      if (!d || !t) continue;
+      set.add(`${d}|${t}`);
+    }
+    return set;
+  }, [ladderResults]);
+  const hasSavedForCurrentTarget = savedLadderKeySet.has(`${leaveDate}|${leaveType}`);
+
+  function closeLadderModal() {
+    setLadderModalOpen(false);
+    if (!queryFromCalendar) return;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(leaveDate ?? ""))) {
+      navigate(`/calendar?ymd=${encodeURIComponent(String(leaveDate))}&detail=1`, { replace: true });
+      return;
+    }
+    navigate("/calendar", { replace: true });
+  }
 
   useEffect(() => {
     const qs = new URLSearchParams(location.search || "");
@@ -3379,6 +3406,10 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
 
   function runLadder(participantsOverride = null) {
     setLadderMsg("");
+    if (hasSavedForCurrentTarget) {
+      setLadderMsg("이미 저장된 사다리 결과가 있어 다시 실행할 수 없습니다.");
+      return null;
+    }
     const participants = Array.isArray(participantsOverride) && participantsOverride.length > 0 ? participantsOverride : selectedUserIds;
     if (participants.length < 2) {
       window.alert?.("사다리 게임은 참여자 2명 이상이 필요합니다.");
@@ -3440,6 +3471,10 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
 
   async function saveResult({ selectedUserIdsOverride = null, previewOrderOverride = null } = {}) {
     setLadderMsg("");
+    if (hasSavedForCurrentTarget) {
+      setLadderMsg("이미 저장된 사다리 결과가 있어 다시 저장할 수 없습니다.");
+      return;
+    }
     const selected = Array.isArray(selectedUserIdsOverride) ? selectedUserIdsOverride : selectedUserIds;
     const order = Array.isArray(previewOrderOverride) ? previewOrderOverride : previewOrder;
     if (order.length < 2) {
@@ -3482,6 +3517,10 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
     const autoRun = String(qs.get("autoRun") ?? "").trim() === "1";
     const autoSave = String(qs.get("autoSave") ?? "").trim() === "1";
     if (!autoRun) return;
+    if (hasSavedForCurrentTarget) {
+      setLadderMsg("이미 저장된 사다리 결과가 있어 자동 추첨을 건너뜁니다.");
+      return;
+    }
     const runKey = `${leaveDate}|${leaveType}|${location.search}`;
     if (autoRunDoneRef.current === runKey) return;
     if (!Array.isArray(applicantUserIds) || applicantUserIds.length < 2) return;
@@ -3496,7 +3535,7 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
         await saveResult({ selectedUserIdsOverride: participants, previewOrderOverride: spec.order });
       }
     }, 0);
-  }, [location.search, leaveDate, leaveType, applicantUserIds]);
+  }, [location.search, leaveDate, leaveType, applicantUserIds, hasSavedForCurrentTarget]);
 
   function renderLadderSvg(spec) {
     if (!spec) return null;
@@ -3617,8 +3656,8 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
       </div>
 
       <div className="ladder-toolbar ladder-toolbar--split">
-        <button type="button" className="ladder-btn-run" onClick={runLadder}>
-          {animating ? "사다리 진행중..." : "사다리 실행"}
+        <button type="button" className="ladder-btn-run" onClick={runLadder} disabled={animating || hasSavedForCurrentTarget}>
+          {hasSavedForCurrentTarget ? "사다리 완료" : animating ? "사다리 진행중..." : "사다리 실행"}
         </button>
         <button type="button" className="ladder-btn-save" onClick={() => void saveResult()} disabled={previewOrder.length < 2}>
           결과 저장
@@ -3630,7 +3669,7 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
           className="ladder-modal-backdrop"
           role="presentation"
           onClick={(e) => {
-            if (e.target === e.currentTarget) setLadderModalOpen(false);
+            if (e.target === e.currentTarget) closeLadderModal();
           }}
         >
           <div
@@ -3644,7 +3683,7 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
               <h3 id="ladder-modal-title" className="ladder-modal-title">
                 사다리 추첨
               </h3>
-              <button type="button" className="ladder-modal-close" onClick={() => setLadderModalOpen(false)} aria-label="닫기">
+              <button type="button" className="ladder-modal-close" onClick={closeLadderModal} aria-label="닫기">
                 닫기
               </button>
             </div>
@@ -3848,6 +3887,7 @@ function CalendarPage({
   createDayComment,
   updateDayComment,
   deleteDayComment,
+  ladderResults,
 }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -4075,6 +4115,17 @@ function CalendarPage({
     }
     return [...byType.values()].filter((t) => t.count >= 2);
   }, [dayRequests, negotiationMetaByRequestId]);
+
+  const ladderDoneKeySet = useMemo(() => {
+    const set = new Set();
+    for (const r of Array.isArray(ladderResults) ? ladderResults : []) {
+      const d = String(r?.leaveDate ?? "").trim();
+      const t = String(r?.leaveType ?? "").trim();
+      if (!d || !t) continue;
+      set.add(`${d}|${t}`);
+    }
+    return set;
+  }, [ladderResults]);
 
   function moveCalendarMonth(offset) {
     const [yy, mm] = String(calendarMonth || "").split("-").map(Number);
@@ -4448,20 +4499,27 @@ function CalendarPage({
                           {quickLadderTargets.length > 0 ? (
                             <div className="calendar-ladder-quick-bar">
                               {quickLadderTargets.map((t) => (
+                                (() => {
+                                  const key = `${String(t.leaveDate ?? "")}|${String(t.leaveType ?? "")}`;
+                                  const isDone = ladderDoneKeySet.has(key);
+                                  return (
                                 <button
                                   key={`${t.leaveDate}-${t.leaveType}`}
                                   type="button"
                                   className="calendar-ladder-quick-btn"
+                                  disabled={isDone}
                                   onClick={() =>
                                     navigate(
                                       `/ladder?leaveDate=${encodeURIComponent(String(t.leaveDate ?? ""))}&leaveType=${encodeURIComponent(
                                         String(t.leaveType ?? "")
-                                      )}&autoRun=1&autoSave=1`
+                                      )}&autoRun=1&autoSave=1&from=calendar`
                                     )
                                   }
                                 >
-                                  {typeFullLabel(t.leaveType)} 사다리
+                                  {isDone ? `${typeFullLabel(t.leaveType)} 사다리 완료` : `${typeFullLabel(t.leaveType)} 사다리`}
                                 </button>
+                                  );
+                                })()
                               ))}
                             </div>
                           ) : null}
