@@ -3370,6 +3370,22 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
     [requests, leaveDate, leaveType]
   );
   const applicantUserIds = useMemo(() => [...new Set(applicantsForTarget)], [applicantsForTarget]);
+  const ladderParticipantUserIds = useMemo(() => {
+    const rows = (Array.isArray(requests) ? requests : []).filter(
+      (r) => r.leaveDate === leaveDate && r.leaveType === leaveType && r.status === "APPLIED"
+    );
+    if (leaveType !== "GOLDKEY") return [...new Set(rows.map((r) => r.userId))];
+    const month = Number(String(leaveDate ?? "").slice(5, 7));
+    if (month >= 7 && month <= 12) {
+      const consultRows = rows.filter((r) => isSecondHalfGoldkeyAprilConsultationRequest(r));
+      if (consultRows.length < 2) return [];
+      return [...new Set(consultRows.map((r) => r.userId))];
+    }
+    const submitDays = new Set(rows.map((r) => toLocalYMD(new Date(r.requestedAt))));
+    if (rows.length < 2 || submitDays.size !== 1) return [];
+    return [...new Set(rows.map((r) => r.userId))];
+  }, [requests, leaveDate, leaveType]);
+  const canRunLadderForTarget = ladderParticipantUserIds.length >= 2;
   const savedLadderKeySet = useMemo(() => {
     const set = new Set();
     for (const row of Array.isArray(ladderResults) ? ladderResults : []) {
@@ -3408,6 +3424,15 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
     setLadderMsg("");
     if (hasSavedForCurrentTarget) {
       setLadderMsg("이미 저장된 사다리 결과가 있어 다시 실행할 수 없습니다.");
+      return null;
+    }
+    if (!canRunLadderForTarget) {
+      const msg =
+        leaveType === "GOLDKEY"
+          ? "현재 골드키는 협의 대상이 아니어서 사다리를 실행할 수 없습니다. (신청순 자동 배정)"
+          : "현재 조건에서는 사다리를 실행할 수 없습니다.";
+      setLadderMsg(msg);
+      window.alert?.(msg);
       return null;
     }
     const participants = Array.isArray(participantsOverride) && participantsOverride.length > 0 ? participantsOverride : selectedUserIds;
@@ -3482,7 +3507,7 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
       return;
     }
     const selectedSet = new Set(selected);
-    const applicantSet = new Set(applicantUserIds);
+    const applicantSet = new Set(ladderParticipantUserIds);
     const isSameSize = selectedSet.size === applicantSet.size;
     const isSameMember = isSameSize && [...selectedSet].every((id) => applicantSet.has(id));
     if (!isSameMember) {
@@ -3521,11 +3546,12 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
       setLadderMsg("이미 저장된 사다리 결과가 있어 자동 추첨을 건너뜁니다.");
       return;
     }
+    if (!canRunLadderForTarget) return;
     const runKey = `${leaveDate}|${leaveType}|${location.search}`;
     if (autoRunDoneRef.current === runKey) return;
-    if (!Array.isArray(applicantUserIds) || applicantUserIds.length < 2) return;
+    if (!Array.isArray(ladderParticipantUserIds) || ladderParticipantUserIds.length < 2) return;
     autoRunDoneRef.current = runKey;
-    const participants = [...applicantUserIds];
+    const participants = [...ladderParticipantUserIds];
     setSelectedUserIds(participants);
     window.setTimeout(async () => {
       const spec = runLadder(participants);
@@ -3535,7 +3561,7 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
         await saveResult({ selectedUserIdsOverride: participants, previewOrderOverride: spec.order });
       }
     }, 0);
-  }, [location.search, leaveDate, leaveType, applicantUserIds, hasSavedForCurrentTarget]);
+  }, [location.search, leaveDate, leaveType, ladderParticipantUserIds, hasSavedForCurrentTarget, canRunLadderForTarget]);
 
   function renderLadderSvg(spec) {
     if (!spec) return null;
@@ -3624,8 +3650,8 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
     <section className="card ladder-page">
       <p className="help ladder-applicant-line">
         해당일 협의 신청자:{" "}
-        {applicantUserIds.length > 0
-          ? applicantUserIds.map((id) => idToName.get(id) ?? id).join(", ")
+        {ladderParticipantUserIds.length > 0
+          ? ladderParticipantUserIds.map((id) => idToName.get(id) ?? id).join(", ")
           : "없음"}
       </p>
       <div className="ladder-date-type-row ladder-date-type-row--compact ladder-date-type-row--inline">
@@ -3656,7 +3682,7 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
       </div>
 
       <div className="ladder-toolbar ladder-toolbar--split">
-        <button type="button" className="ladder-btn-run" onClick={runLadder} disabled={animating || hasSavedForCurrentTarget}>
+        <button type="button" className="ladder-btn-run" onClick={runLadder} disabled={animating || hasSavedForCurrentTarget || !canRunLadderForTarget}>
           {hasSavedForCurrentTarget ? "사다리 완료" : animating ? "사다리 진행중..." : "사다리 실행"}
         </button>
         <button type="button" className="ladder-btn-save" onClick={() => void saveResult()} disabled={previewOrder.length < 2}>
@@ -4043,10 +4069,10 @@ function CalendarPage({
   }, [dayComments, selectedYmd]);
 
   /**
-   * 같은 휴가일·같은 유형 기준으로, 신청(제출)일이 같은 사람끼리만 묶음.
-   * 하반기 골드키(같은 해 7~12월)를 4/1~4/10에 제출한 건은 항상 협의(자동 신청순 없음).
-   * 일반휴가-우선순위/후순위: 같은 날 2명 이상이면 항상 협의(수동 순번).
-   * 그 외 유형: 묶음에 2명 이상이면 협의, 제출일이 겹치지 않으면 신청순 자동.
+   * 같은 휴가일·같은 유형 기준 협의/신청순 판정.
+   * - 일반휴가(우선/후순위): 2명 이상이면 협의.
+   * - 골드키(7월 이전): "모두 같은 신청일"일 때만 협의, 아니면 신청순 자동.
+   * - 골드키(7~12월): 4/1~4/10 제출분만 협의, 이후 제출분은 신청순(하위) 자동.
    */
   const negotiationMetaByRequestId = useMemo(() => {
     const map = new Map();
@@ -4065,14 +4091,11 @@ function CalendarPage({
           map.set(only.id, { mode: "negotiate" });
           continue;
         }
-        if (only.leaveType === "GOLDKEY" && isSecondHalfGoldkeyAprilConsultationRequest(only)) {
-          map.set(only.id, { mode: "negotiate" });
-        } else {
-          map.set(only.id, { mode: "single" });
-        }
+        map.set(only.id, { mode: "single" });
         continue;
       }
       const sortedAll = [...list].sort((a, b) => a.requestedAt.localeCompare(b.requestedAt));
+      const leaveMonth = Number(String(list[0]?.leaveDate ?? "").slice(5, 7));
       for (const r of list) {
         if (r.leaveType === "GENERAL_PRIORITY") {
           map.set(r.id, { mode: "negotiate" });
@@ -4082,8 +4105,22 @@ function CalendarPage({
           map.set(r.id, { mode: "negotiate" });
           continue;
         }
-        if (r.leaveType === "GOLDKEY" && isSecondHalfGoldkeyAprilConsultationRequest(r)) {
-          map.set(r.id, { mode: "negotiate" });
+        if (r.leaveType === "GOLDKEY") {
+          const autoRankGlobal = sortedAll.findIndex((x) => x.id === r.id) + 1;
+          if (leaveMonth >= 7 && leaveMonth <= 12) {
+            if (isSecondHalfGoldkeyAprilConsultationRequest(r)) {
+              map.set(r.id, { mode: "negotiate" });
+            } else {
+              map.set(r.id, { mode: "auto", autoRank: autoRankGlobal });
+            }
+            continue;
+          }
+          const submitDays = new Set(list.map((x) => toLocalYMD(new Date(x.requestedAt))));
+          if (submitDays.size === 1) {
+            map.set(r.id, { mode: "negotiate" });
+          } else {
+            map.set(r.id, { mode: "auto", autoRank: autoRankGlobal });
+          }
           continue;
         }
         const myDay = toLocalYMD(new Date(r.requestedAt));
