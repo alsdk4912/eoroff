@@ -2052,11 +2052,12 @@ function formatRequestedAtCompact(iso) {
   try {
     const t = new Date(iso);
     if (Number.isNaN(t.getTime())) return String(iso ?? "");
+    const y = t.getFullYear();
     const mo = t.getMonth() + 1;
     const d = t.getDate();
     const h = String(t.getHours()).padStart(2, "0");
     const min = String(t.getMinutes()).padStart(2, "0");
-    return `${mo}/${d} ${h}:${min}`;
+    return `${y}년 ${mo}월 ${d}일 ${h}:${min}`;
   } catch {
     return String(iso ?? "");
   }
