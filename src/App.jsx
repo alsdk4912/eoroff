@@ -1851,6 +1851,7 @@ function App() {
               updateDayComment={updateDayComment}
               deleteDayComment={deleteDayComment}
               ladderResults={ladderResults}
+              cancelRequest={cancelRequest}
             />
           }
         />
@@ -3925,6 +3926,7 @@ function CalendarPage({
   updateDayComment,
   deleteDayComment,
   ladderResults,
+  cancelRequest,
 }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -4641,6 +4643,18 @@ function CalendarPage({
                                       </button>
                                       <button type="button" className="admin-calendar-btn admin-calendar-btn--reject" onClick={() => void rejectRequest(r.id)}>
                                         반려
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                  {!isAdmin && r.status === "APPLIED" && r.userId === currentUserId ? (
+                                    <div className="admin-calendar-applicant-actions">
+                                      <button
+                                        type="button"
+                                        className="admin-calendar-btn admin-calendar-btn--reject"
+                                        disabled={Boolean(r.cancelLocked)}
+                                        onClick={() => void cancelRequest(r.id)}
+                                      >
+                                        {r.cancelLocked ? "취소 처리됨" : "취소"}
                                       </button>
                                     </div>
                                   ) : null}
