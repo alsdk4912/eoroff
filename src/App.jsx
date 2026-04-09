@@ -43,6 +43,13 @@ const LS_SUBSTITUTE_ASSIGNMENTS = "or.substituteAssignments.v1";
 const LS_WEEKLY_CELL_OVERRIDES = "or.weeklyCellOverrides.v1";
 const LS_NOTIFICATIONS = "or.notifications.v1";
 
+/** 운영 예외: 해당 날짜/인원 골드키는 수동 협의로 처리 */
+const FORCE_GOLDKEY_NEGOTIATION_KEYS = new Set([
+  "2026-05-22|u_nurse_2", // 이양희
+  "2026-05-22|u_nurse_8", // 임희종
+  "2026-05-22|u_nurse_16", // 이현숙
+]);
+
 /** 이전 버전 키는 남아 있으면 혼동만 되므로 제거(현재 키는 유지) */
 function dropStaleOfflineLeaveKeys() {
   try {
@@ -3375,6 +3382,10 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
       (r) => r.leaveDate === leaveDate && r.leaveType === leaveType && r.status === "APPLIED"
     );
     if (leaveType !== "GOLDKEY") return [...new Set(rows.map((r) => r.userId))];
+    const forcedRows = rows.filter((r) =>
+      FORCE_GOLDKEY_NEGOTIATION_KEYS.has(`${String(r.leaveDate ?? "")}|${String(r.userId ?? "")}`)
+    );
+    if (forcedRows.length >= 2) return [...new Set(forcedRows.map((r) => r.userId))];
     const month = Number(String(leaveDate ?? "").slice(5, 7));
     if (month >= 7 && month <= 12) {
       const consultRows = rows.filter((r) => isSecondHalfGoldkeyAprilConsultationRequest(r));
@@ -4107,6 +4118,11 @@ function CalendarPage({
         }
         if (r.leaveType === "GOLDKEY") {
           const autoRankGlobal = sortedAll.findIndex((x) => x.id === r.id) + 1;
+          const forceKey = `${String(r.leaveDate ?? "")}|${String(r.userId ?? "")}`;
+          if (FORCE_GOLDKEY_NEGOTIATION_KEYS.has(forceKey)) {
+            map.set(r.id, { mode: "negotiate" });
+            continue;
+          }
           if (leaveMonth >= 7 && leaveMonth <= 12) {
             if (isSecondHalfGoldkeyAprilConsultationRequest(r)) {
               map.set(r.id, { mode: "negotiate" });
