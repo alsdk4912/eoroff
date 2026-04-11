@@ -227,6 +227,25 @@ function notifyDone(message) {
   window.alert?.(msg);
 }
 
+/** 일반휴가-우선순위 신청 가능 구간(rules.clean.js validateRequest와 동일): 매월 1일 00:00 ~ 2일 09:00 로컬 */
+function isLocalGeneralPriorityBannerWindow(d) {
+  const y = d.getFullYear();
+  const m = d.getMonth();
+  const start = new Date(y, m, 1, 0, 0, 0, 0);
+  const end = new Date(y, m, 2, 9, 0, 0, 0);
+  return d >= start && d <= end;
+}
+
+/** 장기 골드키: 4/1~4/10 (당해 7~12월) */
+function isLongTermGoldkeyAprilBannerWindow(d) {
+  return d.getMonth() + 1 === 4 && d.getDate() >= 1 && d.getDate() <= 10;
+}
+
+/** 장기 골드키: 10/1~10/10 (익년 1~6월) */
+function isLongTermGoldkeyOctoberBannerWindow(d) {
+  return d.getMonth() + 1 === 10 && d.getDate() >= 1 && d.getDate() <= 10;
+}
+
 /** iOS Safari: 로그인 화면에서의 자동·수동 확대가 캘린더에 그대로 남는 현상 완화(뷰포트 재적용 + 스크롤 원점) */
 function resetViewportScaleToDefault() {
   try {
@@ -885,6 +904,45 @@ function App() {
       window.setTimeout(() => notifyDone("최신 버전으로 갱신되었습니다."), 0);
     }
   }, [isLoggedIn]);
+
+  /** 간호사: 일반-우선·장기 골드키 신청 기간 팝업(유형별 하루 1회, localStorage 키 분리) */
+  useEffect(() => {
+    if (!dataHydrated || !auth?.userId || currentUser?.role !== "NURSE") return;
+
+    const now = new Date();
+    const dayKey = toLocalYMD(now);
+    const popups = [];
+
+    if (isLocalGeneralPriorityBannerWindow(now)) {
+      const k = `or.periodBanner.gp.${dayKey}`;
+      if (!localStorage.getItem(k)) {
+        localStorage.setItem(k, "1");
+        popups.push("일반휴가-우선순위 신청가능기간입니다");
+      }
+    }
+    if (isLongTermGoldkeyAprilBannerWindow(now)) {
+      const k = `or.periodBanner.ltApr.${dayKey}`;
+      if (!localStorage.getItem(k)) {
+        localStorage.setItem(k, "1");
+        popups.push(`${now.getFullYear()}년 7월 ~ 12월 장기휴가 신청가능기간입니다`);
+      }
+    }
+    if (isLongTermGoldkeyOctoberBannerWindow(now)) {
+      const k = `or.periodBanner.ltOct.${dayKey}`;
+      if (!localStorage.getItem(k)) {
+        localStorage.setItem(k, "1");
+        popups.push(`${now.getFullYear() + 1}년 1월 ~ 6월 장기휴가 신청가능기간입니다`);
+      }
+    }
+
+    if (popups.length === 0) return;
+    const t = window.setTimeout(() => {
+      for (const msg of popups) {
+        window.alert(msg);
+      }
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [dataHydrated, auth?.userId, currentUser?.role]);
 
   useEffect(() => {
     if (!isLoggedIn) return;
