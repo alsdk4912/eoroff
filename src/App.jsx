@@ -51,6 +51,61 @@ const FORCE_GOLDKEY_NEGOTIATION_KEYS = new Set([
   "2026-05-22|u_nurse_16", // 이현숙
 ]);
 
+/** 같은 날·같은 유형 APPLIED 신청으로부터 사다리 협의 대상자 userId 목록 (사다리 페이지와 동일 규칙) */
+function getLadderParticipantUserIdsForRequests(requests, leaveDate, leaveType) {
+  const rows = (Array.isArray(requests) ? requests : []).filter(
+    (r) => r.leaveDate === leaveDate && r.leaveType === leaveType && r.status === "APPLIED"
+  );
+  if (leaveType !== "GOLDKEY") return [...new Set(rows.map((r) => r.userId))];
+  const forcedRows = rows.filter((r) =>
+    FORCE_GOLDKEY_NEGOTIATION_KEYS.has(`${String(r.leaveDate ?? "")}|${String(r.userId ?? "")}`)
+  );
+  if (forcedRows.length >= 2) return [...new Set(forcedRows.map((r) => r.userId))];
+  const month = Number(String(leaveDate ?? "").slice(5, 7));
+  if (month >= 7 && month <= 12) {
+    const consultRows = rows.filter((r) => isSecondHalfGoldkeyAprilConsultationRequest(r));
+    if (consultRows.length < 2) return [];
+    return [...new Set(consultRows.map((r) => r.userId))];
+  }
+  const submitDays = new Set(rows.map((r) => toLocalYMD(new Date(r.requestedAt))));
+  if (rows.length < 2 || submitDays.size !== 1) return [];
+  return [...new Set(rows.map((r) => r.userId))];
+}
+
+function hasSavedLadderResultForKey(ladderResults, leaveDate, leaveType) {
+  const key = `${String(leaveDate ?? "").trim()}|${String(leaveType ?? "").trim()}`;
+  return (Array.isArray(ladderResults) ? ladderResults : []).some((row) => {
+    const k = `${String(row?.leaveDate ?? "").trim()}|${String(row?.leaveType ?? "").trim()}`;
+    return k === key;
+  });
+}
+
+/** 사다리 결과 저장 전, 협의 대상자 중 누구라도 수기로 순번을 넣었으면 사다리 실행 불가 */
+function manualNegotiationOrderBlocksLadder(requests, leaveDate, leaveType, ladderResults) {
+  if (hasSavedLadderResultForKey(ladderResults, leaveDate, leaveType)) return false;
+  const participantUserIds = getLadderParticipantUserIdsForRequests(requests, leaveDate, leaveType);
+  if (participantUserIds.length < 2) return false;
+  const rows = (Array.isArray(requests) ? requests : []).filter(
+    (r) => r.leaveDate === leaveDate && r.leaveType === leaveType && r.status === "APPLIED"
+  );
+  for (const uid of participantUserIds) {
+    const row = rows.find((r) => r.userId === uid);
+    if (!row) continue;
+    const o = row.negotiationOrder ?? row.negotiation_order;
+    if (o == null || o === "") continue;
+    const n = Number(o);
+    if (Number.isInteger(n) && n >= 1 && n <= 999) return true;
+  }
+  return false;
+}
+
+function isNegotiationOrderInputLocked(requestRow, ladderDoneKeySet) {
+  if (!requestRow) return false;
+  if (requestRow.negotiationOrderLocked) return true;
+  const key = `${String(requestRow.leaveDate ?? "").trim()}|${String(requestRow.leaveType ?? "").trim()}`;
+  return Boolean(ladderDoneKeySet?.has?.(key));
+}
+
 /** 이전 버전 키는 남아 있으면 혼동만 되므로 제거(현재 키는 유지) */
 function dropStaleOfflineLeaveKeys() {
   try {
@@ -1018,12 +1073,21 @@ function App() {
     setRequests((prev) =>
       prev.map((r) => {
         const u = updates.find((x) => x.requestId === r.id);
-        return u ? { ...r, negotiationOrder: u.negotiationOrder } : r;
+        return u ? { ...r, negotiationOrder: u.negotiationOrder, negotiationOrderLocked: true } : r;
       })
     );
   }
 
   async function saveNegotiationOrder(requestId, rawString) {
+    const target = requests.find((r) => r.id === requestId);
+    if (target?.negotiationOrderLocked) {
+      window.alert?.("협의 순번이 확정되어 수정할 수 없습니다.");
+      return;
+    }
+    if (target && hasSavedLadderResultForKey(ladderResults, target.leaveDate, target.leaveType)) {
+      window.alert?.("사다리로 순번이 확정되어 수정할 수 없습니다.");
+      return;
+    }
     const trimmed = String(rawString ?? "").trim();
     const negotiationOrder = trimmed === "" ? null : Number(trimmed);
     if (negotiationOrder !== null && (!Number.isInteger(negotiationOrder) || negotiationOrder < 1 || negotiationOrder > 999)) {
@@ -1036,11 +1100,23 @@ function App() {
         await bootstrap();
         notifyDone("저장되었습니다.");
       } catch (e) {
-        window.alert?.(`저장 실패: ${e?.message || e}`);
+        const msg = String(e?.message || e || "");
+        if (msg.includes("409") || msg.includes("확정")) {
+          window.alert?.("협의 순번이 확정되어 수정할 수 없습니다.");
+        } else {
+          window.alert?.(`저장 실패: ${msg}`);
+        }
       }
     } else {
       setRequests((prev) => {
-        const next = prev.map((r) => (r.id === requestId ? { ...r, negotiationOrder } : r));
+        const next = prev.map((r) => {
+          if (r.id !== requestId) return r;
+          const nextLocked =
+            negotiationOrder != null && Number.isInteger(negotiationOrder) && negotiationOrder >= 1 && negotiationOrder <= 999
+              ? true
+              : Boolean(r.negotiationOrderLocked);
+          return { ...r, negotiationOrder, negotiationOrderLocked: nextLocked };
+        });
         try {
           localStorage.setItem(LS_REQUESTS, JSON.stringify(next));
         } catch {
@@ -3386,26 +3462,15 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
     [requests, leaveDate, leaveType]
   );
   const applicantUserIds = useMemo(() => [...new Set(applicantsForTarget)], [applicantsForTarget]);
-  const ladderParticipantUserIds = useMemo(() => {
-    const rows = (Array.isArray(requests) ? requests : []).filter(
-      (r) => r.leaveDate === leaveDate && r.leaveType === leaveType && r.status === "APPLIED"
-    );
-    if (leaveType !== "GOLDKEY") return [...new Set(rows.map((r) => r.userId))];
-    const forcedRows = rows.filter((r) =>
-      FORCE_GOLDKEY_NEGOTIATION_KEYS.has(`${String(r.leaveDate ?? "")}|${String(r.userId ?? "")}`)
-    );
-    if (forcedRows.length >= 2) return [...new Set(forcedRows.map((r) => r.userId))];
-    const month = Number(String(leaveDate ?? "").slice(5, 7));
-    if (month >= 7 && month <= 12) {
-      const consultRows = rows.filter((r) => isSecondHalfGoldkeyAprilConsultationRequest(r));
-      if (consultRows.length < 2) return [];
-      return [...new Set(consultRows.map((r) => r.userId))];
-    }
-    const submitDays = new Set(rows.map((r) => toLocalYMD(new Date(r.requestedAt))));
-    if (rows.length < 2 || submitDays.size !== 1) return [];
-    return [...new Set(rows.map((r) => r.userId))];
-  }, [requests, leaveDate, leaveType]);
-  const canRunLadderForTarget = ladderParticipantUserIds.length >= 2;
+  const ladderParticipantUserIds = useMemo(
+    () => getLadderParticipantUserIdsForRequests(requests, leaveDate, leaveType),
+    [requests, leaveDate, leaveType]
+  );
+  const manualOrderBlocksLadder = useMemo(
+    () => manualNegotiationOrderBlocksLadder(requests, leaveDate, leaveType, ladderResults),
+    [requests, leaveDate, leaveType, ladderResults]
+  );
+  const canRunLadderForTarget = ladderParticipantUserIds.length >= 2 && !manualOrderBlocksLadder;
   const savedLadderKeySet = useMemo(() => {
     const set = new Set();
     for (const row of Array.isArray(ladderResults) ? ladderResults : []) {
@@ -3444,6 +3509,12 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
     setLadderMsg("");
     if (hasSavedForCurrentTarget) {
       setLadderMsg("이미 저장된 사다리 결과가 있어 다시 실행할 수 없습니다.");
+      return null;
+    }
+    if (manualOrderBlocksLadder) {
+      const msg = "협의 순번이 수기로 저장되어 사다리를 실행할 수 없습니다.";
+      setLadderMsg(msg);
+      window.alert?.(msg);
       return null;
     }
     if (!canRunLadderForTarget) {
@@ -3566,6 +3637,10 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
       setLadderMsg("이미 저장된 사다리 결과가 있어 자동 추첨을 건너뜁니다.");
       return;
     }
+    if (manualOrderBlocksLadder) {
+      setLadderMsg("협의 순번이 수기로 저장되어 자동 사다리를 건너뜁니다.");
+      return;
+    }
     if (!canRunLadderForTarget) return;
     const runKey = `${leaveDate}|${leaveType}|${location.search}`;
     if (autoRunDoneRef.current === runKey) return;
@@ -3581,7 +3656,7 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
         await saveResult({ selectedUserIdsOverride: participants, previewOrderOverride: spec.order });
       }
     }, 0);
-  }, [location.search, leaveDate, leaveType, ladderParticipantUserIds, hasSavedForCurrentTarget, canRunLadderForTarget]);
+  }, [location.search, leaveDate, leaveType, ladderParticipantUserIds, hasSavedForCurrentTarget, canRunLadderForTarget, manualOrderBlocksLadder]);
 
   function renderLadderSvg(spec) {
     if (!spec) return null;
@@ -3674,6 +3749,11 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
           ? ladderParticipantUserIds.map((id) => idToName.get(id) ?? id).join(", ")
           : "없음"}
       </p>
+      {manualOrderBlocksLadder && !hasSavedForCurrentTarget ? (
+        <p className="help" style={{ marginTop: 8 }}>
+          협의 대상자 중 수기로 순번이 입력된 경우 사다리를 사용할 수 없습니다.
+        </p>
+      ) : null}
       <div className="ladder-date-type-row ladder-date-type-row--compact ladder-date-type-row--inline">
         <label className="ladder-field ladder-field--date">
           <span className="field-label ladder-field-label">휴가일</span>
@@ -4565,12 +4645,18 @@ function CalendarPage({
                                 (() => {
                                   const key = `${String(t.leaveDate ?? "")}|${String(t.leaveType ?? "")}`;
                                   const isDone = ladderDoneKeySet.has(key);
+                                  const manualBlock = manualNegotiationOrderBlocksLadder(dayRequests, t.leaveDate, t.leaveType, ladderResults);
                                   return (
                                 <button
                                   key={`${t.leaveDate}-${t.leaveType}`}
                                   type="button"
                                   className="calendar-ladder-quick-btn"
-                                  disabled={isDone}
+                                  disabled={isDone || manualBlock}
+                                  title={
+                                    manualBlock
+                                      ? "수기로 순번이 저장되어 사다리를 사용할 수 없습니다."
+                                      : undefined
+                                  }
                                   onClick={() =>
                                     navigate(
                                       `/ladder?leaveDate=${encodeURIComponent(String(t.leaveDate ?? ""))}&leaveType=${encodeURIComponent(
@@ -4579,7 +4665,11 @@ function CalendarPage({
                                     )
                                   }
                                 >
-                                  {isDone ? `${typeFullLabel(t.leaveType)} 사다리 완료` : `${typeFullLabel(t.leaveType)} 사다리`}
+                                  {isDone
+                                    ? `${typeFullLabel(t.leaveType)} 사다리 완료`
+                                    : manualBlock
+                                      ? `${typeFullLabel(t.leaveType)} 사다리 불가`
+                                      : `${typeFullLabel(t.leaveType)} 사다리`}
                                 </button>
                                   );
                                 })()
@@ -4595,6 +4685,7 @@ function CalendarPage({
                               const isAuto = meta.mode === "auto";
                               const isCancelledRow = meta.mode === "cancelled";
                               const autoRank = meta.mode === "auto" ? meta.autoRank : null;
+                              const orderLocked = isNegotiationOrderInputLocked(r, ladderDoneKeySet);
                               const showModePill = isNegotiate || isAuto;
                               let prefix = "";
                               if (isAuto && autoRank != null) prefix = `${autoRank}. `;
@@ -4613,7 +4704,13 @@ function CalendarPage({
                                 >
                                   <div className="negotiation-order-cell">
                                     {isNegotiate && r.status !== "CANCELLED" ? (
-                                      <NegotiationOrderInput request={r} disabled={false} onCommit={saveNegotiationOrder} />
+                                      orderLocked ? (
+                                        <span className="negotiation-order-readonly" title="협의 순번 확정(수정 불가)">
+                                          {ord != null && ord !== "" ? ord : "—"}
+                                        </span>
+                                      ) : (
+                                        <NegotiationOrderInput request={r} disabled={false} onCommit={saveNegotiationOrder} />
+                                      )
                                     ) : isAuto && r.status !== "CANCELLED" && autoRank != null ? (
                                       <span className="negotiation-order-readonly" title="신청 순서(수정 불가)">
                                         {autoRank}
@@ -5202,6 +5299,7 @@ function mapRequestRow(r) {
     leaveType: lt,
     leaveNature: ln || "PERSONAL",
     negotiationOrder: parseNegotiationOrder(r.negotiation_order ?? r.negotiationOrder),
+    negotiationOrderLocked: Number(r.negotiation_order_locked ?? r.negotiationOrderLocked ?? 0) === 1,
     status: String(r.status ?? "").trim(),
     requestedAt: r.requested_at ?? r.requestedAt,
     memo: r.memo ?? "",

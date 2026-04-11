@@ -1151,8 +1151,16 @@ async function handleNegotiationOrder(req, res) {
     }
 
     const actorUserId = String(req.body?.actorUserId ?? "system").trim() || "system";
-    const row = await queryOne(`SELECT id, status, negotiation_order FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`, requestId);
+    const row = await queryOne(
+      `SELECT id, status, negotiation_order, IFNULL(negotiation_order_locked, 0) AS negotiation_order_locked FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`,
+      requestId
+    );
     if (!row) return res.status(404).json({ error: "요청을 찾을 수 없습니다." });
+
+    const locked = Number(row.negotiation_order_locked ?? 0) === 1;
+    if (locked) {
+      return res.status(409).json({ error: "협의 순번이 확정되어 수정할 수 없습니다." });
+    }
 
     const raw = req.body?.negotiationOrder ?? req.body?.negotiation_order;
     const prevOrder = row.negotiation_order;
@@ -1178,7 +1186,7 @@ async function handleNegotiationOrder(req, res) {
       return res.status(400).json({ error: "협의 순번은 1~999 정수이거나 비워야 합니다." });
     }
     await runTransaction(async (tx) => {
-      await tx.execute("UPDATE requests SET negotiation_order = ? WHERE id = ?", n, requestId);
+      await tx.execute("UPDATE requests SET negotiation_order = ?, negotiation_order_locked = 1 WHERE id = ?", n, requestId);
       await insertLeaveRequestAuditRow(tx, {
         leaveRequestId: requestId,
         action: "NEGOTIATION_ORDER_SET",
@@ -1187,10 +1195,10 @@ async function handleNegotiationOrder(req, res) {
         actorUserId,
         reason: null,
         idempotencyKey: idem || null,
-        metadataJson: { previousNegotiationOrder: prevOrder ?? null, negotiationOrder: n },
+        metadataJson: { previousNegotiationOrder: prevOrder ?? null, negotiationOrder: n, negotiationOrderLocked: true },
       });
     });
-    return res.json({ ok: true, negotiationOrder: n });
+    return res.json({ ok: true, negotiationOrder: n, negotiationOrderLocked: true });
   } catch (err) {
     console.error("negotiation-order", err);
     res.status(500).json({ error: String(err?.message || err) });

@@ -128,6 +128,7 @@ CREATE TABLE IF NOT EXISTS requests (
   leave_type TEXT NOT NULL,
   leave_nature TEXT NOT NULL DEFAULT 'PERSONAL',
   negotiation_order INTEGER,
+  negotiation_order_locked INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL,
   requested_at TEXT NOT NULL,
   memo TEXT
@@ -328,6 +329,7 @@ export async function initDb() {
 
   await ensureRequestsLeaveNatureColumn();
   await ensureRequestsNegotiationOrderColumn();
+  await ensureRequestsNegotiationOrderLockedColumn();
   await ensureHolidayDutiesAnesthesiaColumn();
   await ensureCancellationsDeductionColumns();
   await ensureCancellationsRevokedColumns();
@@ -359,6 +361,18 @@ async function ensureRequestsNegotiationOrderColumn() {
   if (!names.has("negotiation_order")) {
     await execute("ALTER TABLE requests ADD COLUMN negotiation_order INTEGER");
   }
+}
+
+/** 협의 순번 확정 후 수정 불가 — 수기 저장 또는 사다리 반영 시 1 */
+async function ensureRequestsNegotiationOrderLockedColumn() {
+  const cols = await queryAll("PRAGMA table_info(requests)");
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("negotiation_order_locked")) {
+    await execute("ALTER TABLE requests ADD COLUMN negotiation_order_locked INTEGER NOT NULL DEFAULT 0");
+  }
+  await execute(
+    "UPDATE requests SET negotiation_order_locked = 1 WHERE negotiation_order IS NOT NULL AND IFNULL(negotiation_order_locked, 0) = 0"
+  );
 }
 
 async function ensureHolidayDutiesAnesthesiaColumn() {
@@ -436,7 +450,7 @@ async function backfillGeneralNormalNegotiationOrderFromAppliedOrder() {
       const sorted = [...list].sort((a, b) => String(a.requested_at ?? "").localeCompare(String(b.requested_at ?? "")));
       let i = 1;
       for (const r of sorted) {
-        await tx.execute("UPDATE requests SET negotiation_order = ? WHERE id = ?", i, r.id);
+        await tx.execute("UPDATE requests SET negotiation_order = ?, negotiation_order_locked = 1 WHERE id = ?", i, r.id);
         i += 1;
       }
     }
