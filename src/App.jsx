@@ -2155,9 +2155,24 @@ function formatRequestedAtCompact(iso) {
   }
 }
 
+function compareMyRequestsRows(a, b, sortOrder) {
+  const desc = sortOrder.endsWith("Desc");
+  let cmp = 0;
+  if (sortOrder.startsWith("leaveDate")) {
+    cmp = a.leaveDate.localeCompare(b.leaveDate);
+    if (cmp === 0) cmp = a.requestedAt.localeCompare(b.requestedAt);
+  } else {
+    cmp = a.requestedAt.localeCompare(b.requestedAt);
+    if (cmp === 0) cmp = a.leaveDate.localeCompare(b.leaveDate);
+  }
+  if (desc) cmp = -cmp;
+  return cmp;
+}
+
 function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncancel }) {
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [search, setSearch] = useState("");
+  const [sortOrder, setSortOrder] = useState("leaveDateAsc");
   function matchesStatusFilter(r) {
     if (statusFilter === "ALL") return true;
     if (statusFilter === "SELECTED") return isWinnerStatus(r.status);
@@ -2171,23 +2186,29 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
           .toLowerCase()
           .includes(search.toLowerCase())
     )
-    .sort((a, b) => {
-      if (a.leaveDate !== b.leaveDate) return a.leaveDate.localeCompare(b.leaveDate);
-      return a.requestedAt.localeCompare(b.requestedAt);
-    });
+    .sort((a, b) => compareMyRequestsRows(a, b, sortOrder));
   return (
     <section className="card my-requests-card">
       <h2 id="my-requests-heading" className="screen-title">
         신청내역
       </h2>
       <div className="row wrap my-requests-toolbar">
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="상태 필터">
           <option value="ALL">전체 상태</option>
           <option value="APPLIED">신청</option>
           <option value="SELECTED">휴가 확정</option>
           <option value="CANCELLED">취소</option>
           <option value="REJECTED">휴가 반려</option>
         </select>
+        <label className="my-requests-sort-label">
+          <span className="field-label">정렬</span>
+          <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} aria-label="신청내역 정렬">
+            <option value="leaveDateAsc">휴가일 오름차순</option>
+            <option value="leaveDateDesc">휴가일 내림차순</option>
+            <option value="requestedAtAsc">신청시각 오름차순</option>
+            <option value="requestedAtDesc">신청시각 내림차순</option>
+          </select>
+        </label>
         <input placeholder="날짜/유형/상태 검색" value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
       <div className="table-wrap my-requests-wrap">
@@ -2617,14 +2638,6 @@ function downloadWeeklyOfficialHtmlFile(filename, html) {
 }
 
 /** 주간 번표: 유진·임희종·최유경 행 — 월간 근무표 강조(#ecfdf5 / #d1fae5) 톤과 조화되는 구분색 */
-function weeklyRowTrackClass(nurseName) {
-  const n = String(nurseName ?? "").trim();
-  if (n === "유진") return "weekly-row--track-yujin";
-  if (n === "임희종") return "weekly-row--track-heejong";
-  if (n === "최유경") return "weekly-row--track-yukyung";
-  return "";
-}
-
 function WeeklyScheduleTab({
   workScheduleRows,
   requests,
@@ -2777,7 +2790,7 @@ function WeeklyScheduleTab({
           </thead>
           <tbody>
             {nurses.map((u) => (
-              <tr key={u.id} className={weeklyRowTrackClass(u.name)}>
+              <tr key={u.id}>
                 <td className="weekly-name">{u.name}</td>
                 {days.map((d) => {
                   const cell = displayCell(u, d);
