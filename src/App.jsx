@@ -63,20 +63,9 @@ function getLadderParticipantUserIdsForRequests(requests, leaveDate, leaveType) 
     FORCE_GOLDKEY_NEGOTIATION_KEYS.has(`${String(r.leaveDate ?? "")}|${String(r.userId ?? "")}`)
   );
   if (forcedRows.length >= 2) return [...new Set(forcedRows.map((r) => r.userId))];
-  const month = Number(String(leaveDate ?? "").slice(5, 7));
-  if (month >= 1 && month <= 6) {
-    const consultRows = rows.filter((r) => isFirstHalfGoldkeyOctoberConsultationRequest(r));
-    if (consultRows.length < 2) return [];
-    return [...new Set(consultRows.map((r) => r.userId))];
-  }
-  if (month >= 7 && month <= 12) {
-    const consultRows = rows.filter((r) => isSecondHalfGoldkeyAprilConsultationRequest(r));
-    if (consultRows.length < 2) return [];
-    return [...new Set(consultRows.map((r) => r.userId))];
-  }
-  const submitDays = new Set(rows.map((r) => toLocalYMD(new Date(r.requestedAt))));
-  if (rows.length < 2 || submitDays.size !== 1) return [];
-  return [...new Set(rows.map((r) => r.userId))];
+  const peers = filterGoldkeyRowsForNegotiationPeers(rows);
+  if (peers.length < 2) return [];
+  return [...new Set(peers.map((r) => r.userId))];
 }
 
 function hasSavedLadderResultForKey(ladderResults, leaveDate, leaveType) {
@@ -244,6 +233,47 @@ function isLongTermGoldkeyAprilBannerWindow(d) {
 /** 장기 골드키: 10/1~10/10 (익년 1~6월) */
 function isLongTermGoldkeyOctoberBannerWindow(d) {
   return d.getMonth() + 1 === 10 && d.getDate() >= 1 && d.getDate() <= 10;
+}
+
+/** 같은 휴가일 골드키: 최초 신청 시각으로부터 24시간 이내 제출분끼리 협의(그 이후는 신청순 자동) */
+const GOLDKEY_NEGOTIATION_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function goldkeyAnchorRequestedAtMs(requestRows) {
+  const sorted = [...requestRows].sort((a, b) =>
+    String(a.requestedAt ?? "").localeCompare(String(b.requestedAt ?? ""))
+  );
+  const t = new Date(sorted[0]?.requestedAt ?? "").getTime();
+  return Number.isFinite(t) ? t : NaN;
+}
+
+function isGoldkeyWithin24HoursAfterAnchor(anchorMs, requestedAtIso) {
+  if (!Number.isFinite(anchorMs)) return false;
+  const t = new Date(requestedAtIso ?? "").getTime();
+  if (!Number.isFinite(t)) return false;
+  return t - anchorMs <= GOLDKEY_NEGOTIATION_WINDOW_MS;
+}
+
+/** 사다리 협의 대상 행(2명 이상일 때만 사다리 가능). 4·10월 장기 모집 다인이 있으면 그 부분만 우선. */
+function filterGoldkeyRowsForNegotiationPeers(rows) {
+  const sorted = [...rows].sort((a, b) => a.requestedAt.localeCompare(b.requestedAt));
+  if (sorted.length === 0) return [];
+  const month = Number(String(sorted[0]?.leaveDate ?? "").slice(5, 7));
+
+  if (month >= 1 && month <= 6) {
+    const octConsult = sorted.filter((r) => isFirstHalfGoldkeyOctoberConsultationRequest(r));
+    if (octConsult.length >= 2) return octConsult;
+    const anchorMs = goldkeyAnchorRequestedAtMs(sorted);
+    return sorted.filter((r) => isGoldkeyWithin24HoursAfterAnchor(anchorMs, r.requestedAt));
+  }
+  if (month >= 7 && month <= 12) {
+    const aprConsult = sorted.filter((r) => isSecondHalfGoldkeyAprilConsultationRequest(r));
+    if (aprConsult.length >= 2) return aprConsult;
+    const anchorMs = goldkeyAnchorRequestedAtMs(sorted);
+    return sorted.filter((r) => isGoldkeyWithin24HoursAfterAnchor(anchorMs, r.requestedAt));
+  }
+
+  const anchorMs = goldkeyAnchorRequestedAtMs(sorted);
+  return sorted.filter((r) => isGoldkeyWithin24HoursAfterAnchor(anchorMs, r.requestedAt));
 }
 
 /** iOS Safari: 로그인 화면에서의 자동·수동 확대가 캘린더에 그대로 남는 현상 완화(뷰포트 재적용 + 스크롤 원점) */
@@ -4385,9 +4415,7 @@ function CalendarPage({
   /**
    * 같은 휴가일·같은 유형 기준 협의/신청순 판정.
    * - 일반휴가(우선/후순위): 2명 이상이면 협의.
-   * - 골드키(7월 이전): "모두 같은 신청일"일 때만 협의, 아니면 신청순 자동.
-   * - 골드키(익년 1~6월): 10/1~10/10 제출분만 협의, 이후 제출분은 신청순 자동.
-   * - 골드키(당해 7~12월): 4/1~4/10 제출분만 협의, 이후 제출분은 신청순(하위) 자동.
+   * - 골드키: 4·10월 장기 모집 제출분은 협의(다인 시). 그 외는 최초 신청 시각 기준 24시간 이내=협의, 이후=신청순 자동.
    */
   const negotiationMetaByRequestId = useMemo(() => {
     const map = new Map();
@@ -4411,6 +4439,7 @@ function CalendarPage({
       }
       const sortedAll = [...list].sort((a, b) => a.requestedAt.localeCompare(b.requestedAt));
       const leaveMonth = Number(String(list[0]?.leaveDate ?? "").slice(5, 7));
+      const goldkeyAnchorMs = list[0]?.leaveType === "GOLDKEY" ? goldkeyAnchorRequestedAtMs(list) : NaN;
       for (const r of list) {
         if (r.leaveType === "GENERAL_PRIORITY") {
           map.set(r.id, { mode: "negotiate" });
@@ -4431,7 +4460,12 @@ function CalendarPage({
             if (isFirstHalfGoldkeyOctoberConsultationRequest(r)) {
               map.set(r.id, { mode: "negotiate" });
             } else {
-              map.set(r.id, { mode: "auto", autoRank: autoRankGlobal });
+              map.set(
+                r.id,
+                isGoldkeyWithin24HoursAfterAnchor(goldkeyAnchorMs, r.requestedAt)
+                  ? { mode: "negotiate" }
+                  : { mode: "auto", autoRank: autoRankGlobal }
+              );
             }
             continue;
           }
@@ -4439,16 +4473,21 @@ function CalendarPage({
             if (isSecondHalfGoldkeyAprilConsultationRequest(r)) {
               map.set(r.id, { mode: "negotiate" });
             } else {
-              map.set(r.id, { mode: "auto", autoRank: autoRankGlobal });
+              map.set(
+                r.id,
+                isGoldkeyWithin24HoursAfterAnchor(goldkeyAnchorMs, r.requestedAt)
+                  ? { mode: "negotiate" }
+                  : { mode: "auto", autoRank: autoRankGlobal }
+              );
             }
             continue;
           }
-          const submitDays = new Set(list.map((x) => toLocalYMD(new Date(x.requestedAt))));
-          if (submitDays.size === 1) {
-            map.set(r.id, { mode: "negotiate" });
-          } else {
-            map.set(r.id, { mode: "auto", autoRank: autoRankGlobal });
-          }
+          map.set(
+            r.id,
+            isGoldkeyWithin24HoursAfterAnchor(goldkeyAnchorMs, r.requestedAt)
+              ? { mode: "negotiate" }
+              : { mode: "auto", autoRank: autoRankGlobal }
+          );
           continue;
         }
         const myDay = toLocalYMD(new Date(r.requestedAt));
