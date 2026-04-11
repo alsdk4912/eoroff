@@ -365,6 +365,12 @@ button.app-header-update-btn:hover {
   background: var(--fill-secondary);
 }
 
+/* 주말·공휴일(명절 등) 열: 파스텔 톤으로 휴무일 그룹 구분 */
+.weekly-schedule-table thead th.weekly-th-day--rest {
+  background: #e8e0f5 !important;
+  color: #4c1d95;
+}
+
 .weekly-th-date {
   font-size: 9px;
   font-weight: 600;
@@ -552,6 +558,29 @@ button.app-header-update-btn:hover {
 .weekly-schedule-table tbody tr.weekly-row--track-yukyung .weekly-cell-select {
   background: #ccfbf1;
   border-color: rgba(20, 184, 166, 0.4);
+}
+
+/* 주말·공휴일 열: 트랙 행보다 우선하는 파스텔 (휴무일 눈에 띄게) */
+.weekly-schedule-table tbody td.weekly-cell--restcol {
+  background: #f3e8ff !important;
+}
+
+.weekly-schedule-table tbody td.weekly-cell--restcol .weekly-cell-select {
+  background: #ede4f9 !important;
+  border-color: rgba(109, 40, 217, 0.28);
+}
+
+.weekly-schedule-table tbody tr.weekly-row--track-yujin td.weekly-cell--restcol,
+.weekly-schedule-table tbody tr.weekly-row--track-heejong td.weekly-cell--restcol,
+.weekly-schedule-table tbody tr.weekly-row--track-yukyung td.weekly-cell--restcol {
+  background: #eadff7 !important;
+}
+
+.weekly-schedule-table tbody tr.weekly-row--track-yujin td.weekly-cell--restcol .weekly-cell-select,
+.weekly-schedule-table tbody tr.weekly-row--track-heejong td.weekly-cell--restcol .weekly-cell-select,
+.weekly-schedule-table tbody tr.weekly-row--track-yukyung td.weekly-cell--restcol .weekly-cell-select {
+  background: #e4d9f2 !important;
+  border-color: rgba(109, 40, 217, 0.32);
 }
 
 .weekly-save-msg {

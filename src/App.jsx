@@ -2301,7 +2301,25 @@ const WORK_SCHEDULE_2026_ROWS = [
   { name: "최유경", values: ["1D1", "7D1", "7D1", "5D1", "안D0", "안D0", "안E", "수E", "PRN"] },
   { name: "정수영", values: ["", "", "6D1", "6D1", "6D1", "6D1", "1D1", "1D1", "1D1"] },
 ];
-const WORK_SCHEDULE_OPTIONS = ["", "안E", "안D0", "수E", "9-5", "5D2", "3D1", "7D2", "6D2", "6D1", "3D2", "1D2", "7D1", "1D1", "5D1", "PRN"];
+const WORK_SCHEDULE_OPTIONS = [
+  "",
+  "안E",
+  "안D0",
+  "수E",
+  "9-5",
+  "5D2",
+  "3D1",
+  "7D2",
+  "6D2",
+  "6D1",
+  "3D2",
+  "1D2",
+  "7D1",
+  "1D1",
+  "5D1",
+  "PRN",
+  "필수교육",
+];
 
 function parseYmdToLocalDate(ymd) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd ?? "").trim());
@@ -2471,6 +2489,15 @@ function weeklyOverrideSelectValue(ov) {
   return "__auto__";
 }
 
+/** 주간 번표 오버라이드 맵을 키 정렬 후 직렬화 — 저장 여부(dirty) 비교용 */
+function stableStringifyWeeklyOverrides(obj) {
+  const o = obj && typeof obj === "object" ? obj : {};
+  const keys = Object.keys(o).sort();
+  const norm = {};
+  for (const k of keys) norm[k] = o[k];
+  return JSON.stringify(norm);
+}
+
 /** 주간 번표: 번표 코드(안D0, 3D2 등)·휴가·당직만 한 줄로 표시(부가 문구 없음) */
 function weeklyCellDisplayLine(cell) {
   if (!cell) return "—";
@@ -2587,7 +2614,11 @@ function WeeklyScheduleTab({
   const [weeklyMsg, setWeeklyMsg] = useState("");
 
   useEffect(() => {
-    setDraftOverrides({ ...(weeklyCellOverrides || {}) });
+    const w = weeklyCellOverrides || {};
+    setDraftOverrides((prev) => {
+      if (stableStringifyWeeklyOverrides(prev) === stableStringifyWeeklyOverrides(w)) return prev;
+      return { ...w };
+    });
   }, [weeklyCellOverrides]);
 
   const mon = mondayOfWeekContaining(weekAnchor);
@@ -2595,8 +2626,13 @@ function WeeklyScheduleTab({
   const dayLabels = ["월", "화", "수", "목", "금", "토", "일"];
   const nurses = users.filter((u) => u.role === "NURSE").sort((a, b) => a.name.localeCompare(b.name, "ko"));
 
+  /** 주말·공휴일(명절 등 캐시된 휴일) 열 — 일반 근무가 없는 날짜 강조 */
+  function isWeeklyRestDayColumn(ymd) {
+    return isWeekendYmd(ymd) || isPublicHolidayYmd(ymd, holidays);
+  }
+
   const dirty = useMemo(
-    () => JSON.stringify(draftOverrides || {}) !== JSON.stringify(weeklyCellOverrides || {}),
+    () => stableStringifyWeeklyOverrides(draftOverrides) !== stableStringifyWeeklyOverrides(weeklyCellOverrides),
     [draftOverrides, weeklyCellOverrides]
   );
 
@@ -2604,13 +2640,17 @@ function WeeklyScheduleTab({
     return effectiveWeeklyCell(u.id, u.name, d, workScheduleRows, requests, substituteAssignments, holidays, holidayDuties);
   }
 
-  function displayCell(u, d) {
+  function displayCellWithOverrideMap(u, d, ovMap) {
     const key = weeklyCellKey(u.id, d);
-    const o = draftOverrides[key];
+    const o = (ovMap || {})[key];
     if (o && o.mode === "manual") {
       return { kind: o.kind || "base", main: o.main ?? "—", sub: o.sub ?? "" };
     }
     return computedCell(u, d);
+  }
+
+  function displayCell(u, d) {
+    return displayCellWithOverrideMap(u, d, draftOverrides);
   }
 
   function onCellOverrideChange(userId, ymd, val) {
@@ -2625,10 +2665,11 @@ function WeeklyScheduleTab({
     });
   }
 
-  function exportOfficialWeeklyDocument() {
+  function exportOfficialWeeklyDocument(overrideMapForExport) {
+    const ov = overrideMapForExport ?? draftOverrides;
     const nurseRows = nurses.map((u) => ({
       name: u.name,
-      cells: days.map((d) => displayCell(u, d)),
+      cells: days.map((d) => displayCellWithOverrideMap(u, d, ov)),
     }));
     const html = buildWeeklyOfficialScheduleHtml({
       weekStartYmd: mon,
@@ -2649,11 +2690,12 @@ function WeeklyScheduleTab({
         "· 근무 칸은 월간 근무표·휴가 확정·대체 근무·달력 당직(토·일·공휴·명절)을 반영해 채워집니다."
     );
     if (!ok) return;
-    setWeeklyCellOverrides(draftOverrides);
+    const snapshot = JSON.parse(JSON.stringify(draftOverrides || {}));
+    setWeeklyCellOverrides(snapshot);
     setWeeklyMsg("저장했습니다.");
     notifyDone("저장되었습니다.");
     if (isAdmin) {
-      exportOfficialWeeklyDocument();
+      exportOfficialWeeklyDocument(snapshot);
     }
   }
 
@@ -2677,7 +2719,10 @@ function WeeklyScheduleTab({
             <tr>
               <th className="weekly-th-name">간호사</th>
               {days.map((d, i) => (
-                <th key={d} className="weekly-th-day">
+                <th
+                  key={d}
+                  className={`weekly-th-day${isWeeklyRestDayColumn(d) ? " weekly-th-day--rest" : ""}`}
+                >
                   <div>{dayLabels[i]}</div>
                   <div className="weekly-th-date">{d.slice(5).replace("-", "/")}</div>
                 </th>
@@ -2694,7 +2739,10 @@ function WeeklyScheduleTab({
                   const selVal = weeklyOverrideSelectValue(draftOverrides[key]);
                   const auto = computedCell(u, d);
                   return (
-                    <td key={d} className={`weekly-cell weekly-cell--${cell.kind}`}>
+                    <td
+                      key={d}
+                      className={`weekly-cell weekly-cell--${cell.kind}${isWeeklyRestDayColumn(d) ? " weekly-cell--restcol" : ""}`}
+                    >
                       {canEditWeekly ? (
                         <select
                           className="weekly-cell-select"
