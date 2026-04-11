@@ -77,6 +77,11 @@ function isKstAprilFirstToTenth(dateLike) {
   return Boolean(p && p.month === 4 && p.day >= 1 && p.day <= 10);
 }
 
+function isKstOctoberFirstToTenth(dateLike) {
+  const p = toYmdPartsLoose(dateLike);
+  return Boolean(p && p.month === 10 && p.day >= 1 && p.day <= 10);
+}
+
 function parseYmdParts(ymd) {
   const s = String(ymd ?? "").trim();
   const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
@@ -90,12 +95,18 @@ function isLongTermGoldkeyDeductionExempt(row, cancelledAt) {
   const requested = toYmdPartsLoose(row?.requested_at);
   const cancelled = toYmdPartsLoose(cancelledAt);
   if (!leave || !requested || !cancelled) return false;
-  if (leave.year !== cancelled.year) return false;
-  if (leave.month < 7 || leave.month > 12) return false;
-  return isKstAprilFirstToTenth(row.requested_at) && isKstAprilFirstToTenth(cancelledAt);
+  if (leave.month >= 7 && leave.month <= 12) {
+    if (leave.year !== requested.year || leave.year !== cancelled.year) return false;
+    return isKstAprilFirstToTenth(row.requested_at) && isKstAprilFirstToTenth(cancelledAt);
+  }
+  if (leave.month >= 1 && leave.month <= 6) {
+    if (leave.year !== requested.year + 1 || cancelled.year !== requested.year) return false;
+    return isKstOctoberFirstToTenth(row.requested_at) && isKstOctoberFirstToTenth(cancelledAt);
+  }
+  return false;
 }
 
-function isSpecialLongTermGoldkeyRequest(row) {
+function isSpecialLongTermGoldkeyRequestApril(row) {
   if (String(row?.leave_type ?? "") !== "GOLDKEY") return false;
   const leave = parseYmdParts(row?.leave_date);
   const requested = toYmdPartsLoose(row?.requested_at);
@@ -105,13 +116,39 @@ function isSpecialLongTermGoldkeyRequest(row) {
   return requested.month === 4 && requested.day >= 1 && requested.day <= 10;
 }
 
-function isAfterRecruitWindowKst(nowLike, year) {
+function isSpecialLongTermGoldkeyRequestOctober(row) {
+  if (String(row?.leave_type ?? "") !== "GOLDKEY") return false;
+  const leave = parseYmdParts(row?.leave_date);
+  const requested = toYmdPartsLoose(row?.requested_at);
+  if (!leave || !requested) return false;
+  if (leave.year !== requested.year + 1) return false;
+  if (leave.month < 1 || leave.month > 6) return false;
+  return requested.month === 10 && requested.day >= 1 && requested.day <= 10;
+}
+
+function isSpecialLongTermGoldkeyRequest(row) {
+  return isSpecialLongTermGoldkeyRequestApril(row) || isSpecialLongTermGoldkeyRequestOctober(row);
+}
+
+/** 장기 모집(4월) 일괄 반영 시점: 해당 휴가 연도의 4/11 00:00(KST) 이후 */
+function isAfterRecruitWindowKst(nowLike, leaveYear) {
   const now = toYmdPartsLoose(nowLike);
   if (!now) return false;
-  if (now.year > year) return true;
-  if (now.year < year) return false;
+  if (now.year > leaveYear) return true;
+  if (now.year < leaveYear) return false;
   if (now.month > 4) return true;
   if (now.month < 4) return false;
+  return now.day >= 11;
+}
+
+/** 10월 모집(익년 1~6월) 일괄 반영 시점: 신청 연도의 10/11 00:00(KST) 이후 */
+function isAfterOctoberRecruitBatchKst(nowLike, requestYear) {
+  const now = toYmdPartsLoose(nowLike);
+  if (!now) return false;
+  if (now.year > requestYear) return true;
+  if (now.year < requestYear) return false;
+  if (now.month > 10) return true;
+  if (now.month < 10) return false;
   return now.day >= 11;
 }
 
@@ -261,10 +298,13 @@ async function reconcileGoldkeyUsageByPolicy(nowLike = new Date().toISOString())
     const userId = String(r.user_id ?? "");
     if (!userId) continue;
     let shouldCount = true;
-    if (isSpecialLongTermGoldkeyRequest(r)) {
+    if (isSpecialLongTermGoldkeyRequestApril(r)) {
       const leave = parseYmdParts(r.leave_date);
       const opened = leave ? isAfterRecruitWindowKst(nowLike, leave.year) : false;
-      // 4/11 이후에는 상태(활성/비활성)와 무관하게 신청 건수 기준으로 일괄 반영
+      shouldCount = opened;
+    } else if (isSpecialLongTermGoldkeyRequestOctober(r)) {
+      const requested = toYmdPartsLoose(r.requested_at);
+      const opened = requested ? isAfterOctoberRecruitBatchKst(nowLike, requested.year) : false;
       shouldCount = opened;
     }
     if (!shouldCount) continue;

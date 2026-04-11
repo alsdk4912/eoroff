@@ -94,8 +94,8 @@ export function compareAppliedRequests(a, b, users) {
   const t = leaveTypeOrder(a.leaveType) - leaveTypeOrder(b.leaveType);
   if (t !== 0) return t;
   if (a.leaveType === "GOLDKEY" && b.leaveType === "GOLDKEY") {
-    const ap = isSecondHalfGoldkeyAprilConsultationRequest(a);
-    const bp = isSecondHalfGoldkeyAprilConsultationRequest(b);
+    const ap = isRecruitConsultationGoldkeyRequest(a);
+    const bp = isRecruitConsultationGoldkeyRequest(b);
     if (ap !== bp) return ap ? -1 : 1;
     if (a.leaveDate !== b.leaveDate) return a.requestedAt.localeCompare(b.requestedAt);
     const nc = compareNegotiationOrder(a, b);
@@ -113,8 +113,8 @@ export function compareSameLeaveDateRequests(a, b, _users) {
   const ord = leaveTypeOrder(a.leaveType) - leaveTypeOrder(b.leaveType);
   if (ord !== 0) return ord;
   if (a.leaveType === "GOLDKEY" && b.leaveType === "GOLDKEY") {
-    const ap = isSecondHalfGoldkeyAprilConsultationRequest(a);
-    const bp = isSecondHalfGoldkeyAprilConsultationRequest(b);
+    const ap = isRecruitConsultationGoldkeyRequest(a);
+    const bp = isRecruitConsultationGoldkeyRequest(b);
     if (ap !== bp) return ap ? -1 : 1;
   }
   const nc = compareNegotiationOrder(a, b);
@@ -206,12 +206,38 @@ export function isSecondHalfGoldkeyAprilConsultationRequest(request) {
 }
 
 /**
- * 4/1~4/10에 제출한 7~12월 골드키를 사용자가 취소한 건:
+ * 익년 상반기(1~6월) 골드키를 매년 10/1~10/10에 제출한 신청.
+ * (4월 하반기 모집과 동일하게 협의·사다리 규칙에 반영)
+ */
+export function isFirstHalfGoldkeyOctoberConsultationRequest(request) {
+  if (!request || request.leaveType !== "GOLDKEY") return false;
+  const leaveYmd = ymdFromRequestRow(request);
+  if (!leaveYmd) return false;
+  const leave = parseYmdAsLocalDate(leaveYmd);
+  if (Number.isNaN(leave.getTime())) return false;
+  const lm = leave.getMonth() + 1;
+  if (lm < 1 || lm > 6) return false;
+  const rawReq = request.requestedAt ?? request.requested_at;
+  if (!rawReq) return false;
+  const reqAt = new Date(rawReq);
+  if (Number.isNaN(reqAt.getTime())) return false;
+  if (leave.getFullYear() !== reqAt.getFullYear() + 1) return false;
+  const rm = reqAt.getMonth() + 1;
+  const rd = reqAt.getDate();
+  return rm === 10 && rd >= 1 && rd <= 10;
+}
+
+function isRecruitConsultationGoldkeyRequest(request) {
+  return isSecondHalfGoldkeyAprilConsultationRequest(request) || isFirstHalfGoldkeyOctoberConsultationRequest(request);
+}
+
+/**
+ * 장기 모집기간(4/1~4/10 또는 10/1~10/10)에 제출한 골드키를 사용자가 취소한 건:
  * 신청내역·달력 칩 등 목록에서 표시하지 않는다(회색 취소 행 제외).
  */
 export function shouldHideAprilRecruitHalfGoldkeyCancelledRow(request) {
   if (!request || request.status !== "CANCELLED") return false;
-  return isSecondHalfGoldkeyAprilConsultationRequest(request);
+  return isRecruitConsultationGoldkeyRequest(request);
 }
 
 /** 취소·미선정 제외: 진행 중인 골드키가 해당 날짜에 이미 있으면 true */
@@ -283,7 +309,6 @@ export function validateRequest({
   const april2At0900 = new Date(nowYear, 3, 2, 9, 0, 0, 0);
   const aprilEnd = endOfDay(new Date(nowYear, 3, 30));
   const inAprilPolicyMonth = nowMonth === 4;
-  const inAprilWindow = inAprilPolicyMonth && now >= aprilStart && now <= aprilEnd;
 
   if (hasBlockingRequestOnDate(requests, userId, leaveDate)) {
     return "같은 날짜에는 휴가를 중복 신청할 수 없습니다.";
@@ -297,12 +322,27 @@ export function validateRequest({
   }
 
   if (leaveType === "GOLDKEY") {
-    if (inAprilWindow) {
-      if (target.getFullYear() !== nowYear) return "4월 골드키 신청은 같은 해 대상(6~12월)만 가능합니다.";
-      const targetMonthNum = target.getMonth() + 1;
-      if (targetMonthNum < 6) return "4월 골드키는 6월 이후만 신청 가능합니다.";
-      return "";
+    const targetMonthNum = target.getMonth() + 1;
+    const targetYear = target.getFullYear();
+
+    if (nowMonth === 4) {
+      const nd = now.getDate();
+      if (nd >= 1 && nd <= 10) {
+        if (targetYear !== nowYear) return "4월 장기(4/1~4/10) 골드키는 같은 해 7~12월 휴가만 신청 가능합니다.";
+        if (targetMonthNum < 7 || targetMonthNum > 12) return "4/1~4/10 골드키는 7~12월 휴가만 신청 가능합니다.";
+        return "";
+      }
     }
+
+    if (nowMonth === 10) {
+      const nd = now.getDate();
+      if (nd >= 1 && nd <= 10) {
+        if (targetYear !== nowYear + 1) return "10월 장기(10/1~10/10) 골드키는 익년 1~6월 휴가만 신청 가능합니다.";
+        if (targetMonthNum < 1 || targetMonthNum > 6) return "10/1~10/10 골드키는 익년 1~6월 휴가만 신청 가능합니다.";
+        return "";
+      }
+    }
+
     if (targetMonth < plus2) return "골드키는 현재월+2달부터 신청 가능합니다.";
     if ((remainingGoldkey ?? 0) <= 0) return "잔여 골드키가 없습니다.";
     return "";
@@ -317,6 +357,10 @@ export function validateRequest({
   const todayStart = new Date(now);
   todayStart.setHours(0, 0, 0, 0);
   if (target < todayStart) return "해당월 잔여일자부터 신청 가능합니다.";
+
+  if (leaveType === "GENERAL_PRIORITY" && !inAprilPolicyMonth && targetMonth !== plus1) {
+    return "일반휴가-우선순위는 다음 달 휴가만 신청 가능합니다.";
+  }
 
   if (leaveType === "GENERAL_PRIORITY" && inAprilPolicyMonth) {
     if (!isSameYearMonth(target, nowYear, 5)) return "4월 일반-우선은 5월 대상만 신청 가능합니다.";
@@ -345,9 +389,12 @@ export function validateRequest({
   firstBusiness.setHours(0, 0, 0, 0);
   secondBusiness.setHours(9, 0, 0, 0);
 
+  const priorityMonthStart = new Date(nowYear, now.getMonth(), 1, 0, 0, 0, 0);
+  const priorityMonth2At0900 = new Date(nowYear, now.getMonth(), 2, 9, 0, 0, 0);
+
   if (leaveType === "GENERAL_PRIORITY") {
-    if (now < firstBusiness || now > secondBusiness) {
-      return "일반-우선은 영업일 1일 00시 ~ 영업일 2일 09시까지 신청 가능합니다.";
+    if (now < priorityMonthStart || now > priorityMonth2At0900) {
+      return "일반-우선은 매월 1일 00시 ~ 2일 09시까지 신청 가능합니다.";
     }
     return "";
   }

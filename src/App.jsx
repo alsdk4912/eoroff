@@ -16,6 +16,7 @@ import {
 import {
   compareAppliedRequests,
   compareSameLeaveDateRequests,
+  isFirstHalfGoldkeyOctoberConsultationRequest,
   isSecondHalfGoldkeyAprilConsultationRequest,
   shouldHideAprilRecruitHalfGoldkeyCancelledRow,
   leaveNatureLabel,
@@ -63,6 +64,11 @@ function getLadderParticipantUserIdsForRequests(requests, leaveDate, leaveType) 
   );
   if (forcedRows.length >= 2) return [...new Set(forcedRows.map((r) => r.userId))];
   const month = Number(String(leaveDate ?? "").slice(5, 7));
+  if (month >= 1 && month <= 6) {
+    const consultRows = rows.filter((r) => isFirstHalfGoldkeyOctoberConsultationRequest(r));
+    if (consultRows.length < 2) return [];
+    return [...new Set(consultRows.map((r) => r.userId))];
+  }
   if (month >= 7 && month <= 12) {
     const consultRows = rows.filter((r) => isSecondHalfGoldkeyAprilConsultationRequest(r));
     if (consultRows.length < 2) return [];
@@ -277,15 +283,26 @@ function withTimeout(promise, ms, message) {
   ]);
 }
 
+function isKstOctoberFirstToTenth(dateLike) {
+  const p = toKstParts(dateLike);
+  return Boolean(p && p.month === 10 && p.day >= 1 && p.day <= 10);
+}
+
 function isLongTermGoldkeyDeductionExempt(requestRow, cancelledAt) {
   if (!requestRow || requestRow.leaveType !== "GOLDKEY") return false;
   const leave = parseYmdParts(requestRow.leaveDate);
   const requested = toKstParts(requestRow.requestedAt);
   const cancelled = toKstParts(cancelledAt);
   if (!leave || !requested || !cancelled) return false;
-  if (leave.year !== cancelled.year) return false;
-  if (leave.month < 7 || leave.month > 12) return false;
-  return isKstAprilFirstToTenth(requestRow.requestedAt) && isKstAprilFirstToTenth(cancelledAt);
+  if (leave.month >= 7 && leave.month <= 12) {
+    if (leave.year !== cancelled.year) return false;
+    return isKstAprilFirstToTenth(requestRow.requestedAt) && isKstAprilFirstToTenth(cancelledAt);
+  }
+  if (leave.month >= 1 && leave.month <= 6) {
+    if (leave.year !== requested.year + 1 || cancelled.year !== requested.year) return false;
+    return isKstOctoberFirstToTenth(requestRow.requestedAt) && isKstOctoberFirstToTenth(cancelledAt);
+  }
+  return false;
 }
 
 function leaveTypeCssClass(leaveType) {
@@ -2272,17 +2289,28 @@ function parseYmdLoose(ymd) {
   return { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) };
 }
 
-function isAfterApril10(nowLike, year) {
+function isAfterApril10(nowLike, leaveYear) {
   const p = toKstParts(nowLike);
   if (!p) return false;
-  if (p.year > year) return true;
-  if (p.year < year) return false;
+  if (p.year > leaveYear) return true;
+  if (p.year < leaveYear) return false;
   if (p.month > 4) return true;
   if (p.month < 4) return false;
   return p.day >= 11;
 }
 
-function isSpecialLongTermGoldkeyRequestForDashboard(r) {
+/** 10월 장기 모집(익년 1~6월): 신청 연도의 10/11 이후에만 잔여 반영 */
+function isAfterOctober10ForRequestYear(nowLike, requestYear) {
+  const p = toKstParts(nowLike);
+  if (!p) return false;
+  if (p.year > requestYear) return true;
+  if (p.year < requestYear) return false;
+  if (p.month > 10) return true;
+  if (p.month < 10) return false;
+  return p.day >= 11;
+}
+
+function isSpecialLongTermGoldkeyRequestForDashboardApril(r) {
   if (r.leaveType !== "GOLDKEY") return false;
   const leave = parseYmdLoose(r.leaveDate);
   const req = toKstParts(r.requestedAt);
@@ -2292,16 +2320,33 @@ function isSpecialLongTermGoldkeyRequestForDashboard(r) {
   return req.month === 4 && req.day >= 1 && req.day <= 10;
 }
 
-/** 종합현황 표시용 신청 집계 (요청 정책: 4/11 전엔 장기모집 특수건 미반영, 4/11 후엔 활성 신청만 반영) */
+function isSpecialLongTermGoldkeyRequestForDashboardOctober(r) {
+  if (r.leaveType !== "GOLDKEY") return false;
+  const leave = parseYmdLoose(r.leaveDate);
+  const req = toKstParts(r.requestedAt);
+  if (!leave || !req) return false;
+  if (leave.year !== req.year + 1) return false;
+  if (leave.month < 1 || leave.month > 6) return false;
+  return req.month === 10 && req.day >= 1 && req.day <= 10;
+}
+
+/** 종합현황 표시용 신청 집계 (장기 모집 특수건은 각 11일 이후에만 잔여에 반영) */
 function countGoldkeyApplyUse(requests, userId, nowLike = new Date().toISOString()) {
   return requests.filter((r) => {
     if (r.userId !== userId || r.leaveType !== "GOLDKEY") return false;
     const st = r.status;
     if (st === "CANCELLED" || st === "REJECTED") return false;
-    if (!isSpecialLongTermGoldkeyRequestForDashboard(r)) return true;
-    const leave = parseYmdLoose(r.leaveDate);
-    if (!leave) return true;
-    return isAfterApril10(nowLike, leave.year);
+    if (isSpecialLongTermGoldkeyRequestForDashboardApril(r)) {
+      const leave = parseYmdLoose(r.leaveDate);
+      if (!leave) return true;
+      return isAfterApril10(nowLike, leave.year);
+    }
+    if (isSpecialLongTermGoldkeyRequestForDashboardOctober(r)) {
+      const req = toKstParts(r.requestedAt);
+      if (!req) return true;
+      return isAfterOctober10ForRequestYear(nowLike, req.year);
+    }
+    return true;
   }).length;
 }
 
@@ -3192,7 +3237,7 @@ function DashboardPage({
         <section className="card">
           <h2 className="screen-title">골드키 잔여</h2>
           <p className="help page-lead">
-            4.1-4.11 하반기 모집 기간 신청분은 4/11 이후 일괄 차감됩니다.
+            4/1~4/10 하반기(당해 7~12월)·10/1~10/10 상반기(익년 1~6월) 장기 모집 신청분은 각 11일 이후 일괄 차감됩니다.
           </p>
           <div className="table-wrap">
             <table>
@@ -4283,7 +4328,8 @@ function CalendarPage({
    * 같은 휴가일·같은 유형 기준 협의/신청순 판정.
    * - 일반휴가(우선/후순위): 2명 이상이면 협의.
    * - 골드키(7월 이전): "모두 같은 신청일"일 때만 협의, 아니면 신청순 자동.
-   * - 골드키(7~12월): 4/1~4/10 제출분만 협의, 이후 제출분은 신청순(하위) 자동.
+   * - 골드키(익년 1~6월): 10/1~10/10 제출분만 협의, 이후 제출분은 신청순 자동.
+   * - 골드키(당해 7~12월): 4/1~4/10 제출분만 협의, 이후 제출분은 신청순(하위) 자동.
    */
   const negotiationMetaByRequestId = useMemo(() => {
     const map = new Map();
@@ -4321,6 +4367,14 @@ function CalendarPage({
           const forceKey = `${String(r.leaveDate ?? "")}|${String(r.userId ?? "")}`;
           if (FORCE_GOLDKEY_NEGOTIATION_KEYS.has(forceKey)) {
             map.set(r.id, { mode: "negotiate" });
+            continue;
+          }
+          if (leaveMonth >= 1 && leaveMonth <= 6) {
+            if (isFirstHalfGoldkeyOctoberConsultationRequest(r)) {
+              map.set(r.id, { mode: "negotiate" });
+            } else {
+              map.set(r.id, { mode: "auto", autoRank: autoRankGlobal });
+            }
             continue;
           }
           if (leaveMonth >= 7 && leaveMonth <= 12) {

@@ -60,6 +60,11 @@ function isKstAprilFirstToTenth(dateLike) {
   return Boolean(p && p.month === 4 && p.day >= 1 && p.day <= 10);
 }
 
+function isKstOctoberFirstToTenth(dateLike) {
+  const p = toYmdPartsLoose(dateLike);
+  return Boolean(p && p.month === 10 && p.day >= 1 && p.day <= 10);
+}
+
 function parseLeaveYmd(ymd) {
   const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(String(ymd ?? "").trim());
   if (!m) return null;
@@ -701,9 +706,25 @@ async function backfillLongTermGoldkeyCancellationExemptions() {
   for (const row of cancellationRows) {
     if (String(row.leave_type || "") !== "GOLDKEY") continue;
     const leave = parseLeaveYmd(row.leave_date);
-    if (!leave || leave.month < 7 || leave.month > 12) continue;
-    if (!isKstAprilFirstToTenth(row.requested_at)) continue;
-    if (!isKstAprilFirstToTenth(row.cancelled_at)) continue;
+    if (!leave) continue;
+    const req = toYmdPartsLoose(row.requested_at);
+    const can = toYmdPartsLoose(row.cancelled_at);
+    if (!req || !can) continue;
+
+    let exempt = false;
+    if (leave.month >= 7 && leave.month <= 12) {
+      exempt =
+        leave.year === req.year &&
+        isKstAprilFirstToTenth(row.requested_at) &&
+        isKstAprilFirstToTenth(row.cancelled_at);
+    } else if (leave.month >= 1 && leave.month <= 6) {
+      exempt =
+        leave.year === req.year + 1 &&
+        can.year === req.year &&
+        isKstOctoberFirstToTenth(row.requested_at) &&
+        isKstOctoberFirstToTenth(row.cancelled_at);
+    }
+    if (!exempt) continue;
 
     await execute(
       "UPDATE cancellations SET deduction_exempt = 1, deduction_note = ? WHERE id = ?",
