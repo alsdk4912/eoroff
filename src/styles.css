@@ -855,10 +855,10 @@ button.app-header-update-btn:hover {
 }
 
 @media (max-width: 768px) {
-  /* 신청현황 팝업: 위로 올려 월 헤더(예: 2026년 4월)가 가려지도록, 좌우만 살짝 넓힘. 하단 높이(max-height)는 유지 */
+  /* 신청현황 팝업: 위로 올려 월 헤더가 가려지도록, 좌우 살짝 넓힘. 하단 여백의 약 절반만큼 max-height 확대(62→81dvh) */
   .calendar-page__detail--modal {
     width: calc(100vw - 72px);
-    max-height: 62dvh;
+    max-height: 81dvh;
     top: 36%;
     transform: translate(-50%, -50%);
   }
