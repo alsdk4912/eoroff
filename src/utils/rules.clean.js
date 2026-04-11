@@ -205,6 +205,15 @@ export function isSecondHalfGoldkeyAprilConsultationRequest(request) {
   return rm === 4 && rd >= 1 && rd <= 10;
 }
 
+/**
+ * 4/1~4/10에 제출한 7~12월 골드키를 사용자가 취소한 건:
+ * 신청내역·달력 칩 등 목록에서 표시하지 않는다(회색 취소 행 제외).
+ */
+export function shouldHideAprilRecruitHalfGoldkeyCancelledRow(request) {
+  if (!request || request.status !== "CANCELLED") return false;
+  return isSecondHalfGoldkeyAprilConsultationRequest(request);
+}
+
 /** 취소·미선정 제외: 진행 중인 골드키가 해당 날짜에 이미 있으면 true */
 export function hasBlockingGoldkeyOnDate(requests, userId, leaveDateYmd) {
   const ymd = String(leaveDateYmd ?? "").trim().slice(0, 10);

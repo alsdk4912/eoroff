@@ -256,6 +256,8 @@ async function reconcileGoldkeyUsageByPolicy(nowLike = new Date().toISOString())
   const goldkeyRows = await queryAll("SELECT user_id, quota_total FROM goldkeys");
   const usedByUser = new Map();
   for (const r of reqRows) {
+    const st = String(r.status ?? "").trim();
+    if (st === "CANCELLED" || st === "REJECTED") continue;
     const userId = String(r.user_id ?? "");
     if (!userId) continue;
     let shouldCount = true;

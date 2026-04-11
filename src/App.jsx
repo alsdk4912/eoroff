@@ -17,6 +17,7 @@ import {
   compareAppliedRequests,
   compareSameLeaveDateRequests,
   isSecondHalfGoldkeyAprilConsultationRequest,
+  shouldHideAprilRecruitHalfGoldkeyCancelledRow,
   leaveNatureLabel,
   leaveTypeLabel,
   statusLabel,
@@ -1111,38 +1112,42 @@ function App() {
     setAuth(null);
   }
 
+  const requestsVisibleInUi = useMemo(
+    () => (Array.isArray(requests) ? requests : []).filter((r) => !shouldHideAprilRecruitHalfGoldkeyCancelledRow(r)),
+    [requests]
+  );
   const myRequests = useMemo(
-    () => requests.filter((r) => r.userId === auth?.userId),
-    [requests, auth?.userId]
+    () => requestsVisibleInUi.filter((r) => r.userId === auth?.userId),
+    [requestsVisibleInUi, auth?.userId]
   );
   const appliedRequests = useMemo(
     () =>
-      [...requests]
+      [...requestsVisibleInUi]
         .filter((r) => r.status === "APPLIED")
         .sort((a, b) => compareAppliedRequests(a, b, users)),
-    [requests, users]
+    [requestsVisibleInUi, users]
   );
   const dashboard = useMemo(
     () => ({
-      total: requests.length,
-      applied: requests.filter((r) => r.status === "APPLIED").length,
-      selected: requests.filter((r) => isWinnerStatus(r.status)).length,
-      cancelled: requests.filter((r) => r.status === "CANCELLED").length,
+      total: requestsVisibleInUi.length,
+      applied: requestsVisibleInUi.filter((r) => r.status === "APPLIED").length,
+      selected: requestsVisibleInUi.filter((r) => isWinnerStatus(r.status)).length,
+      cancelled: requestsVisibleInUi.filter((r) => r.status === "CANCELLED").length,
     }),
-    [requests]
+    [requestsVisibleInUi]
   );
   const calendarData = useMemo(() => {
     const [year, month] = calendarMonth.split("-").map(Number);
-    return buildMonthMatrix(year, month, requests, users, holidays);
-  }, [calendarMonth, requests, users, holidays]);
+    return buildMonthMatrix(year, month, requestsVisibleInUi, users, holidays);
+  }, [calendarMonth, requestsVisibleInUi, users, holidays]);
 
   const calendarDayRequests = useMemo(() => {
     if (!calendarSelectedYmd) return [];
-    const sorted = [...requests]
+    const sorted = [...requestsVisibleInUi]
       .filter((r) => r.leaveDate === calendarSelectedYmd)
       .sort((a, b) => compareSameLeaveDateRequests(a, b, users));
     return dedupeRequestsForCalendarChips(sorted);
-  }, [requests, calendarSelectedYmd, users]);
+  }, [requestsVisibleInUi, calendarSelectedYmd, users]);
 
   async function submitRequest(e) {
     e.preventDefault();
@@ -1780,7 +1785,7 @@ function App() {
             <DashboardPage
               dashboard={dashboard}
               goldkeys={goldkeys}
-              requests={requests}
+              requests={requestsVisibleInUi}
               cancellations={cancellations}
               users={users}
               serverMode={serverMode}
@@ -1804,7 +1809,7 @@ function App() {
           element={
             <LadderGamePage
               users={users}
-              requests={requests}
+              requests={requestsVisibleInUi}
               ladderResults={ladderResults}
               createLadderResult={createLadderResult}
               applyLadderResultToNegotiationOrder={applyLadderResultToNegotiationOrder}
@@ -1861,7 +1866,7 @@ function App() {
           element={
             isAdmin ? (
               <AdminPage
-                allRequests={requests}
+                allRequests={requestsVisibleInUi}
                 users={users}
                 notes={notes}
                 goldkeys={goldkeys}
@@ -2178,10 +2183,12 @@ function isSpecialLongTermGoldkeyRequestForDashboard(r) {
   return req.month === 4 && req.day >= 1 && req.day <= 10;
 }
 
-/** 종합현황 표시용 신청 집계 (요청 정책: 4/11 전엔 장기모집 특수건 미반영, 4/11 후엔 상태 무관 신청건수 반영) */
+/** 종합현황 표시용 신청 집계 (요청 정책: 4/11 전엔 장기모집 특수건 미반영, 4/11 후엔 활성 신청만 반영) */
 function countGoldkeyApplyUse(requests, userId, nowLike = new Date().toISOString()) {
   return requests.filter((r) => {
     if (r.userId !== userId || r.leaveType !== "GOLDKEY") return false;
+    const st = r.status;
+    if (st === "CANCELLED" || st === "REJECTED") return false;
     if (!isSpecialLongTermGoldkeyRequestForDashboard(r)) return true;
     const leave = parseYmdLoose(r.leaveDate);
     if (!leave) return true;
