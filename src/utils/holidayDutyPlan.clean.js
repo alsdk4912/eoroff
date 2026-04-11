@@ -53,6 +53,7 @@ export function isMajorTraditionalFestivalHolidayName(holidayName) {
   if (!n) return false;
   if (n.includes("추석")) return true;
   if (n.includes("설날") || n.includes("구정")) return true;
+  if (n.includes("설 연휴")) return true;
   return false;
 }
 
