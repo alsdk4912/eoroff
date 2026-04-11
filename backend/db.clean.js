@@ -353,7 +353,7 @@ export async function initDb() {
   await ensureAnesthesiaUsers();
   await ensureKnownEmployeeNos();
   await ensureOfficialHolidayCorrections();
-  await ensureHolidayDutyBackfill2026();
+  await ensureHolidayDutyAnchors2026();
   await backfillLongTermGoldkeyCancellationExemptions();
   await ensureGoldkeyDefaults();
   await backfillGeneralNormalNegotiationOrderFromAppliedOrder();
@@ -622,6 +622,7 @@ async function ensureOfficialHolidayCorrections() {
   const nowIso = new Date().toISOString();
   const official2026 = [
     ["2026-07-17", "제헌절"],
+    ["2026-08-17", "대체공휴일"],
     ["2026-09-24", "추석 연휴"],
     ["2026-09-25", "추석"],
     ["2026-09-26", "추석 연휴"],
@@ -641,128 +642,45 @@ async function ensureOfficialHolidayCorrections() {
   await execute("DELETE FROM holiday_duties WHERE holiday_date = ?", "2026-09-28");
 }
 
-function isDutyBlockedByRule(name, ymd) {
-  const nm = String(name ?? "").trim();
-  if (nm === "장지은") return ymd <= "2026-08-05";
-  if (nm === "이지선") return ymd <= "2026-09-06";
-  return false;
-}
+/** 운영에서 합의한 2026년 당직 앵커(주말·공휴·명절 순번 분리 후 기준일) */
+async function ensureHolidayDutyAnchors2026() {
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", "holiday_duty_anchors_2026_v1");
+  if (done) return;
 
-function buildBaseDutyOrder(nurseUsers) {
-  const sorted = [...nurseUsers].sort((a, b) => a.name.localeCompare(b.name, "ko"));
-  const special = ["장성필", "장지은", "정수영", "최유경", "최종선", "최유리"];
-  const specialSet = new Set(special);
-  const picked = [];
-  const rest = [];
-  for (const u of sorted) {
-    if (specialSet.has(u.name)) picked.push(u);
-    else rest.push(u);
-  }
-  if (picked.length === 0) return sorted;
-  const pickedByName = new Map(picked.map((u) => [u.name, u]));
-  const orderedPicked = special.map((name) => pickedByName.get(name)).filter(Boolean);
-  const firstIdx = sorted.findIndex((u) => specialSet.has(u.name));
-  const insertAt = firstIdx < 0 ? rest.length : firstIdx;
-  return [...rest.slice(0, insertAt), ...orderedPicked, ...rest.slice(insertAt)];
-}
-
-function pickSequentialDutyPair(baseOrder, ymd, pointer) {
-  if (!Array.isArray(baseOrder) || baseOrder.length < 2) return null;
-  const n = baseOrder.length;
-  const start = ((pointer % n) + n) % n;
-
-  let firstIdx = -1;
-  for (let i = 0; i < n; i += 1) {
-    const idx = (start + i) % n;
-    if (!isDutyBlockedByRule(baseOrder[idx].name, ymd)) {
-      firstIdx = idx;
-      break;
-    }
-  }
-  if (firstIdx < 0) return null;
-
-  let secondIdx = -1;
-  for (let i = 1; i < n; i += 1) {
-    const idx = (firstIdx + i) % n;
-    if (idx === firstIdx) continue;
-    if (!isDutyBlockedByRule(baseOrder[idx].name, ymd)) {
-      secondIdx = idx;
-      break;
-    }
-  }
-  if (secondIdx < 0) return null;
-
-  return {
-    nurse1UserId: baseOrder[firstIdx].id,
-    nurse2UserId: baseOrder[secondIdx].id,
-    nextPointer: (secondIdx + 1) % n,
-  };
-}
-
-async function ensureHolidayDutyBackfill2026() {
-  const targetDates = ["2026-07-17", "2026-09-24", "2026-09-25"];
-
-  const nurseUsers = await queryAll("SELECT id, name FROM users WHERE role = 'NURSE'");
-  const baseOrder = buildBaseDutyOrder(nurseUsers);
-  if (baseOrder.length < 2) return;
-
-  const dutyRows = await queryAll(
-    "SELECT holiday_date, nurse1_user_id, nurse2_user_id, anesthesia_user_id FROM holiday_duties ORDER BY holiday_date ASC"
-  );
-  const dutyByDate = new Map(dutyRows.map((r) => [String(r.holiday_date), r]));
-
-  const anesthesiaRows = await queryAll("SELECT id, name FROM users WHERE role = 'ANESTHESIA' ORDER BY name ASC");
+  const nurseRows = await queryAll("SELECT id, name FROM users WHERE role = 'NURSE'");
+  const idByName = new Map(nurseRows.map((r) => [r.name, r.id]));
+  const anesthesiaRows = await queryAll("SELECT id FROM users WHERE role = 'ANESTHESIA' ORDER BY name ASC");
   const anesthesiaFallback = String(anesthesiaRows[0]?.id ?? "");
 
-  const lastAssignedBefore = await queryOne(
-    `SELECT holiday_date, nurse1_user_id, nurse2_user_id, anesthesia_user_id
-     FROM holiday_duties
-     WHERE holiday_date < ? AND nurse1_user_id IS NOT NULL AND nurse2_user_id IS NOT NULL
-       AND TRIM(nurse1_user_id) <> '' AND TRIM(nurse2_user_id) <> ''
-     ORDER BY holiday_date DESC
-     LIMIT 1`,
-    targetDates[0]
-  );
+  const anchors = [
+    ["2026-08-17", "이현숙", "이양희"],
+    ["2026-09-25", "양현아", "오민아"],
+    ["2026-09-26", "이현숙", "임희종"],
+    ["2026-09-27", "이현숙", "임희종"],
+  ];
 
-  let pointer = 0;
-  if (lastAssignedBefore?.nurse2_user_id) {
-    const idx2 = baseOrder.findIndex((u) => u.id === String(lastAssignedBefore.nurse2_user_id));
-    if (idx2 >= 0) pointer = (idx2 + 1) % baseOrder.length;
-  }
+  for (const [holidayDate, n1Name, n2Name] of anchors) {
+    const nurse1UserId = idByName.get(n1Name);
+    const nurse2UserId = idByName.get(n2Name);
+    if (!nurse1UserId || !nurse2UserId) continue;
 
-  let anesthesiaPointer = String(lastAssignedBefore?.anesthesia_user_id ?? "") || anesthesiaFallback;
-
-  for (const ymd of targetDates) {
-    const existing = dutyByDate.get(ymd);
-    const hasNursePair = Boolean(
-      existing?.nurse1_user_id &&
-        existing?.nurse2_user_id &&
-        String(existing.nurse1_user_id).trim() &&
-        String(existing.nurse2_user_id).trim()
+    const existing = await queryOne(
+      "SELECT anesthesia_user_id FROM holiday_duties WHERE holiday_date = ?",
+      holidayDate
     );
     const existingAnes = String(existing?.anesthesia_user_id ?? "").trim();
+    const anesthesiaUserId = existingAnes || anesthesiaFallback;
 
-    if (hasNursePair && existingAnes) {
-      const idx2 = baseOrder.findIndex((u) => u.id === String(existing.nurse2_user_id));
-      if (idx2 >= 0) pointer = (idx2 + 1) % baseOrder.length;
-      anesthesiaPointer = existingAnes;
-      continue;
-    }
-
-    const picked = pickSequentialDutyPair(baseOrder, ymd, pointer);
-    if (!picked) continue;
-    pointer = picked.nextPointer;
-
-    const anesthesiaUserId = existingAnes || anesthesiaPointer || anesthesiaFallback;
     await execute(
       "INSERT INTO holiday_duties (holiday_date, nurse1_user_id, nurse2_user_id, anesthesia_user_id) VALUES (?, ?, ?, ?) ON CONFLICT(holiday_date) DO UPDATE SET nurse1_user_id = excluded.nurse1_user_id, nurse2_user_id = excluded.nurse2_user_id, anesthesia_user_id = CASE WHEN holiday_duties.anesthesia_user_id IS NULL OR TRIM(holiday_duties.anesthesia_user_id) = '' THEN excluded.anesthesia_user_id ELSE holiday_duties.anesthesia_user_id END",
-      ymd,
-      picked.nurse1UserId,
-      picked.nurse2UserId,
+      holidayDate,
+      nurse1UserId,
+      nurse2UserId,
       anesthesiaUserId
     );
-    anesthesiaPointer = anesthesiaUserId;
   }
+
+  await execute("INSERT INTO app_migrations (id) VALUES (?)", "holiday_duty_anchors_2026_v1");
 }
 
 async function backfillLongTermGoldkeyCancellationExemptions() {
