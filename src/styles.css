@@ -855,11 +855,11 @@ button.app-header-update-btn:hover {
 }
 
 @media (max-width: 768px) {
-  /* 신청현황 팝업: 위로 올려 월 헤더가 가려지도록, 좌우 살짝 넓힘. 하단 여백의 약 절반만큼 max-height 확대(62→81dvh) */
+  /* 신청현황 팝업: 좌우 살짝 넓힘, max-height 81dvh. 상단(신청현황·휴가신청)이 잘리지 않도록 중심을 아래로(36%→48%) */
   .calendar-page__detail--modal {
     width: calc(100vw - 72px);
     max-height: 81dvh;
-    top: 36%;
+    top: 48%;
     transform: translate(-50%, -50%);
   }
 }
