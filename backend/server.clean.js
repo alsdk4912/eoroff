@@ -392,10 +392,115 @@ app.get("/api/bootstrap", async (_, res) => {
       dayComments: await queryAll("SELECT * FROM day_comments ORDER BY created_at ASC"),
       holidays: await queryAll("SELECT * FROM holidays"),
       leaveRequestAuditCount: Number(auditCountRow?.c ?? 0),
+      weeklyCellOverrides: await queryAll("SELECT * FROM weekly_cell_overrides ORDER BY ymd ASC, user_id ASC"),
     });
   } catch (err) {
     console.error("GET /api/bootstrap", err);
     res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
+/**
+ * 주간 번표 수동 셀을 서버에 동기화(전 간호사·관리자 화면 공통).
+ * 저장 후: 해당 간호사·날짜의 대체 번표가 있으면 shift_code 갱신, 없고 당일 확정 휴가가 1건뿐이면 대체 배정 생성.
+ */
+async function applyWeeklyOverridesToSubstitutes(overridesMap, actorUserId) {
+  const now = new Date().toISOString();
+  for (const [key, raw] of Object.entries(overridesMap || {})) {
+    const val = raw && typeof raw === "object" ? raw : null;
+    if (!val || String(val.mode ?? "") !== "manual") continue;
+    if (String(val.kind ?? "") === "leave") continue;
+    const main = String(val.main ?? "").trim();
+    if (!main || main === "—" || main === "Off") continue;
+    const mk = /^(.+)\|(\d{4}-\d{2}-\d{2})$/.exec(String(key));
+    if (!mk) continue;
+    const substituteUserId = mk[1];
+    const leaveDate = mk[2];
+    const nurseOk = await queryOne("SELECT id FROM users WHERE id = ? AND role = 'NURSE'", substituteUserId);
+    if (!nurseOk) continue;
+
+    const existing = await queryAll(
+      "SELECT id FROM substitute_assignments WHERE substitute_user_id = ? AND leave_date = ?",
+      substituteUserId,
+      leaveDate
+    );
+    for (const row of existing) {
+      await execute("UPDATE substitute_assignments SET shift_code = ?, updated_at = ? WHERE id = ?", main, now, row.id);
+    }
+    if (existing.length > 0) continue;
+
+    const approvedLeaves = await queryAll(
+      `SELECT id, user_id FROM requests WHERE leave_date = ? AND status = 'APPROVED' AND ${SQL_REQ_ACTIVE} AND user_id != ?`,
+      leaveDate,
+      substituteUserId
+    );
+    if (approvedLeaves.length !== 1) continue;
+    const reqRow = approvedLeaves[0];
+    const leaveUserId = String(reqRow.user_id);
+    const requestId = String(reqRow.id);
+    const newId = `sub_wk_${substituteUserId.replace(/[^a-z0-9_]/gi, "").slice(0, 12)}_${leaveDate.replace(/-/g, "")}_${Date.now().toString(36)}`;
+    await execute(
+      `INSERT INTO substitute_assignments (id, request_id, leave_date, leave_user_id, substitute_user_id, shift_code, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      newId,
+      requestId,
+      leaveDate,
+      leaveUserId,
+      substituteUserId,
+      main,
+      actorUserId,
+      now,
+      now
+    );
+  }
+}
+
+app.post("/api/weekly-cell-overrides/sync", async (req, res) => {
+  try {
+    const actorUserId = String(req.body?.actorUserId ?? "").trim();
+    const overrides = req.body?.overrides;
+    if (!actorUserId) return res.status(400).json({ error: "actorUserId가 필요합니다." });
+    const actor = await queryOne(
+      "SELECT id FROM users WHERE id = ? AND role IN ('ADMIN', 'NURSE', 'ANESTHESIA')",
+      actorUserId
+    );
+    if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
+    if (overrides != null && typeof overrides !== "object") {
+      return res.status(400).json({ error: "overrides 형식이 올바르지 않습니다." });
+    }
+    const map = overrides && typeof overrides === "object" && !Array.isArray(overrides) ? overrides : {};
+    const now = new Date().toISOString();
+
+    await runTransaction(async (tx) => {
+      await tx.execute("DELETE FROM weekly_cell_overrides");
+      for (const [key, raw] of Object.entries(map)) {
+        const val = raw && typeof raw === "object" ? raw : null;
+        if (!val || String(val.mode ?? "") !== "manual") continue;
+        const mk = /^(.+)\|(\d{4}-\d{2}-\d{2})$/.exec(String(key));
+        if (!mk) continue;
+        const userId = mk[1];
+        const ymd = mk[2];
+        const kind = String(val.kind ?? "base");
+        const main = val.main != null ? String(val.main) : "";
+        const sub = val.sub != null ? String(val.sub) : "";
+        await tx.execute(
+          `INSERT INTO weekly_cell_overrides (user_id, ymd, mode, kind, main, sub, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          userId,
+          ymd,
+          "manual",
+          kind,
+          main,
+          sub,
+          actorUserId,
+          now
+        );
+      }
+    });
+
+    await applyWeeklyOverridesToSubstitutes(map, actorUserId);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /api/weekly-cell-overrides/sync", err);
+    return res.status(500).json({ error: String(err?.message || err) });
   }
 });
 

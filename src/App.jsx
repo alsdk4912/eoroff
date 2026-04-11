@@ -743,6 +743,16 @@ function App() {
         createdAt: r.created_at ?? r.createdAt,
       }))
     );
+    if (data.weeklyCellOverrides != null) {
+      setWeeklyCellOverrides(mapWeeklyOverrideRowsToClient(Array.isArray(data.weeklyCellOverrides) ? data.weeklyCellOverrides : []));
+    }
+  }
+
+  async function persistWeeklyCellOverridesToServer(snapshot) {
+    if (!serverMode || !auth?.userId) return;
+    await api.syncWeeklyCellOverrides({ overrides: snapshot, actorUserId: auth.userId });
+    const data = await api.bootstrap();
+    applyBootstrapPayload(data);
   }
 
   useEffect(() => {
@@ -1874,6 +1884,7 @@ function App() {
               holidayDuties={holidayDuties}
               weeklyCellOverrides={weeklyCellOverrides}
               setWeeklyCellOverrides={setWeeklyCellOverrides}
+              persistWeeklyCellOverridesToServer={serverMode && auth?.userId ? persistWeeklyCellOverridesToServer : null}
               selectRequest={selectRequest}
               rejectRequest={rejectRequest}
               saveSubstituteForApprovedRequest={saveSubstituteForApprovedRequest}
@@ -2498,6 +2509,23 @@ function stableStringifyWeeklyOverrides(obj) {
   return JSON.stringify(norm);
 }
 
+/** bootstrap weekly_cell_overrides 행 → 클라이언트 `userId|ymd` 맵 */
+function mapWeeklyOverrideRowsToClient(rows) {
+  const o = {};
+  for (const r of Array.isArray(rows) ? rows : []) {
+    const uid = r.user_id ?? r.userId;
+    const ymd = String(r.ymd ?? r.leaveDate ?? "").slice(0, 10);
+    if (!uid || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) continue;
+    o[`${uid}|${ymd}`] = {
+      mode: r.mode || "manual",
+      kind: r.kind,
+      main: r.main,
+      sub: r.sub ?? "",
+    };
+  }
+  return o;
+}
+
 /** 주간 번표: 번표 코드(안D0, 3D2 등)·휴가·당직만 한 줄로 표시(부가 문구 없음) */
 function weeklyCellDisplayLine(cell) {
   if (!cell) return "—";
@@ -2606,6 +2634,7 @@ function WeeklyScheduleTab({
   holidayDuties,
   weeklyCellOverrides,
   setWeeklyCellOverrides,
+  persistWeeklyCellOverridesToServer,
   canEditWeekly,
   isAdmin,
 }) {
@@ -2683,16 +2712,28 @@ function WeeklyScheduleTab({
     downloadWeeklyOfficialHtmlFile(`주간근무표_${a}_${b}.html`, html);
   }
 
-  function saveWeeklyDraft() {
+  async function saveWeeklyDraft() {
+    const serverSync = typeof persistWeeklyCellOverridesToServer === "function";
     const ok = window.confirm(
       "저장하시겠습니까?\n\n" +
-        "· 수동으로 바꾼 셀만 이 브라우저에 저장됩니다.\n" +
+        (serverSync
+          ? "· 서버에 저장되어 관리자·다른 간호사 화면의 주간 번표에도 동일하게 반영됩니다.\n· 해당 날짜에 확정 휴가 1건과 연결되면 대체 번표에도 반영됩니다.\n"
+          : "· 수동으로 바꾼 셀만 이 브라우저에 저장됩니다.\n") +
         "· 근무 칸은 월간 근무표·휴가 확정·대체 근무·달력 당직(토·일·공휴·명절)을 반영해 채워집니다."
     );
     if (!ok) return;
     const snapshot = JSON.parse(JSON.stringify(draftOverrides || {}));
-    setWeeklyCellOverrides(snapshot);
-    setWeeklyMsg("저장했습니다.");
+    if (serverSync) {
+      try {
+        await persistWeeklyCellOverridesToServer(snapshot);
+      } catch (e) {
+        window.alert?.(`서버에 저장하지 못했습니다: ${e?.message || e}`);
+        return;
+      }
+    } else {
+      setWeeklyCellOverrides(snapshot);
+    }
+    setWeeklyMsg(serverSync ? "서버에 저장했습니다. 모든 계정에서 동일하게 보입니다." : "저장했습니다.");
     notifyDone("저장되었습니다.");
     if (isAdmin) {
       exportOfficialWeeklyDocument(snapshot);
@@ -2702,6 +2743,11 @@ function WeeklyScheduleTab({
   return (
     <section className="card weekly-schedule-card">
       <h2 className="screen-title">주간 번표</h2>
+      {persistWeeklyCellOverridesToServer ? (
+        <p className="help" style={{ marginTop: 4 }}>
+          서버 연결 시 저장한 수동 표시는 관리자·다른 간호사 계정의 주간 번표와 동일하게 반영됩니다. 해당 날짜에 확정 휴가가 1건뿐이면 대체 번표에도 연결됩니다.
+        </p>
+      ) : null}
       {isAdmin ? (
         <p className="help weekly-official-hint">
           관리자: 표 하단 <strong>저장</strong> 시 현재 표와 동일한 <strong>인쇄용 HTML 파일</strong>이 함께 내려받아집니다. 저장 없이 파일만 받으려면 「인쇄용 HTML 저장」을 누르세요.
@@ -2790,7 +2836,7 @@ function WeeklyScheduleTab({
                   인쇄용 HTML 저장
                 </button>
               ) : null}
-              <button type="button" className="weekly-save-btn weekly-save-btn--footer" onClick={saveWeeklyDraft} disabled={!dirty}>
+              <button type="button" className="weekly-save-btn weekly-save-btn--footer" onClick={() => void saveWeeklyDraft()} disabled={!dirty}>
                 저장
               </button>
             </div>
@@ -3013,6 +3059,7 @@ function DashboardPage({
   holidayDuties,
   weeklyCellOverrides,
   setWeeklyCellOverrides,
+  persistWeeklyCellOverridesToServer,
   selectRequest,
   rejectRequest,
   saveSubstituteForApprovedRequest,
@@ -3238,6 +3285,7 @@ function DashboardPage({
           holidayDuties={holidayDuties}
           weeklyCellOverrides={weeklyCellOverrides}
           setWeeklyCellOverrides={setWeeklyCellOverrides}
+          persistWeeklyCellOverridesToServer={persistWeeklyCellOverridesToServer}
           canEditWeekly={currentRole === "NURSE" || currentRole === "ADMIN" || currentRole === "ANESTHESIA"}
           isAdmin={isAdmin}
         />

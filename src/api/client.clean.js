@@ -109,6 +109,9 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  /** 주간 번표 수동 셀 전체 동기화(서버 저장 → bootstrap으로 전 사용자 반영) */
+  syncWeeklyCellOverrides: (payload) =>
+    requestJson("/weekly-cell-overrides/sync", { method: "POST", body: JSON.stringify(payload) }),
   createLadderResult: (payload) =>
     requestJson("/ladder-results", { method: "POST", body: JSON.stringify(payload) }),
   upsertAdminDayMemo: (payload) =>

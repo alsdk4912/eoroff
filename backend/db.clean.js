@@ -293,6 +293,19 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
 CREATE TABLE IF NOT EXISTS app_migrations (
   id TEXT PRIMARY KEY
 );
+
+-- 주간 번표 수동 셀(간호사별·날짜별) — 전 사용자 bootstrap 동기화
+CREATE TABLE IF NOT EXISTS weekly_cell_overrides (
+  user_id TEXT NOT NULL,
+  ymd TEXT NOT NULL,
+  mode TEXT NOT NULL DEFAULT 'manual',
+  kind TEXT NOT NULL,
+  main TEXT,
+  sub TEXT,
+  updated_by TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, ymd)
+);
 `;
 
 export async function initDb() {
@@ -334,6 +347,7 @@ export async function initDb() {
   await ensureCancellationsDeductionColumns();
   await ensureCancellationsRevokedColumns();
   await ensureRequestsSoftDeleteColumns();
+  await ensureWeeklyCellOverridesTable();
 
   await seedDefaultsIfEmpty();
   await ensureAnesthesiaUsers();
@@ -416,6 +430,22 @@ async function ensureRequestsSoftDeleteColumns() {
   if (!names.has("deleted_yn")) {
     await execute("ALTER TABLE requests ADD COLUMN deleted_yn INTEGER NOT NULL DEFAULT 0");
   }
+}
+
+async function ensureWeeklyCellOverridesTable() {
+  await execute(`
+    CREATE TABLE IF NOT EXISTS weekly_cell_overrides (
+      user_id TEXT NOT NULL,
+      ymd TEXT NOT NULL,
+      mode TEXT NOT NULL DEFAULT 'manual',
+      kind TEXT NOT NULL,
+      main TEXT,
+      sub TEXT,
+      updated_by TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (user_id, ymd)
+    )
+  `);
 }
 
 /**
@@ -860,6 +890,8 @@ export async function resetLeaveDataToDefaults() {
     await tx.execute("DELETE FROM selections");
     await tx.execute("DELETE FROM logs");
     await tx.execute("DELETE FROM ladder_results");
+    await tx.execute("DELETE FROM substitute_assignments");
+    await tx.execute("DELETE FROM weekly_cell_overrides");
     await tx.execute("DELETE FROM requests");
     for (const n of nurses) {
       const q = defaultGoldkeyQuotaForName(n.name);
