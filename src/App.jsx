@@ -2976,14 +2976,9 @@ function WeeklyScheduleTab({
                               {mark}
                             </option>
                           ))}
-                          {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
+                          {WORK_SCHEDULE_OPTIONS.filter((x) => x && !WEEKLY_LEAVE_MARK_OPTIONS.includes(x)).map((opt) => (
                             <option key={`base-${opt}`} value={`__base__:${opt}`}>
-                              근무: {opt}
-                            </option>
-                          ))}
-                          {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
-                            <option key={`sub-${opt}`} value={`__sub__:${opt}`}>
-                              대체: {opt}
+                              {opt}
                             </option>
                           ))}
                         </select>
@@ -4347,6 +4342,7 @@ function CalendarPage({
   const [calendarSubRows, setCalendarSubRows] = useState([]);
   const calendarSwipeRef = useRef({ startX: 0, startY: 0, tracking: false, triggered: false });
   const skipNextCalendarTapRef = useRef(false);
+  const calendarTopRef = useRef(null);
 
   useEffect(() => {
     if (!selectedYmd || !selectedCell?.isOffDay) {
@@ -4609,14 +4605,38 @@ function CalendarPage({
 
   function goToToday() {
     const n = new Date();
-    const ymd = toLocalYMD(n);
     const ym = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`;
     setCalendarMonth(ym);
-    // today는 월/날짜 포커스만 이동하고 상세 신청현황 패널은 자동 생성하지 않는다.
     setSelectedYmd("");
     setDetailModalOpen(false);
-    setLeaveDate(ymd);
   }
+
+  // touchmove를 passive:false 로 등록해야 preventDefault()가 수평 스와이프 중
+  // 브라우저 기본 세로 흔들림을 실제로 억제할 수 있다.
+  useEffect(() => {
+    const el = calendarTopRef.current;
+    if (!el) return;
+    function onTouchMove(e) {
+      const s = calendarSwipeRef.current;
+      if (!s.tracking || s.triggered) return;
+      const t = e.touches?.[0];
+      if (!t) return;
+      const dx = Number(t.clientX || 0) - s.startX;
+      const dy = Number(t.clientY || 0) - s.startY;
+      const absX = Math.abs(dx);
+      const absY = Math.abs(dy);
+      if (absX > absY && absX >= 8) {
+        e.preventDefault();
+      }
+      if (absX >= 56 && absX > absY * 1.25) {
+        moveCalendarMonth(dx < 0 ? 1 : -1);
+        skipNextCalendarTapRef.current = true;
+        calendarSwipeRef.current = { ...s, triggered: true, tracking: false };
+      }
+    }
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    return () => el.removeEventListener("touchmove", onTouchMove);
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   function updateCalendarSubRow(rowId, key, value) {
     setCalendarSubRows((prev) => prev.map((r) => (r.rowId === rowId ? { ...r, [key]: value } : r)));
@@ -4701,9 +4721,9 @@ function CalendarPage({
     <section className="card calendar-page-card">
       <div className="calendar-page">
         <div
+          ref={calendarTopRef}
           className="calendar-page__top"
           onTouchStart={handleCalendarSwipeTouchStart}
-          onTouchMove={handleCalendarSwipeTouchMove}
           onTouchEnd={handleCalendarSwipeTouchEnd}
         >
       <div className="calendar-nav" role="navigation" aria-label="달력 월 이동">

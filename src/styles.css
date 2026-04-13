@@ -789,6 +789,14 @@ button.app-header-update-btn:hover {
   gap: 0;
 }
 
+.calendar-page__top {
+  touch-action: pan-x;
+  overscroll-behavior: contain;
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
 .calendar-page-card {
   overflow: hidden;
   padding: 10px 12px !important;
