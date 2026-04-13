@@ -765,17 +765,24 @@ function App() {
     }, {});
     setHolidayDuties(dutyByDate);
     const subRows = Array.isArray(data.substituteAssignments) ? data.substituteAssignments : [];
+    const normalizedSubs = subRows
+      .map((s) => ({
+        id: s.id,
+        requestId: s.request_id ?? s.requestId,
+        leaveDate: s.leave_date ?? s.leaveDate,
+        leaveUserId: s.leave_user_id ?? s.leaveUserId,
+        substituteUserId: s.substitute_user_id ?? s.substituteUserId,
+        shiftCode: s.shift_code ?? s.shiftCode,
+      }))
+      .filter((s) => s.id && s.requestId && s.leaveDate && s.substituteUserId && s.shiftCode);
+    const seenSub = new Set();
     setSubstituteAssignments(
-      subRows
-        .map((s) => ({
-          id: s.id,
-          requestId: s.request_id ?? s.requestId,
-          leaveDate: s.leave_date ?? s.leaveDate,
-          leaveUserId: s.leave_user_id ?? s.leaveUserId,
-          substituteUserId: s.substitute_user_id ?? s.substituteUserId,
-          shiftCode: s.shift_code ?? s.shiftCode,
-        }))
-        .filter((s) => s.id && s.requestId && s.leaveDate && s.substituteUserId && s.shiftCode)
+      normalizedSubs.filter((s) => {
+        const key = `${String(s.requestId)}|${String(s.leaveDate).slice(0, 10)}|${String(s.substituteUserId)}|${String(s.shiftCode)}`;
+        if (seenSub.has(key)) return false;
+        seenSub.add(key);
+        return true;
+      })
     );
     const memoRows = Array.isArray(data.adminDayMemos) ? data.adminDayMemos : [];
     const memoByDate = memoRows.reduce((acc, m) => {
@@ -2484,8 +2491,12 @@ const WORK_SCHEDULE_OPTIONS = [
   "1D1",
   "5D1",
   "PRN",
+  "휴가",
+  "공가",
+  "반차",
   "필수교육",
 ];
+const WEEKLY_LEAVE_MARK_OPTIONS = ["휴가", "공가", "반차", "필수교육", "off"];
 
 function parseYmdToLocalDate(ymd) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd ?? "").trim());
@@ -2528,7 +2539,14 @@ function baseMonthCodeForNurseName(name, ymd, workRows) {
 }
 
 function getSubstituteRecordsForRequest(substituteAssignments, requestId) {
-  return (Array.isArray(substituteAssignments) ? substituteAssignments : []).filter((x) => x.requestId === requestId);
+  const rows = (Array.isArray(substituteAssignments) ? substituteAssignments : []).filter((x) => x.requestId === requestId);
+  const seen = new Set();
+  return rows.filter((x) => {
+    const key = `${String(x?.requestId ?? "")}|${String(x?.substituteUserId ?? "")}|${String(x?.shiftCode ?? "")}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /**
@@ -2616,7 +2634,12 @@ function effectiveWeeklyCell(userId, nurseName, ymd, workScheduleRows, requests,
     (r) => r.userId === userId && String(r.leaveDate ?? "").slice(0, 10) === ld && isWinnerStatus(r.status)
   );
   if (approvedLeave) {
-    return { kind: "leave", main: "Off", sub: "" };
+    const leaveNature = String(approvedLeave.leaveNature ?? "");
+    const leaveType = String(approvedLeave.leaveType ?? "");
+    if (leaveNature === "PAID_TRAINING") return { kind: "leave", main: "공가", sub: "" };
+    if (leaveNature === "REQUIRED_TRAINING") return { kind: "leave", main: "필수교육", sub: "" };
+    if (leaveType === "HALF_DAY") return { kind: "leave", main: "반차", sub: "" };
+    return { kind: "leave", main: "휴가", sub: "" };
   }
   const offLike = isWeekendYmd(ld) || isPublicHolidayYmd(ld, holidays);
   if (offLike) {
@@ -2624,7 +2647,7 @@ function effectiveWeeklyCell(userId, nurseName, ymd, workScheduleRows, requests,
     if (duties.has(String(userId))) {
       return { kind: "duty", main: "당직", sub: "" };
     }
-    return { kind: "leave", main: "Off", sub: "" };
+    return { kind: "leave", main: "off", sub: "" };
   }
   return { kind: "base", main: baseMonthCodeForNurseName(nurseName, ld, workScheduleRows), sub: "" };
 }
@@ -2635,7 +2658,11 @@ function weeklyCellKey(userId, ymd) {
 
 function parseWeeklyOverrideSelectValue(val) {
   if (!val || val === "__auto__") return null;
-  if (val === "__leave__") return { mode: "manual", kind: "leave", main: "Off", sub: "" };
+  if (val === "__leave__") return { mode: "manual", kind: "leave", main: "휴가", sub: "" };
+  if (val.startsWith("__leave__:")) {
+    const mark = val.slice(10) || "휴가";
+    return { mode: "manual", kind: "leave", main: mark, sub: "" };
+  }
   if (val.startsWith("__sub__:")) {
     const code = val.slice(7);
     return { mode: "manual", kind: "sub", main: code, sub: "" };
@@ -2649,7 +2676,7 @@ function parseWeeklyOverrideSelectValue(val) {
 
 function weeklyOverrideSelectValue(ov) {
   if (!ov || ov.mode !== "manual") return "__auto__";
-  if (ov.kind === "leave") return "__leave__";
+  if (ov.kind === "leave") return `__leave__:${String(ov.main || "휴가")}`;
   if (ov.kind === "sub") return `__sub__:${ov.main}`;
   if (ov.kind === "base") return `__base__:${ov.main}`;
   return "__auto__";
@@ -2944,15 +2971,19 @@ function WeeklyScheduleTab({
                           aria-label={`${u.name} ${d} 표시`}
                         >
                           <option value="__auto__">{weeklyCellDisplayLine(auto)}</option>
-                          <option value="__leave__">휴가</option>
+                          {WEEKLY_LEAVE_MARK_OPTIONS.map((mark) => (
+                            <option key={`leave-${mark}`} value={`__leave__:${mark}`}>
+                              {mark}
+                            </option>
+                          ))}
                           {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
                             <option key={`base-${opt}`} value={`__base__:${opt}`}>
-                              {opt}
+                              근무: {opt}
                             </option>
                           ))}
                           {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
                             <option key={`sub-${opt}`} value={`__sub__:${opt}`}>
-                              {opt}
+                              대체: {opt}
                             </option>
                           ))}
                         </select>
@@ -4560,6 +4591,10 @@ function CalendarPage({
     const dy = Number(t.clientY || 0) - s.startY;
     const absX = Math.abs(dx);
     const absY = Math.abs(dy);
+    if (absX > absY && absX >= 12) {
+      // 수평 스와이프 중 세로 흔들림(브라우저 기본 스크롤)을 막아 캘린더를 안정적으로 유지한다.
+      e.preventDefault();
+    }
     // 세로 스크롤과 충돌 방지: 가로 이동이 충분히 큰 경우만 월 이동
     if (absX >= 56 && absX > absY * 1.25) {
       moveCalendarMonth(dx < 0 ? 1 : -1);
@@ -4577,7 +4612,9 @@ function CalendarPage({
     const ymd = toLocalYMD(n);
     const ym = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`;
     setCalendarMonth(ym);
-    setSelectedYmd(ymd);
+    // today는 월/날짜 포커스만 이동하고 상세 신청현황 패널은 자동 생성하지 않는다.
+    setSelectedYmd("");
+    setDetailModalOpen(false);
     setLeaveDate(ymd);
   }
 
@@ -5111,7 +5148,7 @@ function CalendarPage({
         )}
       </div>
 
-      {selectedYmd && selectedCell?.inMonth && (isAdmin || !selectedCell?.isOffDay) ? (
+      {!detailModalOpen && selectedYmd && selectedCell?.inMonth && (isAdmin || !selectedCell?.isOffDay) ? (
         <section className="admin-day-panel">
           <h3>{selectedYmd} 휴가자</h3>
           <ul>
