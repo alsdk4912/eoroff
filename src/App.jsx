@@ -2306,22 +2306,24 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
         신청내역
       </h2>
       <div className="row wrap my-requests-toolbar">
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="상태 필터">
-          <option value="ALL">전체 상태</option>
-          <option value="APPLIED">신청</option>
-          <option value="SELECTED">휴가 확정</option>
-          <option value="CANCELLED">취소</option>
-          <option value="REJECTED">휴가 반려</option>
-        </select>
-        <label className="my-requests-sort-label">
-          <span className="field-label">정렬</span>
-          <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} aria-label="신청내역 정렬">
-            <option value="leaveDateAsc">휴가일 오름차순</option>
-            <option value="leaveDateDesc">휴가일 내림차순</option>
-            <option value="requestedAtAsc">신청시각 오름차순</option>
-            <option value="requestedAtDesc">신청시각 내림차순</option>
+        <div className="my-requests-filter-row">
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="상태 필터">
+            <option value="ALL">전체 상태</option>
+            <option value="APPLIED">신청</option>
+            <option value="SELECTED">휴가 확정</option>
+            <option value="CANCELLED">취소</option>
+            <option value="REJECTED">휴가 반려</option>
           </select>
-        </label>
+          <label className="my-requests-sort-label">
+            <span className="field-label">정렬</span>
+            <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} aria-label="신청내역 정렬">
+              <option value="leaveDateAsc">휴가일 오름차순</option>
+              <option value="leaveDateDesc">휴가일 내림차순</option>
+              <option value="requestedAtAsc">신청시각 오름차순</option>
+              <option value="requestedAtDesc">신청시각 내림차순</option>
+            </select>
+          </label>
+        </div>
         <input placeholder="날짜/유형/상태 검색" value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
       <div className="table-wrap my-requests-wrap">
@@ -3351,7 +3353,11 @@ function DashboardPage({
         <section className="card">
           <h2 className="screen-title">골드키 잔여</h2>
           <p className="help page-lead">
-            4/1~4/10 하반기(당해 7~12월)·10/1~10/10 상반기(익년 1~6월) 장기 모집 신청분은 각 11일 이후 일괄 차감됩니다.
+            상반기 장기휴가 신청기간(1~6월) : 전년도 10월 1일 ~ 10일
+            <br />
+            하반기 장기휴가 신청기간(7~12월) : 해당년도 4월 1일 ~ 10일
+            <br />
+            모든 장기휴가는 신청기간 이후 일괄 적용되어 골드키 차감됩니다.
           </p>
           <div className="table-wrap">
             <table>
