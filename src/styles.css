@@ -782,6 +782,21 @@ button.app-header-update-btn:hover {
   line-height: 1.45 !important;
 }
 
+.goldkey-policy-note {
+  font-size: 13px !important;
+  line-height: 1.55 !important;
+  color: #334155 !important;
+}
+
+.goldkey-policy-note span {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.goldkey-policy-note span:last-child {
+  margin-bottom: 0;
+}
+
 /* 캘린더: 그리드와 상세 영역 분리 → 세로 스크롤 부담 완화 */
 .calendar-page {
   display: flex;

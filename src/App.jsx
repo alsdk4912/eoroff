@@ -3353,13 +3353,11 @@ function DashboardPage({
       )}
       {currentRole !== "ANESTHESIA" && dashTab === "summary" ? (
         <section className="card">
-          <h2 className="screen-title">골드키 잔여</h2>
-          <p className="help page-lead">
-            상반기 장기휴가 신청기간(1~6월) : 전년도 10월 1일 ~ 10일
-            <br />
-            하반기 장기휴가 신청기간(7~12월) : 해당년도 4월 1일 ~ 10일
-            <br />
-            모든 장기휴가는 신청기간 이후 일괄 적용되어 골드키 차감됩니다.
+          <h2 className="screen-title">골드키</h2>
+          <p className="help page-lead goldkey-policy-note">
+            <span>상반기 장기휴가 신청기간(1~6월) : 전년도 10월 1일 ~ 10일</span>
+            <span>하반기 장기휴가 신청기간(7~12월) : 해당년도 4월 1일 ~ 10일</span>
+            <span>모든 장기휴가는 신청기간 이후 일괄 적용되어 골드키 차감됩니다.</span>
           </p>
           <div className="table-wrap">
             <table>
