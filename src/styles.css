@@ -790,7 +790,7 @@ button.app-header-update-btn:hover {
 }
 
 .calendar-page__top {
-  touch-action: pan-x;
+  touch-action: pan-y;
   overscroll-behavior: contain;
   will-change: transform;
   transform: translateZ(0);

@@ -2970,7 +2970,7 @@ function WeeklyScheduleTab({
                           onChange={(e) => onCellOverrideChange(u.id, d, e.target.value)}
                           aria-label={`${u.name} ${d} 표시`}
                         >
-                          <option value="__auto__">{weeklyCellDisplayLine(auto)}</option>
+                          <option value="__auto__">자동(현재값 유지)</option>
                           {WEEKLY_LEAVE_MARK_OPTIONS.map((mark) => (
                             <option key={`leave-${mark}`} value={`__leave__:${mark}`}>
                               {mark}
@@ -4611,33 +4611,6 @@ function CalendarPage({
     setDetailModalOpen(false);
   }
 
-  // touchmove를 passive:false 로 등록해야 preventDefault()가 수평 스와이프 중
-  // 브라우저 기본 세로 흔들림을 실제로 억제할 수 있다.
-  useEffect(() => {
-    const el = calendarTopRef.current;
-    if (!el) return;
-    function onTouchMove(e) {
-      const s = calendarSwipeRef.current;
-      if (!s.tracking || s.triggered) return;
-      const t = e.touches?.[0];
-      if (!t) return;
-      const dx = Number(t.clientX || 0) - s.startX;
-      const dy = Number(t.clientY || 0) - s.startY;
-      const absX = Math.abs(dx);
-      const absY = Math.abs(dy);
-      if (absX > absY && absX >= 8) {
-        e.preventDefault();
-      }
-      if (absX >= 56 && absX > absY * 1.25) {
-        moveCalendarMonth(dx < 0 ? 1 : -1);
-        skipNextCalendarTapRef.current = true;
-        calendarSwipeRef.current = { ...s, triggered: true, tracking: false };
-      }
-    }
-    el.addEventListener("touchmove", onTouchMove, { passive: false });
-    return () => el.removeEventListener("touchmove", onTouchMove);
-  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
-
   function updateCalendarSubRow(rowId, key, value) {
     setCalendarSubRows((prev) => prev.map((r) => (r.rowId === rowId ? { ...r, [key]: value } : r)));
   }
@@ -4724,6 +4697,7 @@ function CalendarPage({
           ref={calendarTopRef}
           className="calendar-page__top"
           onTouchStart={handleCalendarSwipeTouchStart}
+          onTouchMove={handleCalendarSwipeTouchMove}
           onTouchEnd={handleCalendarSwipeTouchEnd}
         >
       <div className="calendar-nav" role="navigation" aria-label="달력 월 이동">
