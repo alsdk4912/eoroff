@@ -2919,11 +2919,6 @@ function WeeklyScheduleTab({
   return (
     <section className="card weekly-schedule-card">
       <h2 className="screen-title">주간 번표</h2>
-      {persistWeeklyCellOverridesToServer ? (
-        <p className="help" style={{ marginTop: 4 }}>
-          서버 연결 시 저장한 수동 표시는 관리자·다른 간호사 계정의 주간 번표와 동일하게 반영됩니다. 해당 날짜에 확정 휴가가 1건뿐이면 대체 번표에도 연결됩니다.
-        </p>
-      ) : null}
       {isAdmin ? (
         <p className="help weekly-official-hint">
           관리자: 표 하단 <strong>저장</strong> 시 현재 표와 동일한 <strong>인쇄용 HTML 파일</strong>이 함께 내려받아집니다. 저장 없이 파일만 받으려면 「인쇄용 HTML 저장」을 누르세요.
