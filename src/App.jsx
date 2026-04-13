@@ -2960,6 +2960,8 @@ function WeeklyScheduleTab({
                   const key = weeklyCellKey(u.id, d);
                   const selVal = weeklyOverrideSelectValue(draftOverrides[key]);
                   const auto = computedCell(u, d);
+                  const autoMain = String(auto?.main ?? "").trim();
+                  const autoLabel = weeklyCellDisplayLine(auto);
                   return (
                     <td
                       key={d}
@@ -2972,13 +2974,13 @@ function WeeklyScheduleTab({
                           onChange={(e) => onCellOverrideChange(u.id, d, e.target.value)}
                           aria-label={`${u.name} ${d} 표시`}
                         >
-                          <option value="__auto__">자동(현재값 유지)</option>
-                          {WEEKLY_LEAVE_MARK_OPTIONS.map((mark) => (
+                          <option value="__auto__">{autoLabel || "자동"}</option>
+                          {WEEKLY_LEAVE_MARK_OPTIONS.filter((mark) => mark !== autoMain).map((mark) => (
                             <option key={`leave-${mark}`} value={`__leave__:${mark}`}>
                               {mark}
                             </option>
                           ))}
-                          {WORK_SCHEDULE_OPTIONS.filter((x) => x && !WEEKLY_LEAVE_MARK_OPTIONS.includes(x)).map((opt) => (
+                          {WORK_SCHEDULE_OPTIONS.filter((x) => x && !WEEKLY_LEAVE_MARK_OPTIONS.includes(x) && x !== autoMain).map((opt) => (
                             <option key={`base-${opt}`} value={`__base__:${opt}`}>
                               {opt}
                             </option>
