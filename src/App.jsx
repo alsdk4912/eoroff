@@ -19,6 +19,7 @@ import {
   isFirstHalfGoldkeyOctoberConsultationRequest,
   isSecondHalfGoldkeyAprilConsultationRequest,
   shouldHideAprilRecruitHalfGoldkeyCancelledRow,
+  isLeaveDateBeforeTodayKst,
   leaveNatureLabel,
   leaveTypeLabel,
   statusLabel,
@@ -1441,6 +1442,11 @@ function App() {
   async function cancelRequest(requestId) {
     const target = requests.find((r) => r.id === requestId);
     if (target?.cancelLocked) return;
+    const leaveYmd = normalizeLeaveDateStr(target?.leaveDate);
+    if (target && isLeaveDateBeforeTodayKst(leaveYmd)) {
+      window.alert?.("휴가일이 지난 신청은 취소할 수 없습니다.");
+      return;
+    }
     const ok = window.confirm("정말 취소하시겠습니까?");
     if (!ok) return;
     const payload = {
@@ -2342,6 +2348,7 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
             {rows.map((r) => {
               const isCancelled = r.status === "CANCELLED";
               const isLocked = Boolean(r.cancelLocked);
+              const isPastLeaveDay = isLeaveDateBeforeTodayKst(normalizeLeaveDateStr(r.leaveDate));
               const actionCell = (() => {
                 if (r.status === "CANCELLED") {
                   if (!canUncancel) return "-";
@@ -2353,7 +2360,12 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
                 }
                 if (r.status === "APPLIED" || isLocked) {
                   return (
-                    <button type="button" disabled={isLocked || r.status !== "APPLIED"} onClick={() => void cancelRequest(r.id)}>
+                    <button
+                      type="button"
+                      disabled={isLocked || r.status !== "APPLIED" || isPastLeaveDay}
+                      title={isPastLeaveDay ? "휴가일이 지난 신청은 취소할 수 없습니다." : undefined}
+                      onClick={() => void cancelRequest(r.id)}
+                    >
                       {isLocked ? "취소 처리됨" : "취소"}
                     </button>
                   );
@@ -4990,6 +5002,7 @@ function CalendarPage({
                               const lineText = isAdmin
                                 ? `${adminTopText} · ${adminBottomText}`
                                 : `${prefix}${nm} · ${typeFullLabel(r.leaveType)} · ${statusLabel(r.status)}`;
+                              const pastLeaveNoCancel = isLeaveDateBeforeTodayKst(normalizeLeaveDateStr(r.leaveDate));
                               return (
                                 <li
                                   key={r.id}
@@ -5049,7 +5062,8 @@ function CalendarPage({
                                       <button
                                         type="button"
                                         className="admin-calendar-btn admin-calendar-btn--reject"
-                                        disabled={Boolean(r.cancelLocked)}
+                                        disabled={Boolean(r.cancelLocked) || pastLeaveNoCancel}
+                                        title={pastLeaveNoCancel ? "휴가일이 지난 신청은 취소할 수 없습니다." : undefined}
                                         onClick={() => void cancelRequest(r.id)}
                                       >
                                         {r.cancelLocked ? "취소 처리됨" : "취소"}

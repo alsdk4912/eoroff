@@ -12,6 +12,7 @@ import {
   resetLeaveDataToDefaults,
   runTransaction,
 } from "./db.clean.js";
+import { isLeaveDateBeforeTodayKst } from "../src/utils/rules.clean.js";
 
 const app = express();
 app.use(cors());
@@ -1369,6 +1370,9 @@ app.post("/api/requests/:id/cancel", async (req, res) => {
     );
     if (!row) return res.status(404).json({ error: "요청을 찾을 수 없습니다." });
     if (String(row.status) === "CANCELLED") return res.json({ ok: true, alreadyCancelled: true });
+    if (isLeaveDateBeforeTodayKst(String(row.leave_date ?? ""))) {
+      return res.status(400).json({ error: "휴가일이 지난 신청은 취소할 수 없습니다." });
+    }
 
     const cancelledAt = new Date().toISOString();
     const deductionExempt = isLongTermGoldkeyDeductionExempt(row, cancelledAt);

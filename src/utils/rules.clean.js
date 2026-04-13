@@ -51,6 +51,33 @@ export function statusLabel(status) {
   return STATUS_LABEL[status] ?? status;
 }
 
+/** 한국 표준시 기준 오늘 날짜 YYYY-MM-DD */
+export function kstTodayYmd() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const y = parts.find((p) => p.type === "year")?.value;
+  const mo = parts.find((p) => p.type === "month")?.value;
+  const d = parts.find((p) => p.type === "day")?.value;
+  if (!y || !mo || !d) return "";
+  return `${y}-${mo}-${d}`;
+}
+
+/**
+ * 휴가일이 오늘(KST)보다 이전이면 true.
+ * 과거 휴가는 취소 불가 정책에 사용한다.
+ */
+export function isLeaveDateBeforeTodayKst(leaveDateYmd) {
+  const head = String(leaveDateYmd ?? "").trim().replace(/\//g, "-").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(head)) return false;
+  const today = kstTodayYmd();
+  if (!today) return false;
+  return head < today;
+}
+
 export function leaveTypeOrder(type) {
   if (type === "GOLDKEY") return 1;
   if (type === "GENERAL_PRIORITY") return 2;
