@@ -2362,10 +2362,8 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
             <option value="REJECTED">휴가 반려</option>
           </select>
           <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} aria-label="신청내역 정렬">
-            <option value="leaveDateAsc">휴가일 오름차순</option>
-            <option value="leaveDateDesc">휴가일 내림차순</option>
-            <option value="requestedAtAsc">신청시각 오름차순</option>
-            <option value="requestedAtDesc">신청시각 내림차순</option>
+            <option value="leaveDateAsc">오름차순</option>
+            <option value="leaveDateDesc">내림차순</option>
           </select>
         </div>
         <input placeholder="날짜/유형/상태 검색" value={search} onChange={(e) => setSearch(e.target.value)} />
