@@ -1594,7 +1594,10 @@ tbody tr:last-child td {
 }
 
 .my-requests-year-row > select {
-  width: min(180px, 100%);
+  width: min(156px, 100%);
+  font-size: 13px;
+  padding: 8px 10px;
+  min-height: 40px;
 }
 
 .my-requests-filter-row > select {

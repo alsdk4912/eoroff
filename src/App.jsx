@@ -2335,7 +2335,7 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
       </h2>
       <div className="my-requests-year-row">
         <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} aria-label="신청내역 연도 필터">
-          <option value="ALL">전체 연도</option>
+          <option value="ALL">연도</option>
           {yearOptions.map((y) => (
             <option key={y} value={y}>
               {y}년
@@ -2346,7 +2346,7 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
       <div className="row wrap my-requests-toolbar">
         <div className="my-requests-filter-row">
           <select value={leaveTypeFilter} onChange={(e) => setLeaveTypeFilter(e.target.value)} aria-label="휴가성격 필터">
-            <option value="ALL">휴가성격(전체)</option>
+            <option value="ALL">휴가성격</option>
             <option value="GOLDKEY">골드키</option>
             <option value="GENERAL_PRIORITY">일반휴가-우선순위</option>
             <option value="GENERAL_NORMAL">일반휴가-후순위</option>
@@ -2355,7 +2355,7 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
             <option value="REQUIRED_TRAINING">필수교육</option>
           </select>
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="휴가상태 필터">
-            <option value="ALL">휴가상태(전체)</option>
+            <option value="ALL">휴가상태</option>
             <option value="APPLIED">휴가신청</option>
             <option value="SELECTED">휴가 확정</option>
             <option value="CANCELLED">휴가취소</option>
