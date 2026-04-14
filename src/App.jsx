@@ -2289,9 +2289,29 @@ function compareMyRequestsRows(a, b, sortOrder) {
 }
 
 function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncancel }) {
+  const [yearFilter, setYearFilter] = useState("ALL");
+  const [leaveTypeFilter, setLeaveTypeFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [search, setSearch] = useState("");
   const [sortOrder, setSortOrder] = useState("leaveDateAsc");
+  const yearOptions = useMemo(() => {
+    const years = Array.from(
+      new Set(
+        (Array.isArray(myRequests) ? myRequests : [])
+          .map((r) => String(r.leaveDate ?? "").slice(0, 4))
+          .filter((v) => /^\d{4}$/.test(v))
+      )
+    ).sort((a, b) => b.localeCompare(a));
+    return years;
+  }, [myRequests]);
+  function matchesYearFilter(r) {
+    if (yearFilter === "ALL") return true;
+    return String(r.leaveDate ?? "").slice(0, 4) === yearFilter;
+  }
+  function matchesLeaveTypeFilter(r) {
+    if (leaveTypeFilter === "ALL") return true;
+    return String(r.leaveType ?? "") === leaveTypeFilter;
+  }
   function matchesStatusFilter(r) {
     if (statusFilter === "ALL") return true;
     if (statusFilter === "SELECTED") return isWinnerStatus(r.status);
@@ -2300,6 +2320,8 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
   const rows = myRequests
     .filter(
       (r) =>
+        matchesYearFilter(r) &&
+        matchesLeaveTypeFilter(r) &&
         matchesStatusFilter(r) &&
         `${r.leaveDate} ${formatLeaveDateShort(r.leaveDate)} ${buildLeaveDateSearchTokens(r.leaveDate).join(" ")} ${leaveTypeLabel(r.leaveType)} ${leaveNatureLabel(r.leaveNature)} ${statusLabel(r.status)}`
           .toLowerCase()
@@ -2311,24 +2333,40 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
       <h2 id="my-requests-heading" className="screen-title">
         신청내역
       </h2>
+      <div className="my-requests-year-row">
+        <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} aria-label="신청내역 연도 필터">
+          <option value="ALL">전체 연도</option>
+          {yearOptions.map((y) => (
+            <option key={y} value={y}>
+              {y}년
+            </option>
+          ))}
+        </select>
+      </div>
       <div className="row wrap my-requests-toolbar">
         <div className="my-requests-filter-row">
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="상태 필터">
-            <option value="ALL">전체 상태</option>
-            <option value="APPLIED">신청</option>
+          <select value={leaveTypeFilter} onChange={(e) => setLeaveTypeFilter(e.target.value)} aria-label="휴가성격 필터">
+            <option value="ALL">휴가성격(전체)</option>
+            <option value="GOLDKEY">골드키</option>
+            <option value="GENERAL_PRIORITY">일반휴가-우선순위</option>
+            <option value="GENERAL_NORMAL">일반휴가-후순위</option>
+            <option value="HALF_DAY">반차</option>
+            <option value="PAID_TRAINING">공가</option>
+            <option value="REQUIRED_TRAINING">필수교육</option>
+          </select>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="휴가상태 필터">
+            <option value="ALL">휴가상태(전체)</option>
+            <option value="APPLIED">휴가신청</option>
             <option value="SELECTED">휴가 확정</option>
-            <option value="CANCELLED">취소</option>
+            <option value="CANCELLED">휴가취소</option>
             <option value="REJECTED">휴가 반려</option>
           </select>
-          <label className="my-requests-sort-label">
-            <span className="field-label">정렬</span>
-            <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} aria-label="신청내역 정렬">
-              <option value="leaveDateAsc">휴가일 오름차순</option>
-              <option value="leaveDateDesc">휴가일 내림차순</option>
-              <option value="requestedAtAsc">신청시각 오름차순</option>
-              <option value="requestedAtDesc">신청시각 내림차순</option>
-            </select>
-          </label>
+          <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} aria-label="신청내역 정렬">
+            <option value="leaveDateAsc">휴가일 오름차순</option>
+            <option value="leaveDateDesc">휴가일 내림차순</option>
+            <option value="requestedAtAsc">신청시각 오름차순</option>
+            <option value="requestedAtDesc">신청시각 내림차순</option>
+          </select>
         </div>
         <input placeholder="날짜/유형/상태 검색" value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
