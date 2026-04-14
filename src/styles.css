@@ -840,10 +840,10 @@ button.app-header-update-btn:hover {
 .calendar-page__detail--modal {
   position: fixed;
   left: 50%;
-  top: 52%;
+  top: 50%;
   transform: translate(-50%, -50%);
-  width: min(620px, calc(100vw - 72px));
-  max-height: 78dvh;
+  width: min(760px, calc(100vw - 40px));
+  max-height: 86dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -878,11 +878,11 @@ button.app-header-update-btn:hover {
 }
 
 @media (max-width: 768px) {
-  /* 신청현황 팝업: 좌우 살짝 넓힘, max-height 81dvh. 상단(신청현황·휴가신청)이 잘리지 않도록 중심을 아래로(36%→48%) */
+  /* 신청현황 팝업: 예전 비율에 맞춰 가로·세로를 함께 확대 */
   .calendar-page__detail--modal {
-    width: calc(100vw - 72px);
-    max-height: 81dvh;
-    top: 48%;
+    width: calc(100vw - 28px);
+    max-height: 88dvh;
+    top: 50%;
     transform: translate(-50%, -50%);
   }
 }
