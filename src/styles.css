@@ -842,8 +842,8 @@ button.app-header-update-btn:hover {
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  width: min(760px, calc(100vw - 40px));
-  max-height: 86dvh;
+  width: min(700px, calc(100vw - 56px));
+  max-height: 82dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -878,10 +878,10 @@ button.app-header-update-btn:hover {
 }
 
 @media (max-width: 768px) {
-  /* 신청현황 팝업: 예전 비율에 맞춰 가로·세로를 함께 확대 */
+  /* 신청현황 팝업: 바깥 캘린더가 사방으로 살짝 보이도록 여백 유지 */
   .calendar-page__detail--modal {
-    width: calc(100vw - 28px);
-    max-height: 88dvh;
+    width: calc(100vw - 44px);
+    max-height: 80dvh;
     top: 50%;
     transform: translate(-50%, -50%);
   }
