@@ -1525,13 +1525,15 @@ tbody tr:last-child td {
 }
 
 .admin-day-substitute-grid__head {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
-  color: var(--text-secondary);
+  color: #111827;
 }
 
 .admin-day-substitute-grid__cell {
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
 }
 
 @media (max-width: 768px) {
@@ -2820,6 +2822,12 @@ button.ym-wheel-check:hover {
   margin: 0 0 6px;
   font-size: 14px;
   font-weight: 600;
+}
+
+.duty-memo-text {
+  font-size: 14px !important;
+  line-height: 1.5;
+  color: #111111 !important;
 }
 
 .day-comment-list {

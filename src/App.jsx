@@ -5203,7 +5203,13 @@ function CalendarPage({
             <h4>듀티 메모</h4>
             {isAdmin ? (
               <>
-                <textarea rows={3} placeholder="해당 날짜 메모를 입력하세요" value={adminMemoDraft} onChange={(e) => setAdminMemoDraft(e.target.value)} />
+                <textarea
+                  className="duty-memo-text"
+                  rows={3}
+                  placeholder="해당 날짜 메모를 입력하세요"
+                  value={adminMemoDraft}
+                  onChange={(e) => setAdminMemoDraft(e.target.value)}
+                />
                 <div style={{ marginTop: 8 }}>
                   <button type="button" onClick={() => void saveAdminDayMemo(selectedYmd, adminMemoDraft)}>
                     메모 저장
@@ -5211,7 +5217,9 @@ function CalendarPage({
                 </div>
               </>
             ) : (
-              <p className="help" style={{ whiteSpace: "pre-wrap" }}>{adminDayMemos?.[selectedYmd] || "등록된 메모가 없습니다."}</p>
+              <p className="help duty-memo-text" style={{ whiteSpace: "pre-wrap" }}>
+                {adminDayMemos?.[selectedYmd] || "등록된 메모가 없습니다."}
+              </p>
             )}
           </div>
           <div className="day-comment-section" style={{ marginTop: 12 }} data-calendar-scroll-target="comments">
