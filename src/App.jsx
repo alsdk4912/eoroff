@@ -5240,17 +5240,6 @@ function CalendarPage({
                                     </option>
                                   ))}
                                 </select>
-                                <select value={row.requestId} onChange={(e) => updateCalendarSubRow(row.rowId, "requestId", e.target.value)}>
-                                  <option value="">연결 휴가자</option>
-                                  {calendarSubTargetRequests.map((r) => {
-                                    const nm = users.find((u) => u.id === r.userId)?.name ?? r.userId;
-                                    return (
-                                      <option key={r.id} value={r.id}>
-                                        {nm}
-                                      </option>
-                                    );
-                                  })}
-                                </select>
                                 <select
                                   value={isCustomShiftCodeValue(row.shiftCode) ? CUSTOM_SHIFT_SENTINEL : row.shiftCode}
                                   onChange={(e) => {
