@@ -1539,6 +1539,53 @@ app.post("/api/requests/:id/select", async (req, res) => {
   }
 });
 
+app.post("/api/requests/:id/unselect", async (req, res) => {
+  try {
+    const requestId = decodeURIComponent(String(req.params.id ?? ""));
+    const row = await queryOne(
+      `SELECT id, leave_date, leave_type, status FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`,
+      requestId
+    );
+    if (!row) return res.status(404).json({ error: "요청을 찾을 수 없습니다." });
+    if (String(row.status) === "APPLIED") return res.json({ ok: true, alreadyApplied: true });
+    if (String(row.status) !== "APPROVED") {
+      return res.status(409).json({ error: "휴가 확정 취소할 수 있는 상태가 아닙니다.", status: row.status });
+    }
+
+    const actorUserId = String(req.body?.actorUserId ?? "").trim();
+    if (!actorUserId) return res.status(400).json({ error: "actorUserId가 필요합니다." });
+
+    await runTransaction(async (tx) => {
+      const cur = await tx.queryOne(
+        `SELECT status FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`,
+        requestId
+      );
+      if (!cur || String(cur.status) !== "APPROVED") {
+        throw Object.assign(new Error("상태 충돌"), { code: "STATUS_CONFLICT" });
+      }
+      await tx.execute("UPDATE requests SET status = 'APPLIED' WHERE id = ?", requestId);
+      await tx.execute("DELETE FROM selections WHERE leave_request_id = ?", requestId);
+      await insertLeaveRequestAuditRow(tx, {
+        leaveRequestId: requestId,
+        action: "UNAPPROVE",
+        fromStatus: "APPROVED",
+        toStatus: "APPLIED",
+        actorUserId,
+        reason: String(req.body?.reason ?? "").trim() || null,
+        idempotencyKey: null,
+        metadataJson: null,
+      });
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    if (err?.code === "STATUS_CONFLICT") {
+      return res.status(409).json({ error: "다른 요청에 의해 상태가 바뀌었습니다. 목록을 새로고침 후 다시 시도하세요." });
+    }
+    console.error("POST /api/requests/:id/unselect", err);
+    res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
 app.post("/api/requests/:id/reject", async (req, res) => {
   try {
     const requestId = decodeURIComponent(String(req.params.id ?? ""));

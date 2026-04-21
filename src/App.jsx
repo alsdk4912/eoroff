@@ -1543,7 +1543,7 @@ function App() {
         leaveDate: target.leaveDate,
         leaveUserId: target.userId,
         substituteUserId: String(it?.substituteUserId ?? "").trim(),
-        shiftCode: String(it?.shiftCode ?? "").trim(),
+        shiftCode: normalizeShiftCodeForSave(it?.shiftCode),
       }))
       .filter((it) => it.substituteUserId || it.shiftCode);
     const subItems = [];
@@ -1610,6 +1610,27 @@ function App() {
     }
   }
 
+  async function unselectRequest(requestId) {
+    if (!isAdmin) {
+      window.alert?.("휴가 확정 취소는 관리자만 할 수 있습니다.");
+      return;
+    }
+    const target = requests.find((r) => r.id === requestId);
+    if (!target || !isWinnerStatus(target.status)) return;
+    if (!window.confirm("휴가 확정을 취소하고 신청 상태로 되돌리시겠습니까?")) return;
+    const prevRequests = requests;
+    setRequests((prev) => prev.map((r) => (r.id === requestId ? { ...r, status: "APPLIED" } : r)));
+    if (serverMode) {
+      try {
+        await api.unselectRequest(requestId, { actorUserId: auth.userId });
+        await bootstrap();
+      } catch (e) {
+        window.alert?.(`휴가 확정 취소 실패: ${e?.message || e}`);
+        setRequests(prevRequests);
+      }
+    }
+  }
+
   async function saveSubstituteForApprovedRequest(requestId, { substituteItems = [], substituteUserId, shiftCode }) {
     const target = requests.find((r) => r.id === requestId);
     if (!target || !isWinnerStatus(target.status)) {
@@ -1630,7 +1651,7 @@ function App() {
         leaveDate: target.leaveDate,
         leaveUserId: target.userId,
         substituteUserId: String(it?.substituteUserId ?? "").trim(),
-        shiftCode: String(it?.shiftCode ?? "").trim(),
+        shiftCode: normalizeShiftCodeForSave(it?.shiftCode),
       }))
       .filter((it) => it.substituteUserId || it.shiftCode);
     if (normalizedItems.length === 0) {
@@ -2005,6 +2026,7 @@ function App() {
               setWeeklyCellOverrides={setWeeklyCellOverrides}
               persistWeeklyCellOverridesToServer={serverMode && auth?.userId ? persistWeeklyCellOverridesToServer : null}
               selectRequest={selectRequest}
+              unselectRequest={unselectRequest}
               rejectRequest={rejectRequest}
               saveSubstituteForApprovedRequest={saveSubstituteForApprovedRequest}
             />
@@ -2052,6 +2074,7 @@ function App() {
               holidayDuties={holidayDuties}
               saveHolidayDuty={saveHolidayDuty}
               selectRequest={selectRequest}
+              unselectRequest={unselectRequest}
               rejectRequest={rejectRequest}
               substituteAssignments={substituteAssignments}
               saveSubstituteForApprovedRequest={saveSubstituteForApprovedRequest}
@@ -2546,7 +2569,27 @@ const WORK_SCHEDULE_OPTIONS = [
   "반차",
   "필수교육",
 ];
+const CUSTOM_SHIFT_SENTINEL = "__CUSTOM_SHIFT__";
+const WORK_SCHEDULE_OPTION_SET = new Set(WORK_SCHEDULE_OPTIONS.filter((x) => x));
 const WEEKLY_LEAVE_MARK_OPTIONS = ["휴가", "공가", "반차", "필수교육", "off"];
+
+function isCustomShiftCodeValue(value) {
+  return String(value ?? "").startsWith(`${CUSTOM_SHIFT_SENTINEL}:`);
+}
+
+function toCustomShiftCode(text) {
+  return `${CUSTOM_SHIFT_SENTINEL}:${String(text ?? "")}`;
+}
+
+function customShiftText(value) {
+  if (!isCustomShiftCodeValue(value)) return "";
+  return String(value).slice(`${CUSTOM_SHIFT_SENTINEL}:`.length);
+}
+
+function normalizeShiftCodeForSave(value) {
+  if (isCustomShiftCodeValue(value)) return customShiftText(value).trim();
+  return String(value ?? "").trim();
+}
 
 function parseYmdToLocalDate(ymd) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd ?? "").trim());
@@ -3073,6 +3116,7 @@ function AdminDayRequestCard({
   users,
   substituteRecs,
   selectRequest,
+  unselectRequest,
   rejectRequest,
   saveSubstituteForApprovedRequest,
   substituteLayout = "default",
@@ -3085,7 +3129,11 @@ function AdminDayRequestCard({
         seeded.map((s, idx) => ({
           rowId: String(s?.id ?? `sub_row_${requestRow.id}_${idx}`),
           substituteUserId: String(s?.substituteUserId ?? ""),
-          shiftCode: String(s?.shiftCode ?? ""),
+          shiftCode: (() => {
+            const rawShift = String(s?.shiftCode ?? "");
+            if (!rawShift) return "";
+            return WORK_SCHEDULE_OPTION_SET.has(rawShift) ? rawShift : toCustomShiftCode(rawShift);
+          })(),
         }))
       );
       return;
@@ -3111,7 +3159,7 @@ function AdminDayRequestCard({
     .map((r, idx) => ({
       id: `sub_${requestRow.id}_${idx}`,
       substituteUserId: String(r.substituteUserId ?? "").trim(),
-      shiftCode: String(r.shiftCode ?? "").trim(),
+      shiftCode: normalizeShiftCodeForSave(r.shiftCode),
     }))
     .filter((r) => r.substituteUserId && r.shiftCode);
   return (
@@ -3139,14 +3187,33 @@ function AdminDayRequestCard({
               </label>
               <label className="admin-day-field">
                 <span className="field-label">대체 근무 번표</span>
-                <select value={row.shiftCode} onChange={(e) => updateSubRow(row.rowId, "shiftCode", e.target.value)}>
+                <select
+                  value={isCustomShiftCodeValue(row.shiftCode) ? CUSTOM_SHIFT_SENTINEL : row.shiftCode}
+                  onChange={(e) => {
+                    const next = String(e.target.value ?? "");
+                    if (next === CUSTOM_SHIFT_SENTINEL) {
+                      updateSubRow(row.rowId, "shiftCode", toCustomShiftCode(customShiftText(row.shiftCode)));
+                      return;
+                    }
+                    updateSubRow(row.rowId, "shiftCode", next);
+                  }}
+                >
                   <option value="">—</option>
                   {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
                     <option key={opt} value={opt}>
                       {opt}
                     </option>
                   ))}
+                  <option value={CUSTOM_SHIFT_SENTINEL}>직접입력</option>
                 </select>
+                {isCustomShiftCodeValue(row.shiftCode) ? (
+                  <input
+                    type="text"
+                    placeholder="예: 3 9-5"
+                    value={customShiftText(row.shiftCode)}
+                    onChange={(e) => updateSubRow(row.rowId, "shiftCode", toCustomShiftCode(e.target.value))}
+                  />
+                ) : null}
               </label>
               <button type="button" className="admin-day-sub-remove-btn" onClick={() => removeSubRow(row.rowId)}>
                 삭제
@@ -3186,14 +3253,33 @@ function AdminDayRequestCard({
               </label>
               <label className="admin-day-field">
                 <span className="field-label">대체 근무 번표</span>
-                <select value={row.shiftCode} onChange={(e) => updateSubRow(row.rowId, "shiftCode", e.target.value)}>
+                <select
+                  value={isCustomShiftCodeValue(row.shiftCode) ? CUSTOM_SHIFT_SENTINEL : row.shiftCode}
+                  onChange={(e) => {
+                    const next = String(e.target.value ?? "");
+                    if (next === CUSTOM_SHIFT_SENTINEL) {
+                      updateSubRow(row.rowId, "shiftCode", toCustomShiftCode(customShiftText(row.shiftCode)));
+                      return;
+                    }
+                    updateSubRow(row.rowId, "shiftCode", next);
+                  }}
+                >
                   <option value="">—</option>
                   {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
                     <option key={opt} value={opt}>
                       {opt}
                     </option>
                   ))}
+                  <option value={CUSTOM_SHIFT_SENTINEL}>직접입력</option>
                 </select>
+                {isCustomShiftCodeValue(row.shiftCode) ? (
+                  <input
+                    type="text"
+                    placeholder="예: 3 9-5"
+                    value={customShiftText(row.shiftCode)}
+                    onChange={(e) => updateSubRow(row.rowId, "shiftCode", toCustomShiftCode(e.target.value))}
+                  />
+                ) : null}
               </label>
               <button type="button" className="admin-day-sub-remove-btn" onClick={() => removeSubRow(row.rowId)}>
                 삭제
@@ -3201,6 +3287,9 @@ function AdminDayRequestCard({
             </div>
           ))}
           <div className="admin-day-actions">
+            <button type="button" onClick={() => void unselectRequest(requestRow.id)}>
+              휴가확정취소
+            </button>
             <button type="button" onClick={addSubRow}>
               대체 인력 추가
             </button>
@@ -3220,7 +3309,7 @@ function AdminDayRequestCard({
   );
 }
 
-function AdminDayReviewTab({ users, requests, substituteAssignments, selectRequest, rejectRequest, saveSubstituteForApprovedRequest }) {
+function AdminDayReviewTab({ users, requests, substituteAssignments, selectRequest, unselectRequest, rejectRequest, saveSubstituteForApprovedRequest }) {
   const [dayYmd, setDayYmd] = useState(() => toLocalYMD(new Date()));
   const nurseUsers = useMemo(() => users.filter((u) => u.role === "NURSE").sort((a, b) => a.name.localeCompare(b.name, "ko")), [users]);
   const dayReqs = useMemo(() => {
@@ -3252,6 +3341,7 @@ function AdminDayReviewTab({ users, requests, substituteAssignments, selectReque
                 users={users}
                 substituteRecs={getSubstituteRecordsForRequest(substituteAssignments, r.id)}
                 selectRequest={selectRequest}
+                unselectRequest={unselectRequest}
                 rejectRequest={rejectRequest}
                 saveSubstituteForApprovedRequest={saveSubstituteForApprovedRequest}
               />
@@ -4322,6 +4412,7 @@ function CalendarPage({
   holidayDuties,
   saveHolidayDuty,
   selectRequest,
+  unselectRequest,
   rejectRequest,
   substituteAssignments,
   saveSubstituteForApprovedRequest,
@@ -4460,7 +4551,11 @@ function CalendarPage({
           rowId: `cal_sub_${t.id}_${idx}`,
           requestId: t.id,
           substituteUserId: String(s?.substituteUserId ?? ""),
-          shiftCode: String(s?.shiftCode ?? ""),
+          shiftCode: (() => {
+            const rawShift = String(s?.shiftCode ?? "");
+            if (!rawShift) return "";
+            return WORK_SCHEDULE_OPTION_SET.has(rawShift) ? rawShift : toCustomShiftCode(rawShift);
+          })(),
         });
       }
     }
@@ -4664,6 +4759,13 @@ function CalendarPage({
     setCalendarSubRows((prev) => prev.map((r) => (r.rowId === rowId ? { ...r, [key]: value } : r)));
   }
 
+  function removeCalendarSubRow(rowId) {
+    setCalendarSubRows((prev) => {
+      const next = (Array.isArray(prev) ? prev : []).filter((r) => r.rowId !== rowId);
+      return next.length > 0 ? next : [{ rowId: `cal_sub_empty_${Date.now()}`, requestId: "", substituteUserId: "", shiftCode: "" }];
+    });
+  }
+
   function addCalendarSubRow() {
     const targets = calendarSubTargetRequests;
     if (!Array.isArray(calendarSubRows) || calendarSubRows.length === 0) {
@@ -4677,17 +4779,12 @@ function CalendarPage({
       ]);
       return;
     }
-    const used = new Set(calendarSubRows.map((r) => r.requestId));
-    const nextTarget = targets.find((r) => !used.has(r.id));
-    if (!nextTarget) {
-      window.alert?.("추가할 휴가 신청이 없습니다.");
-      return;
-    }
+    const nextTarget = targets[0];
     setCalendarSubRows((prev) => [
       ...prev,
       {
-        rowId: `cal_sub_${nextTarget.id}_${Date.now()}`,
-        requestId: nextTarget.id,
+        rowId: `cal_sub_${nextTarget?.id ?? "empty"}_${Date.now()}`,
+        requestId: nextTarget?.id ?? "",
         substituteUserId: "",
         shiftCode: "",
       },
@@ -4704,7 +4801,7 @@ function CalendarPage({
     if (!target) return;
     const items =
       row.substituteUserId && row.shiftCode
-        ? [{ substituteUserId: String(row.substituteUserId), shiftCode: String(row.shiftCode) }]
+        ? [{ substituteUserId: String(row.substituteUserId), shiftCode: normalizeShiftCodeForSave(row.shiftCode) }]
         : [];
     if (target.status === "APPLIED") {
       await selectRequest(requestId, { substituteItems: items });
@@ -5093,6 +5190,13 @@ function CalendarPage({
                                       </button>
                                     </div>
                                   ) : null}
+                                  {isAdmin && isWinnerStatus(r.status) ? (
+                                    <div className="admin-calendar-applicant-actions">
+                                      <button type="button" className="admin-calendar-btn admin-calendar-btn--reject" onClick={() => void unselectRequest(r.id)}>
+                                        휴가확정취소
+                                      </button>
+                                    </div>
+                                  ) : null}
                                   {!isAdmin && r.status === "APPLIED" && r.userId === currentUserId ? (
                                     <div className="admin-calendar-applicant-actions">
                                       <button
@@ -5136,9 +5240,27 @@ function CalendarPage({
                                     </option>
                                   ))}
                                 </select>
+                                <select value={row.requestId} onChange={(e) => updateCalendarSubRow(row.rowId, "requestId", e.target.value)}>
+                                  <option value="">연결 휴가자</option>
+                                  {calendarSubTargetRequests.map((r) => {
+                                    const nm = users.find((u) => u.id === r.userId)?.name ?? r.userId;
+                                    return (
+                                      <option key={r.id} value={r.id}>
+                                        {nm}
+                                      </option>
+                                    );
+                                  })}
+                                </select>
                                 <select
-                                  value={row.shiftCode}
-                                  onChange={(e) => updateCalendarSubRow(row.rowId, "shiftCode", e.target.value)}
+                                  value={isCustomShiftCodeValue(row.shiftCode) ? CUSTOM_SHIFT_SENTINEL : row.shiftCode}
+                                  onChange={(e) => {
+                                    const next = String(e.target.value ?? "");
+                                    if (next === CUSTOM_SHIFT_SENTINEL) {
+                                      updateCalendarSubRow(row.rowId, "shiftCode", toCustomShiftCode(customShiftText(row.shiftCode)));
+                                      return;
+                                    }
+                                    updateCalendarSubRow(row.rowId, "shiftCode", next);
+                                  }}
                                 >
                                   <option value="">대체 근무 번표</option>
                                   {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
@@ -5146,9 +5268,21 @@ function CalendarPage({
                                       {opt}
                                     </option>
                                   ))}
+                                  <option value={CUSTOM_SHIFT_SENTINEL}>직접입력</option>
                                 </select>
+                                {isCustomShiftCodeValue(row.shiftCode) ? (
+                                  <input
+                                    type="text"
+                                    placeholder="예: 3 9-5"
+                                    value={customShiftText(row.shiftCode)}
+                                    onChange={(e) => updateCalendarSubRow(row.rowId, "shiftCode", toCustomShiftCode(e.target.value))}
+                                  />
+                                ) : null}
                                 <button type="button" onClick={() => void applyCalendarSubRow(row)}>
                                   저장
+                                </button>
+                                <button type="button" onClick={() => removeCalendarSubRow(row.rowId)}>
+                                  삭제
                                 </button>
                               </div>
                             ))}

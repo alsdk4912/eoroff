@@ -83,6 +83,8 @@ export const api = {
     requestJson(`/requests/${id}/uncancel`, { method: "POST", body: JSON.stringify(payload) }),
   selectRequest: (id, payload) =>
     requestJson(`/requests/${id}/select`, { method: "POST", body: JSON.stringify(payload) }),
+  unselectRequest: (id, payload) =>
+    requestJson(`/requests/${id}/unselect`, { method: "POST", body: JSON.stringify(payload) }),
   rejectRequest: (id, payload = {}) =>
     requestJson(`/requests/${encodeURIComponent(id)}/reject`, { method: "POST", body: JSON.stringify(payload) }),
   addNote: (payload) => requestJson("/notes", { method: "POST", body: JSON.stringify(payload) }),
