@@ -4224,7 +4224,7 @@ function DashboardPage({
                     <tr>
                       <th>이름</th>
                       {generatorResult.months.map((m) => (
-                        <th key={m}>{m}</th>
+                        <th key={m}>{parseInt(String(m).slice(5, 7), 10)}월</th>
                       ))}
                     </tr>
                   </thead>
@@ -4251,7 +4251,7 @@ function DashboardPage({
                       <th>D2</th>
                       <th>PRN</th>
                       <th>9-5</th>
-                      <th>특수(PRN/안E/수E)</th>
+                      <th>특수</th>
                     </tr>
                   </thead>
                   <tbody>
