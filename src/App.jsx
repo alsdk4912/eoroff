@@ -3382,6 +3382,14 @@ const YEARLY_ROSTER_SLOTS = ["1D1", "1D2", "3D1", "3D2", "5D1", "5D2", "6D1", "6
 const YEARLY_ROSTER_FIXED_SPECIAL = new Set(["PRN", "안E", "수E", "9-5"]);
 const YEARLY_ROSTER_LIMITED_ROOMS = new Set(["1", "3", "5", "6", "7", "안"]);
 
+function maxRoomCountByGroup(name, room, groupMap) {
+  if (room === "안") {
+    const g = Number(groupMap.get(name) || 0);
+    return g === 1 || g === 2 ? 1 : 2;
+  }
+  return 2;
+}
+
 function slotRoomKey(slot) {
   const s = String(slot ?? "").toUpperCase();
   const m = /^([13567])D[12]$/.exec(s);
@@ -3555,7 +3563,8 @@ function buildYearlyRoster(startYm, nurseNames) {
         for (let si = 0; si < restSlots.length; si += 1) {
           const slot = restSlots[si];
           const room = slotRoomKey(slot);
-          if (YEARLY_ROSTER_LIMITED_ROOMS.has(room) && Number(s.roomCounts[room] || 0) >= 2) {
+          const maxRoomCount = maxRoomCountByGroup(n, room, groupMap);
+          if (YEARLY_ROSTER_LIMITED_ROOMS.has(room) && Number(s.roomCounts[room] || 0) >= maxRoomCount) {
             continue;
           }
           let score = 0;
