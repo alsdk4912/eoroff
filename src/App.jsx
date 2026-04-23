@@ -4799,16 +4799,21 @@ function CalendarPage({
     }
     const target = (Array.isArray(dayRequests) ? dayRequests : []).find((r) => r.id === requestId);
     if (!target) return;
-    const items =
-      row.substituteUserId && row.shiftCode
-        ? [{ substituteUserId: String(row.substituteUserId), shiftCode: normalizeShiftCodeForSave(row.shiftCode) }]
-        : [];
+    const groupedRows = (Array.isArray(calendarSubRows) ? calendarSubRows : []).filter(
+      (r) => String(r?.requestId ?? "") === requestId
+    );
+    const items = groupedRows
+      .map((r) => ({
+        substituteUserId: String(r?.substituteUserId ?? "").trim(),
+        shiftCode: normalizeShiftCodeForSave(r?.shiftCode),
+      }))
+      .filter((it) => it.substituteUserId && it.shiftCode);
     if (target.status === "APPLIED") {
       await selectRequest(requestId, { substituteItems: items });
       return;
     }
     if (isWinnerStatus(target.status)) {
-      saveSubstituteForApprovedRequest(requestId, { substituteItems: items });
+      await saveSubstituteForApprovedRequest(requestId, { substituteItems: items });
     }
   }
 
