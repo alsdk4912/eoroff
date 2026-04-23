@@ -3886,7 +3886,7 @@ function DashboardPage({
     const raw = generatedMonthlySchedules?.[startKey];
     const months = (Array.isArray(raw?.months) ? raw.months : []).map((ym, idx) => ({
       ymd: String(ym),
-      label: String(ym).replace("-", "년 ") + "월",
+      label: `${parseInt(String(ym).slice(5, 7), 10)}월`,
       index: idx,
     }));
     return {
@@ -4247,7 +4247,6 @@ function DashboardPage({
                   <thead>
                     <tr>
                       <th>이름</th>
-                      <th>그룹</th>
                       <th>D1</th>
                       <th>D2</th>
                       <th>PRN</th>
@@ -4259,7 +4258,6 @@ function DashboardPage({
                     {generatorResult.stats.map((s) => (
                       <tr key={`stat_${s.name}`}>
                         <td>{s.name}</td>
-                        <td>{s.group}</td>
                         <td>{s.d1}</td>
                         <td>{s.d2}</td>
                         <td>{s.prn}</td>

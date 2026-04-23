@@ -3035,10 +3035,10 @@ button.ym-wheel-check:hover {
 
   .monthly-generator-preview .work-schedule-table th:first-child,
   .monthly-generator-preview .work-schedule-table td.work-schedule-name-cell {
-    width: 15%;
-    max-width: 3.6rem;
+    width: 13%;
+    max-width: 2.9rem;
     font-size: 10px;
-    padding: 3px 4px;
+    padding: 2px 2px;
   }
 
   .monthly-generator-preview .work-schedule-table td.work-schedule-month-cell {
@@ -3054,6 +3054,10 @@ button.ym-wheel-check:hover {
     font-size: 9px;
     padding: 2px 1px;
     border-radius: 6px;
+    white-space: nowrap;
+    word-break: normal;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 
