@@ -3059,7 +3059,8 @@ button.ym-wheel-check:hover {
 
   .monthly-generator-preview .work-schedule-picker-face {
     min-height: 22px;
-    font-size: 8px;
+    font-size: 9px;
+    font-weight: 700;
     padding: 1px 0;
     border-radius: 6px;
     white-space: nowrap;
