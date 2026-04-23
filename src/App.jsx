@@ -3420,37 +3420,47 @@ function shuffleList(list) {
   return arr;
 }
 
+function buildNonCollidingPrnPlan(prnCandidates, nineFivePlan, maxTry = 240) {
+  for (let t = 0; t < maxTry; t += 1) {
+    const plan = shuffleList(prnCandidates);
+    let ok = true;
+    for (let i = 0; i < plan.length; i += 1) {
+      if (plan[i] === nineFivePlan[i]) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) return plan;
+  }
+  return null;
+}
+
 function buildYearlyRoster(startYm, nurseNames) {
   const months = ymSequence(startYm, 12);
   if (months.length !== 12) return { ok: false, error: "시작 월은 YYYY-MM 형식으로 입력해 주세요." };
   const names = [...nurseNames];
   if (names.length !== 16) return { ok: false, error: "근무표 생성은 간호사 16명 기준입니다." };
 
-  const warnings = [];
   const groupMap = new Map(names.map((n) => [n, YEARLY_ROSTER_GROUPS[n] ?? 0]));
-  const g4Names = names.filter((n) => groupMap.get(n) === 4);
   const prnQuota = new Map(names.map((n) => [n, 0]));
   names.forEach((n) => {
     const g = groupMap.get(n);
     if (g === 2 || g === 3) prnQuota.set(n, 1);
+    if (g === 4) prnQuota.set(n, 1);
   });
-  // 사용자 규칙(4그룹 2회)은 총합이 12개월(12회)보다 커서 자동 보정한다.
-  if (g4Names.length > 0) {
-    const rotated = shuffleList(g4Names);
-    for (let i = 0; i < Math.min(3, rotated.length); i += 1) prnQuota.set(rotated[i], 1);
-    warnings.push("PRN 규칙 합계가 12개월을 초과하여 4그룹은 1회 기준으로 자동 보정했습니다.");
-  }
   const prnPool = [];
   prnQuota.forEach((q, n) => {
     for (let i = 0; i < q; i += 1) prnPool.push(n);
   });
   if (prnPool.length !== 12) return { ok: false, error: "PRN 배정 수 계산에 실패했습니다." };
-  const prnPlan = shuffleList(prnPool);
 
   const nineFiveSelected = new Set(shuffleList(names).slice(0, 12));
   const nineFivePlan = shuffleList([...nineFiveSelected]);
+  const prnPlan = buildNonCollidingPrnPlan(prnPool, nineFivePlan);
+  if (!prnPlan) return { ok: false, error: "특수번표 배정충돌로 생성에 실패했습니다." };
 
   const specialTarget = new Map(names.map((n) => [n, 2]));
+  const g4Names = names.filter((n) => groupMap.get(n) === 4);
   names.forEach((n) => {
     const g = groupMap.get(n);
     if (g === 1) specialTarget.set(n, 1);
@@ -3581,8 +3591,7 @@ function buildYearlyRoster(startYm, nurseNames) {
     };
   });
   const noNineFive = stats.filter((s) => s.nineFive === 0).map((s) => s.name);
-  if (noNineFive.length !== 4) warnings.push("9-5 비배정 인원이 4명이 되지 않아 재확인이 필요합니다.");
-
+  const warnings = noNineFive.length !== 4 ? ["9-5 비배정 인원이 4명이 되지 않아 재확인이 필요합니다."] : [];
   return { ok: true, months, rows, stats, warnings };
 }
 
