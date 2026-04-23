@@ -3059,12 +3059,12 @@ button.ym-wheel-check:hover {
 
   .monthly-generator-preview .work-schedule-picker-face {
     min-height: 22px;
-    font-size: 8px;
+    font-size: 7px;
     font-weight: 600;
     font-family: inherit;
     line-height: 1.1;
     letter-spacing: 0;
-    padding: 1px 0;
+    padding: 1px 1px;
     border-radius: 6px;
     white-space: nowrap;
     word-break: normal;
