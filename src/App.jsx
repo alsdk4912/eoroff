@@ -3353,6 +3353,233 @@ function AdminDayReviewTab({ users, requests, substituteAssignments, selectReque
   );
 }
 
+const YEARLY_ROSTER_GROUPS = {
+  "임희종": 1,
+  "이양희": 1,
+  "허정숙": 1,
+  "이현숙": 1,
+  "유진": 2,
+  "김해림": 2,
+  "양현아": 2,
+  "장지은": 3,
+  "손다솜": 3,
+  "오민아": 3,
+  "최종선": 3,
+  "장성필": 3,
+  "이지선": 3,
+  "최유리": 4,
+  "최유경": 4,
+  "정수영": 4,
+};
+
+const YEARLY_ROSTER_SLOTS = ["1D1", "1D2", "3D1", "3D2", "5D1", "5D2", "6D1", "6D2", "7D1", "7D2", "안D0", "안D0", "안E", "수E", "9-5", "PRN"];
+const YEARLY_ROSTER_FIXED_SPECIAL = new Set(["PRN", "안E", "수E", "9-5"]);
+
+function slotRoomKey(slot) {
+  const s = String(slot ?? "").toUpperCase();
+  const m = /^([13567])D[12]$/.exec(s);
+  if (m) return m[1];
+  if (s === "안D0") return "안";
+  return s;
+}
+
+function isD1(slot) {
+  return /D1$/i.test(String(slot ?? ""));
+}
+
+function isD2(slot) {
+  return /D2$/i.test(String(slot ?? ""));
+}
+
+function ymSequence(startYm, count = 12) {
+  const m = /^(\d{4})-(\d{2})$/.exec(String(startYm ?? "").trim());
+  if (!m) return [];
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  if (!Number.isInteger(y) || !Number.isInteger(mo) || mo < 1 || mo > 12) return [];
+  const out = [];
+  for (let i = 0; i < count; i += 1) {
+    const d = new Date(y, mo - 1 + i, 1);
+    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
+  return out;
+}
+
+function shuffleList(list) {
+  const arr = [...list];
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function buildYearlyRoster(startYm, nurseNames) {
+  const months = ymSequence(startYm, 12);
+  if (months.length !== 12) return { ok: false, error: "시작 월은 YYYY-MM 형식으로 입력해 주세요." };
+  const names = [...nurseNames];
+  if (names.length !== 16) return { ok: false, error: "근무표 생성은 간호사 16명 기준입니다." };
+
+  const warnings = [];
+  const groupMap = new Map(names.map((n) => [n, YEARLY_ROSTER_GROUPS[n] ?? 0]));
+  const g4Names = names.filter((n) => groupMap.get(n) === 4);
+  const prnQuota = new Map(names.map((n) => [n, 0]));
+  names.forEach((n) => {
+    const g = groupMap.get(n);
+    if (g === 2 || g === 3) prnQuota.set(n, 1);
+  });
+  // 사용자 규칙(4그룹 2회)은 총합이 12개월(12회)보다 커서 자동 보정한다.
+  if (g4Names.length > 0) {
+    const rotated = shuffleList(g4Names);
+    for (let i = 0; i < Math.min(3, rotated.length); i += 1) prnQuota.set(rotated[i], 1);
+    warnings.push("PRN 규칙 합계가 12개월을 초과하여 4그룹은 1회 기준으로 자동 보정했습니다.");
+  }
+  const prnPool = [];
+  prnQuota.forEach((q, n) => {
+    for (let i = 0; i < q; i += 1) prnPool.push(n);
+  });
+  if (prnPool.length !== 12) return { ok: false, error: "PRN 배정 수 계산에 실패했습니다." };
+  const prnPlan = shuffleList(prnPool);
+
+  const nineFiveSelected = new Set(shuffleList(names).slice(0, 12));
+  const nineFivePlan = shuffleList([...nineFiveSelected]);
+
+  const specialTarget = new Map(names.map((n) => [n, 2]));
+  names.forEach((n) => {
+    const g = groupMap.get(n);
+    if (g === 1) specialTarget.set(n, 1);
+    else if (g === 2) specialTarget.set(n, 2);
+    else if (g === 3) specialTarget.set(n, 3);
+    else if (g === 4) specialTarget.set(n, 3);
+  });
+  if (g4Names.length > 0) specialTarget.set(g4Names[g4Names.length - 1], 2);
+
+  const state = new Map(
+    names.map((n) => [
+      n,
+      {
+        lastRoom: "",
+        roomStreak: 0,
+        lastSlot: "",
+        d1: 0,
+        d2: 0,
+        prn: 0,
+        nineFive: 0,
+        special: 0,
+        roomCounts: {},
+      },
+    ])
+  );
+  const monthRows = [];
+
+  function touchState(name, slot) {
+    const s = state.get(name);
+    const room = slotRoomKey(slot);
+    s.lastSlot = slot;
+    if (room === s.lastRoom) s.roomStreak += 1;
+    else {
+      s.lastRoom = room;
+      s.roomStreak = 1;
+    }
+    if (isD1(slot)) s.d1 += 1;
+    if (isD2(slot)) s.d2 += 1;
+    if (slot === "PRN") s.prn += 1;
+    if (slot === "9-5") s.nineFive += 1;
+    if (slot === "PRN" || slot === "안E" || slot === "수E") s.special += 1;
+    s.roomCounts[room] = Number(s.roomCounts[room] || 0) + 1;
+  }
+
+  for (let mi = 0; mi < months.length; mi += 1) {
+    const assigned = new Map();
+    const taken = new Set();
+    const monthNineFive = nineFivePlan[mi];
+    const monthPrn = prnPlan[mi];
+    if (!monthNineFive || !monthPrn || monthNineFive === monthPrn) return { ok: false, error: "특수 번표 배정 충돌로 생성에 실패했습니다." };
+
+    assigned.set(monthPrn, "PRN");
+    assigned.set(monthNineFive, "9-5");
+    taken.add(monthPrn);
+    taken.add(monthNineFive);
+
+    const candidatesForAE = names.filter((n) => !taken.has(n));
+    const pickBySpecialDeficit = (pool) =>
+      [...pool].sort((a, b) => {
+        const sa = state.get(a);
+        const sb = state.get(b);
+        const da = Number(specialTarget.get(a) || 0) - sa.special;
+        const db = Number(specialTarget.get(b) || 0) - sb.special;
+        if (db !== da) return db - da;
+        return sa.special - sb.special;
+      })[0];
+    const monthAE = pickBySpecialDeficit(candidatesForAE);
+    if (!monthAE) return { ok: false, error: "안E 대상 배정 실패" };
+    assigned.set(monthAE, "안E");
+    taken.add(monthAE);
+
+    const monthSE = pickBySpecialDeficit(names.filter((n) => !taken.has(n)));
+    if (!monthSE) return { ok: false, error: "수E 대상 배정 실패" };
+    assigned.set(monthSE, "수E");
+    taken.add(monthSE);
+
+    const freeNames = names.filter((n) => !taken.has(n));
+    const freeSlots = YEARLY_ROSTER_SLOTS.filter((slot) => !YEARLY_ROSTER_FIXED_SPECIAL.has(slot));
+    if (freeNames.length !== freeSlots.length) return { ok: false, error: "기본 번표 슬롯 수 불일치" };
+
+    const restNames = new Set(freeNames);
+    const restSlots = [...freeSlots];
+    while (restSlots.length > 0) {
+      let best = null;
+      for (const n of restNames) {
+        const s = state.get(n);
+        for (let si = 0; si < restSlots.length; si += 1) {
+          const slot = restSlots[si];
+          const room = slotRoomKey(slot);
+          let score = 0;
+          if (s.lastRoom === room && s.roomStreak >= 2) score += 1000;
+          if (s.lastSlot === slot) score += 24;
+          if (s.lastRoom === room) score += 7;
+          if (isD1(slot)) score += Math.max(0, s.d1 - s.d2);
+          if (isD2(slot)) score += Math.max(0, s.d2 - s.d1);
+          score += Number(s.roomCounts[room] || 0) * 1.5;
+          if (!best || score < best.score || (score === best.score && Math.random() < 0.35)) {
+            best = { n, slot, si, score };
+          }
+        }
+      }
+      if (!best) return { ok: false, error: "기본 번표 배정 탐색 실패" };
+      assigned.set(best.n, best.slot);
+      restNames.delete(best.n);
+      restSlots.splice(best.si, 1);
+    }
+
+    const row = {};
+    for (const n of names) {
+      const slot = assigned.get(n) || "";
+      row[n] = slot;
+      touchState(n, slot);
+    }
+    monthRows.push(row);
+  }
+
+  const rows = names.map((name) => ({ name, values: monthRows.map((r) => r[name] || "") }));
+  const stats = names.map((name) => {
+    const s = state.get(name);
+    return {
+      name,
+      group: groupMap.get(name),
+      d1: s.d1,
+      d2: s.d2,
+      prn: s.prn,
+      nineFive: s.nineFive,
+      special: s.special,
+    };
+  });
+  const noNineFive = stats.filter((s) => s.nineFive === 0).map((s) => s.name);
+  if (noNineFive.length !== 4) warnings.push("9-5 비배정 인원이 4명이 되지 않아 재확인이 필요합니다.");
+
+  return { ok: true, months, rows, stats, warnings };
+}
+
 function DashboardPage({
   dashboard,
   goldkeys,
@@ -3377,6 +3604,12 @@ function DashboardPage({
   const [dashTab, setDashTab] = useState(() => (currentRole === "ANESTHESIA" ? "schedule" : "summary"));
   const [draftRows, setDraftRows] = useState(Array.isArray(workScheduleRows) ? workScheduleRows : WORK_SCHEDULE_2026_ROWS);
   const [scheduleMsg, setScheduleMsg] = useState("");
+  const [generatorStartYm, setGeneratorStartYm] = useState(() => {
+    const n = new Date();
+    return `${n.getFullYear()}-03`;
+  });
+  const [generatorResult, setGeneratorResult] = useState(null);
+  const [generatorMsg, setGeneratorMsg] = useState("");
 
   useEffect(() => {
     setDraftRows(Array.isArray(workScheduleRows) ? workScheduleRows : WORK_SCHEDULE_2026_ROWS);
@@ -3428,6 +3661,18 @@ function DashboardPage({
     onSaveWorkScheduleRows(draftRows);
     setScheduleMsg("근무표가 저장되었습니다.");
     notifyDone("저장되었습니다.");
+  }
+
+  function generateYearlyRoster() {
+    const nurseNames = users.filter((u) => u.role === "NURSE").map((u) => u.name).sort((a, b) => a.localeCompare(b, "ko"));
+    const result = buildYearlyRoster(generatorStartYm, nurseNames);
+    if (!result.ok) {
+      setGeneratorResult(null);
+      setGeneratorMsg(result.error || "생성에 실패했습니다.");
+      return;
+    }
+    setGeneratorResult(result);
+    setGeneratorMsg("월별번표를 생성했습니다.");
   }
 
   return (
@@ -3482,6 +3727,17 @@ function DashboardPage({
           >
             주간 번표
           </button>
+          {isAdmin ? (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={dashTab === "monthly-generator"}
+              className={`segmented-btn${dashTab === "monthly-generator" ? " segmented-btn--active" : ""}`}
+              onClick={() => setDashTab("monthly-generator")}
+            >
+              월별번표생성
+            </button>
+          ) : null}
         </div>
       )}
       {currentRole !== "ANESTHESIA" && dashTab === "summary" ? (
@@ -3601,6 +3857,85 @@ function DashboardPage({
           canEditWeekly={currentRole === "NURSE" || currentRole === "ADMIN" || currentRole === "ANESTHESIA"}
           isAdmin={isAdmin}
         />
+      ) : null}
+      {isAdmin && dashTab === "monthly-generator" ? (
+        <section className="card work-schedule-card work-schedule-card--admin">
+          <h2 className="screen-title">월별번표생성</h2>
+          <p className="help page-lead">시작 월부터 12개월(예: 2027-03 ~ 2028-02) 자동 생성합니다.</p>
+          <div className="row wrap" style={{ gap: 8 }}>
+            <label className="weekly-date-label">
+              시작 월
+              <input type="month" value={generatorStartYm} onChange={(e) => setGeneratorStartYm(e.target.value)} />
+            </label>
+            <button type="button" onClick={generateYearlyRoster}>
+              생성
+            </button>
+          </div>
+          {generatorMsg ? <p className="help" style={{ marginTop: 8 }}>{generatorMsg}</p> : null}
+          {generatorResult?.warnings?.length ? (
+            <div style={{ marginTop: 8 }}>
+              {generatorResult.warnings.map((w) => (
+                <p key={w} className="help">- {w}</p>
+              ))}
+            </div>
+          ) : null}
+          {generatorResult ? (
+            <>
+              <div className="table-wrap work-schedule-wrap" style={{ marginTop: 10 }}>
+                <table className="work-schedule-table">
+                  <thead>
+                    <tr>
+                      <th>이름</th>
+                      {generatorResult.months.map((m) => (
+                        <th key={m}>{m}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {generatorResult.rows.map((row) => (
+                      <tr key={row.name}>
+                        <td className="work-schedule-name-cell">{row.name}</td>
+                        {row.values.map((v, idx) => (
+                          <td key={`${row.name}_${generatorResult.months[idx]}`} className="work-schedule-month-cell">
+                            {v}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="table-wrap" style={{ marginTop: 10 }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>이름</th>
+                      <th>그룹</th>
+                      <th>D1</th>
+                      <th>D2</th>
+                      <th>PRN</th>
+                      <th>9-5</th>
+                      <th>특수(PRN/안E/수E)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {generatorResult.stats.map((s) => (
+                      <tr key={`stat_${s.name}`}>
+                        <td>{s.name}</td>
+                        <td>{s.group}</td>
+                        <td>{s.d1}</td>
+                        <td>{s.d2}</td>
+                        <td>{s.prn}</td>
+                        <td>{s.nineFive}</td>
+                        <td>{s.special}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : null}
+        </section>
       ) : null}
     </>
   );
