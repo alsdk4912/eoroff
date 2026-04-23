@@ -3387,6 +3387,8 @@ function maxRoomCountByGroup(name, room, groupMap) {
     const g = Number(groupMap.get(name) || 0);
     return g === 1 || g === 2 ? 1 : 2;
   }
+  if (room === "1" || room === "7") return 2;
+  if (room === "3" || room === "5" || room === "6") return 3;
   return 2;
 }
 
