@@ -3495,6 +3495,95 @@ function buildPrnPlanWithCaps(names, groupMap, nineFivePlan) {
   return dfs(0) ? plan : null;
 }
 
+function buildEmergencyYearlyRoster(startYm, nurseNames) {
+  const months = ymSequence(startYm, 12);
+  if (months.length !== 12) return null;
+  const names = [...nurseNames];
+  if (names.length !== 16) return null;
+
+  const groupMap = new Map(names.map((n) => [n, YEARLY_ROSTER_GROUPS[n] ?? 0]));
+  const nineFiveSelected = new Set(shuffleList(names).slice(0, 12));
+  const nineFivePool = shuffleList([...nineFiveSelected]);
+  const state = new Map(
+    names.map((n) => [n, { special: 0, d1: 0, d2: 0, prn: 0, nineFive: 0 }])
+  );
+  const rowsByMonth = [];
+  const baseSlots = YEARLY_ROSTER_SLOTS.filter((s) => !YEARLY_ROSTER_FIXED_SPECIAL.has(s));
+
+  function pickPrn(mi, blocked) {
+    const preferred = names
+      .filter((n) => n !== blocked)
+      .filter((n) => {
+        const g = Number(groupMap.get(n) || 0);
+        if (g === 2 || g === 3) return state.get(n).prn < 1;
+        if (g === 4) return state.get(n).prn < 2;
+        return false;
+      })
+      .sort((a, b) => state.get(a).prn - state.get(b).prn);
+    if (preferred.length > 0) return preferred[0];
+    return names
+      .filter((n) => n !== blocked)
+      .sort((a, b) => state.get(a).special - state.get(b).special)[0];
+  }
+
+  for (let mi = 0; mi < months.length; mi += 1) {
+    const assigned = new Map();
+    const taken = new Set();
+    const monthNineFive = String(nineFivePool[mi] || "");
+    if (!monthNineFive) return null;
+    const monthPrn = pickPrn(mi, monthNineFive);
+    if (!monthPrn) return null;
+    assigned.set(monthNineFive, "9-5");
+    assigned.set(monthPrn, "PRN");
+    taken.add(monthNineFive);
+    taken.add(monthPrn);
+
+    const monthAE = names.filter((n) => !taken.has(n)).sort((a, b) => state.get(a).special - state.get(b).special)[0];
+    if (!monthAE) return null;
+    assigned.set(monthAE, "안E");
+    taken.add(monthAE);
+    const monthSE = names.filter((n) => !taken.has(n)).sort((a, b) => state.get(a).special - state.get(b).special)[0];
+    if (!monthSE) return null;
+    assigned.set(monthSE, "수E");
+    taken.add(monthSE);
+
+    const freeNames = shuffleList(names.filter((n) => !taken.has(n)));
+    const freeSlots = shuffleList(baseSlots);
+    if (freeNames.length !== freeSlots.length) return null;
+    for (let i = 0; i < freeNames.length; i += 1) {
+      assigned.set(freeNames[i], freeSlots[i]);
+    }
+
+    const row = {};
+    for (const n of names) {
+      const slot = String(assigned.get(n) || "");
+      row[n] = slot;
+      const s = state.get(n);
+      if (slot === "PRN") s.prn += 1;
+      if (slot === "9-5") s.nineFive += 1;
+      if (slot === "PRN" || slot === "안E" || slot === "수E") s.special += 1;
+      if (isD1(slot)) s.d1 += 1;
+      if (isD2(slot)) s.d2 += 1;
+    }
+    rowsByMonth.push(row);
+  }
+
+  const rows = names.map((name) => ({ name, values: rowsByMonth.map((r) => r[name] || "") }));
+  const stats = names.map((name) => {
+    const s = state.get(name);
+    return {
+      name,
+      group: groupMap.get(name),
+      d1: s.d1,
+      d2: s.d2,
+      prn: s.prn,
+      nineFive: s.nineFive,
+      special: s.special,
+    };
+  });
+  return { ok: true, months, rows, stats, warnings: ["제약 충돌로 비상 생성 모드(완화 규칙)로 생성했습니다."] };
+}
+
 function buildYearlyRoster(startYm, nurseNames) {
   function tryBuildOnce(relaxLevel = 0) {
   const months = ymSequence(startYm, 12);
@@ -3693,6 +3782,8 @@ function buildYearlyRoster(startYm, nurseNames) {
       if (result?.error) lastErr = result.error;
     }
   }
+  const emergency = buildEmergencyYearlyRoster(startYm, nurseNames);
+  if (emergency?.ok) return emergency;
   return { ok: false, error: `${lastErr}: 제약이 충돌해 생성하지 못했습니다.` };
 }
 
