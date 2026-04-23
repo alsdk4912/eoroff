@@ -3397,6 +3397,10 @@ function isD2(slot) {
   return /D2$/i.test(String(slot ?? ""));
 }
 
+function isDPairSwitch(prevSlot, nextSlot) {
+  return (isD1(prevSlot) && isD2(nextSlot)) || (isD2(prevSlot) && isD1(nextSlot));
+}
+
 function ymSequence(startYm, count = 12) {
   const m = /^(\d{4})-(\d{2})$/.exec(String(startYm ?? "").trim());
   if (!m) return [];
@@ -3552,8 +3556,10 @@ function buildYearlyRoster(startYm, nurseNames) {
           const room = slotRoomKey(slot);
           let score = 0;
           if (s.lastRoom === room && s.roomStreak >= 2) score += 1000;
+          // 같은 방을 2개월 연속으로 붙여 연속성을 높이고, 3개월 연속은 금지한다.
+          if (s.lastRoom === room && s.roomStreak === 1) score -= 22;
+          if (s.lastRoom === room && s.roomStreak === 1 && isDPairSwitch(s.lastSlot, slot)) score -= 10;
           if (s.lastSlot === slot) score += 24;
-          if (s.lastRoom === room) score += 7;
           if (isD1(slot)) score += Math.max(0, s.d1 - s.d2);
           if (isD2(slot)) score += Math.max(0, s.d2 - s.d1);
           score += Number(s.roomCounts[room] || 0) * 1.5;
