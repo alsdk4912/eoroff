@@ -3557,37 +3557,55 @@ function buildYearlyRoster(startYm, nurseNames) {
     const freeSlots = YEARLY_ROSTER_SLOTS.filter((slot) => !YEARLY_ROSTER_FIXED_SPECIAL.has(slot));
     if (freeNames.length !== freeSlots.length) return { ok: false, error: "기본 번표 슬롯 수 불일치" };
 
-    const restNames = new Set(freeNames);
-    const restSlots = [...freeSlots];
-    while (restSlots.length > 0) {
-      let best = null;
-      for (const n of restNames) {
-        const s = state.get(n);
-        for (let si = 0; si < restSlots.length; si += 1) {
-          const slot = restSlots[si];
-          const room = slotRoomKey(slot);
-          const maxRoomCount = maxRoomCountByGroup(n, room, groupMap);
-          if (YEARLY_ROSTER_LIMITED_ROOMS.has(room) && Number(s.roomCounts[room] || 0) >= maxRoomCount) {
-            continue;
-          }
-          let score = 0;
-          if (s.lastRoom === room && s.roomStreak >= 2) score += 1000;
-          // 같은 방을 2개월 연속으로 붙여 연속성을 높이고, 3개월 연속은 금지한다.
-          if (s.lastRoom === room && s.roomStreak === 1) score -= 22;
-          if (s.lastRoom === room && s.roomStreak === 1 && isDPairSwitch(s.lastSlot, slot)) score -= 10;
-          if (s.lastSlot === slot) score += 24;
-          if (isD1(slot)) score += Math.max(0, s.d1 - s.d2);
-          if (isD2(slot)) score += Math.max(0, s.d2 - s.d1);
-          score += Number(s.roomCounts[room] || 0) * 1.5;
-          if (!best || score < best.score || (score === best.score && Math.random() < 0.35)) {
-            best = { n, slot, si, score };
-          }
-        }
+    const candidatesByName = new Map();
+    for (const n of freeNames) {
+      const s = state.get(n);
+      const cands = [];
+      for (const slot of freeSlots) {
+        const room = slotRoomKey(slot);
+        const maxRoomCount = maxRoomCountByGroup(n, room, groupMap);
+        if (YEARLY_ROSTER_LIMITED_ROOMS.has(room) && Number(s.roomCounts[room] || 0) >= maxRoomCount) continue;
+        let score = 0;
+        if (s.lastRoom === room && s.roomStreak >= 2) score += 1000;
+        // 같은 방을 2개월 연속으로 붙여 연속성을 높이고, 3개월 연속은 금지한다.
+        if (s.lastRoom === room && s.roomStreak === 1) score -= 22;
+        if (s.lastRoom === room && s.roomStreak === 1 && isDPairSwitch(s.lastSlot, slot)) score -= 10;
+        if (s.lastSlot === slot) score += 24;
+        if (isD1(slot)) score += Math.max(0, s.d1 - s.d2);
+        if (isD2(slot)) score += Math.max(0, s.d2 - s.d1);
+        score += Number(s.roomCounts[room] || 0) * 1.5;
+        cands.push({ slot, score });
       }
-      if (!best) return { ok: false, error: "기본 번표 배정 탐색 실패" };
-      assigned.set(best.n, best.slot);
-      restNames.delete(best.n);
-      restSlots.splice(best.si, 1);
+      cands.sort((a, b) => a.score - b.score);
+      if (cands.length === 0) return { ok: false, error: "기본 번표 배정 탐색 실패" };
+      candidatesByName.set(n, cands);
+    }
+
+    const orderedNames = [...freeNames].sort((a, b) => {
+      const ca = candidatesByName.get(a)?.length ?? 0;
+      const cb = candidatesByName.get(b)?.length ?? 0;
+      if (ca !== cb) return ca - cb;
+      return Math.random() < 0.5 ? -1 : 1;
+    });
+    const usedSlots = new Set();
+    const picked = new Map();
+    function dfsAssign(idx) {
+      if (idx >= orderedNames.length) return true;
+      const name = orderedNames[idx];
+      const cands = candidatesByName.get(name) || [];
+      for (const cand of cands) {
+        if (usedSlots.has(cand.slot)) continue;
+        usedSlots.add(cand.slot);
+        picked.set(name, cand.slot);
+        if (dfsAssign(idx + 1)) return true;
+        picked.delete(name);
+        usedSlots.delete(cand.slot);
+      }
+      return false;
+    }
+    if (!dfsAssign(0)) return { ok: false, error: "기본 번표 배정 탐색 실패" };
+    for (const n of orderedNames) {
+      assigned.set(n, String(picked.get(n) || ""));
     }
 
     const row = {};
