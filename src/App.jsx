@@ -3383,16 +3383,24 @@ const YEARLY_ROSTER_FIXED_SPECIAL = new Set(["PRN", "안E", "수E", "9-5"]);
 const YEARLY_ROSTER_LIMITED_ROOMS = new Set(["1", "3", "5", "6", "7", "안"]);
 const YEARLY_ROSTER_DFS_NODE_LIMIT = 18000;
 
-function maxRoomCountByGroup(name, room, groupMap) {
+function maxRoomCountByGroup(name, room, groupMap, relaxLevel = 0) {
+  let cap = 2;
   if (room === "안") {
     const g = Number(groupMap.get(name) || 0);
-    if (g === 1) return 1;
-    if (g === 2) return 2;
-    return 2;
+    if (g === 1) cap = 1;
+    else if (g === 2) cap = 2;
+    else cap = 2;
+    // 생성 실패가 반복되면 1그룹 안D0 상한만 1회 완화한다.
+    if (relaxLevel >= 2 && g === 1) cap += 1;
+    return cap;
   }
-  if (room === "1" || room === "7") return 2;
-  if (room === "3" || room === "5" || room === "6") return 3;
-  return 2;
+  if (room === "1" || room === "7") cap = 2;
+  else if (room === "3" || room === "5" || room === "6") cap = 3;
+  else cap = 2;
+  // 생성 실패가 반복되면 3/5/6, 이후 1/7 순서로 1회씩 완화한다.
+  if (relaxLevel >= 1 && (room === "3" || room === "5" || room === "6")) cap += 1;
+  if (relaxLevel >= 2 && (room === "1" || room === "7")) cap += 1;
+  return cap;
 }
 
 function slotRoomKey(slot) {
@@ -3488,7 +3496,7 @@ function buildPrnPlanWithCaps(names, groupMap, nineFivePlan) {
 }
 
 function buildYearlyRoster(startYm, nurseNames) {
-  function tryBuildOnce() {
+  function tryBuildOnce(relaxLevel = 0) {
   const months = ymSequence(startYm, 12);
   if (months.length !== 12) return { ok: false, error: "시작 월은 YYYY-MM 형식으로 입력해 주세요." };
   const names = [...nurseNames];
@@ -3588,7 +3596,7 @@ function buildYearlyRoster(startYm, nurseNames) {
       const cands = [];
       for (const slot of freeSlots) {
         const room = slotRoomKey(slot);
-        const maxRoomCount = maxRoomCountByGroup(n, room, groupMap);
+        const maxRoomCount = maxRoomCountByGroup(n, room, groupMap, relaxLevel);
         if (YEARLY_ROSTER_LIMITED_ROOMS.has(room) && Number(s.roomCounts[room] || 0) >= maxRoomCount) continue;
         let score = 0;
         if (s.lastRoom === room && s.roomStreak >= 2) score += 1000;
@@ -3663,12 +3671,29 @@ function buildYearlyRoster(startYm, nurseNames) {
   return { ok: true, months, rows, stats, warnings };
   }
 
-  // 강한 제약(방 상한/연속성/특수배정)으로 단일 탐색이 막히는 경우가 있어 다회 재시도한다.
-  for (let attempt = 0; attempt < 80; attempt += 1) {
-    const result = tryBuildOnce();
-    if (result?.ok) return result;
+  // 1단계: 사용자 지정 제약 그대로, 2·3단계: 최소 범위 완화
+  const plans = [
+    { relaxLevel: 0, attempts: 70 },
+    { relaxLevel: 1, attempts: 40 },
+    { relaxLevel: 2, attempts: 24 },
+  ];
+  let lastErr = "기본번표배정탐색실패";
+  for (const plan of plans) {
+    for (let attempt = 0; attempt < plan.attempts; attempt += 1) {
+      const result = tryBuildOnce(plan.relaxLevel);
+      if (result?.ok) {
+        if (plan.relaxLevel > 0) {
+          return {
+            ...result,
+            warnings: [...(Array.isArray(result.warnings) ? result.warnings : []), "제약 충돌로 일부 상한을 자동 완화해 생성했습니다."],
+          };
+        }
+        return result;
+      }
+      if (result?.error) lastErr = result.error;
+    }
   }
-  return { ok: false, error: "기본번표배정탐색실패: 제약이 충돌해 생성하지 못했습니다. 다시 생성을 눌러 재시도해 주세요." };
+  return { ok: false, error: `${lastErr}: 제약이 충돌해 생성하지 못했습니다.` };
 }
 
 function DashboardPage({
