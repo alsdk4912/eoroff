@@ -3381,6 +3381,7 @@ const YEARLY_ROSTER_GROUPS = {
 const YEARLY_ROSTER_SLOTS = ["1D1", "1D2", "3D1", "3D2", "5D1", "5D2", "6D1", "6D2", "7D1", "7D2", "안D0", "안D0", "안E", "수E", "9-5", "PRN"];
 const YEARLY_ROSTER_FIXED_SPECIAL = new Set(["PRN", "안E", "수E", "9-5"]);
 const YEARLY_ROSTER_LIMITED_ROOMS = new Set(["1", "3", "5", "6", "7", "안"]);
+const YEARLY_ROSTER_DFS_NODE_LIMIT = 18000;
 
 function maxRoomCountByGroup(name, room, groupMap) {
   if (room === "안") {
@@ -3589,7 +3590,10 @@ function buildYearlyRoster(startYm, nurseNames) {
     });
     const usedSlots = new Set();
     const picked = new Map();
+    let dfsNodes = 0;
     function dfsAssign(idx) {
+      dfsNodes += 1;
+      if (dfsNodes > YEARLY_ROSTER_DFS_NODE_LIMIT) return false;
       if (idx >= orderedNames.length) return true;
       const name = orderedNames[idx];
       const cands = candidatesByName.get(name) || [];
@@ -3636,7 +3640,7 @@ function buildYearlyRoster(startYm, nurseNames) {
   }
 
   // 강한 제약(방 상한/연속성/특수배정)으로 단일 탐색이 막히는 경우가 있어 다회 재시도한다.
-  for (let attempt = 0; attempt < 160; attempt += 1) {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
     const result = tryBuildOnce();
     if (result?.ok) return result;
   }
@@ -3675,6 +3679,7 @@ function DashboardPage({
   });
   const [generatorResult, setGeneratorResult] = useState(null);
   const [generatorMsg, setGeneratorMsg] = useState("");
+  const [generatorBusy, setGeneratorBusy] = useState(false);
   const [schedulePlanKey, setSchedulePlanKey] = useState("base_2026");
   const [scheduleYearFilter, setScheduleYearFilter] = useState("all");
 
@@ -3792,18 +3797,26 @@ function DashboardPage({
     notifyDone("저장되었습니다.");
   }
 
-  function generateYearlyRoster() {
-    const nurseNames = users.filter((u) => u.role === "NURSE").map((u) => u.name).sort((a, b) => a.localeCompare(b, "ko"));
-    const year = Number(generatorStartYm);
-    const startYm = `${Number.isInteger(year) ? year : new Date().getFullYear()}-03`;
-    const result = buildYearlyRoster(startYm, nurseNames);
-    if (!result.ok) {
-      setGeneratorResult(null);
-      setGeneratorMsg(result.error || "생성에 실패했습니다.");
-      return;
+  async function generateYearlyRoster() {
+    if (generatorBusy) return;
+    setGeneratorBusy(true);
+    setGeneratorMsg("생성 중입니다...");
+    try {
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+      const nurseNames = users.filter((u) => u.role === "NURSE").map((u) => u.name).sort((a, b) => a.localeCompare(b, "ko"));
+      const year = Number(generatorStartYm);
+      const startYm = `${Number.isInteger(year) ? year : new Date().getFullYear()}-03`;
+      const result = buildYearlyRoster(startYm, nurseNames);
+      if (!result.ok) {
+        setGeneratorResult(null);
+        setGeneratorMsg(result.error || "생성에 실패했습니다.");
+        return;
+      }
+      setGeneratorResult(result);
+      setGeneratorMsg("월별번표를 생성했습니다.");
+    } finally {
+      setGeneratorBusy(false);
     }
-    setGeneratorResult(result);
-    setGeneratorMsg("월별번표를 생성했습니다.");
   }
 
   function saveGeneratedRosterToMonthlyView() {
@@ -4048,10 +4061,10 @@ function DashboardPage({
                 ))}
               </select>
             </label>
-            <button type="button" className="monthly-generator-btn" onClick={generateYearlyRoster}>
-              생성
+            <button type="button" className="monthly-generator-btn" onClick={() => void generateYearlyRoster()} disabled={generatorBusy}>
+              {generatorBusy ? "생성 중..." : "생성"}
             </button>
-            <button type="button" className="monthly-generator-btn" onClick={saveGeneratedRosterToMonthlyView} disabled={!generatorResult?.ok}>
+            <button type="button" className="monthly-generator-btn" onClick={saveGeneratedRosterToMonthlyView} disabled={!generatorResult?.ok || generatorBusy}>
               월간근무표에 저장
             </button>
           </div>
