@@ -3386,7 +3386,9 @@ const YEARLY_ROSTER_DFS_NODE_LIMIT = 18000;
 function maxRoomCountByGroup(name, room, groupMap) {
   if (room === "안") {
     const g = Number(groupMap.get(name) || 0);
-    return g === 1 || g === 2 ? 1 : 2;
+    if (g === 1) return 1;
+    if (g === 2) return 2;
+    return 2;
   }
   if (room === "1" || room === "7") return 2;
   if (room === "3" || room === "5" || room === "6") return 3;
@@ -3451,6 +3453,40 @@ function buildNonCollidingPrnPlan(prnCandidates, nineFivePlan, maxTry = 240) {
   return null;
 }
 
+function buildPrnPlanWithCaps(names, groupMap, nineFivePlan) {
+  const months = Array.isArray(nineFivePlan) ? nineFivePlan.length : 0;
+  if (months <= 0) return null;
+  const remaining = new Map();
+  for (const n of names) {
+    const g = Number(groupMap.get(n) || 0);
+    let cap = 0;
+    if (g === 2 || g === 3) cap = 1;
+    else if (g === 4) cap = 2; // 4그룹은 필요 시 2회까지 허용
+    remaining.set(n, cap);
+  }
+  const plan = Array.from({ length: months }, () => "");
+  const orderedMonths = [...Array(months).keys()].sort(() => Math.random() - 0.5);
+
+  function dfs(idx) {
+    if (idx >= orderedMonths.length) return true;
+    const mi = orderedMonths[idx];
+    const blocked = String(nineFivePlan[mi] || "");
+    const candidates = names
+      .filter((n) => n !== blocked && Number(remaining.get(n) || 0) > 0)
+      .sort((a, b) => Number(remaining.get(b) || 0) - Number(remaining.get(a) || 0));
+    for (const n of candidates) {
+      remaining.set(n, Number(remaining.get(n) || 0) - 1);
+      plan[mi] = n;
+      if (dfs(idx + 1)) return true;
+      plan[mi] = "";
+      remaining.set(n, Number(remaining.get(n) || 0) + 1);
+    }
+    return false;
+  }
+
+  return dfs(0) ? plan : null;
+}
+
 function buildYearlyRoster(startYm, nurseNames) {
   function tryBuildOnce() {
   const months = ymSequence(startYm, 12);
@@ -3459,21 +3495,9 @@ function buildYearlyRoster(startYm, nurseNames) {
   if (names.length !== 16) return { ok: false, error: "근무표 생성은 간호사 16명 기준입니다." };
 
   const groupMap = new Map(names.map((n) => [n, YEARLY_ROSTER_GROUPS[n] ?? 0]));
-  const prnQuota = new Map(names.map((n) => [n, 0]));
-  names.forEach((n) => {
-    const g = groupMap.get(n);
-    if (g === 2 || g === 3) prnQuota.set(n, 1);
-    if (g === 4) prnQuota.set(n, 1);
-  });
-  const prnPool = [];
-  prnQuota.forEach((q, n) => {
-    for (let i = 0; i < q; i += 1) prnPool.push(n);
-  });
-  if (prnPool.length !== 12) return { ok: false, error: "PRN 배정 수 계산에 실패했습니다." };
-
   const nineFiveSelected = new Set(shuffleList(names).slice(0, 12));
   const nineFivePlan = shuffleList([...nineFiveSelected]);
-  const prnPlan = buildNonCollidingPrnPlan(prnPool, nineFivePlan);
+  const prnPlan = buildPrnPlanWithCaps(names, groupMap, nineFivePlan);
   if (!prnPlan) return { ok: false, error: "특수번표 배정충돌로 생성에 실패했습니다." };
 
   const specialTarget = new Map(names.map((n) => [n, 2]));
