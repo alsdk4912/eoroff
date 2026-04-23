@@ -42,6 +42,7 @@ const LS_LADDER_RESULTS = "or.ladderResults.v1";
 const LS_ADMIN_DAY_MEMOS = "or.adminDayMemos.v1";
 const LS_DAY_COMMENTS = "or.dayComments.v1";
 const LS_WORK_SCHEDULE_2026 = "or.workSchedule2026.v1";
+const LS_GENERATED_MONTHLY_SCHEDULES = "or.generatedMonthlySchedules.v1";
 /** 승인 시 지정하는 대체 근무(서버 동기화 + 로컬 캐시) */
 const LS_SUBSTITUTE_ASSIGNMENTS = "or.substituteAssignments.v1";
 const LS_WEEKLY_CELL_OVERRIDES = "or.weeklyCellOverrides.v1";
@@ -447,6 +448,7 @@ function App() {
   const [adminDayMemos, setAdminDayMemos] = useLocalStorage(LS_ADMIN_DAY_MEMOS, {});
   const [dayComments, setDayComments] = useLocalStorage(LS_DAY_COMMENTS, []);
   const [workScheduleRows, setWorkScheduleRows] = useLocalStorage(LS_WORK_SCHEDULE_2026, WORK_SCHEDULE_2026_ROWS);
+  const [generatedMonthlySchedules, setGeneratedMonthlySchedules] = useLocalStorage(LS_GENERATED_MONTHLY_SCHEDULES, {});
   const [substituteAssignments, setSubstituteAssignments] = useLocalStorage(LS_SUBSTITUTE_ASSIGNMENTS, []);
   /** 주간 번표 셀 수동 표시(기기 로컬) */
   const [weeklyCellOverrides, setWeeklyCellOverrides] = useLocalStorage(LS_WEEKLY_CELL_OVERRIDES, {});
@@ -2018,6 +2020,10 @@ function App() {
               currentRole={currentUser?.role}
               workScheduleRows={workScheduleRows}
               onSaveWorkScheduleRows={setWorkScheduleRows}
+              generatedMonthlySchedules={generatedMonthlySchedules}
+              onSaveGeneratedMonthlySchedule={(key, payload) =>
+                setGeneratedMonthlySchedules((prev) => ({ ...(prev && typeof prev === "object" ? prev : {}), [key]: payload }))
+              }
               isAdmin={isAdmin}
               substituteAssignments={substituteAssignments}
               holidays={holidays}
@@ -3590,6 +3596,8 @@ function DashboardPage({
   currentRole,
   workScheduleRows,
   onSaveWorkScheduleRows,
+  generatedMonthlySchedules,
+  onSaveGeneratedMonthlySchedule,
   isAdmin,
   substituteAssignments,
   holidays,
@@ -3610,6 +3618,8 @@ function DashboardPage({
   });
   const [generatorResult, setGeneratorResult] = useState(null);
   const [generatorMsg, setGeneratorMsg] = useState("");
+  const [schedulePlanKey, setSchedulePlanKey] = useState("base_2026");
+  const [scheduleYearFilter, setScheduleYearFilter] = useState("all");
 
   useEffect(() => {
     setDraftRows(Array.isArray(workScheduleRows) ? workScheduleRows : WORK_SCHEDULE_2026_ROWS);
@@ -3637,6 +3647,68 @@ function DashboardPage({
     }
     return changes;
   }, [draftRows, workScheduleRows]);
+
+  const schedulePlanOptions = useMemo(() => {
+    const generated = Object.entries(generatedMonthlySchedules && typeof generatedMonthlySchedules === "object" ? generatedMonthlySchedules : {})
+      .filter(([, v]) => Array.isArray(v?.months) && Array.isArray(v?.rows))
+      .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+    return [
+      { key: "base_2026", label: "기본 2026 근무표", months: WORK_SCHEDULE_2026_MONTHS.map((m, i) => `2026-${String(i + 1).padStart(2, "0")}`) },
+      ...generated.map(([k, v]) => ({
+        key: `gen_${k}`,
+        label: `${k} 시작 12개월`,
+        months: v.months,
+      })),
+    ];
+  }, [generatedMonthlySchedules]);
+
+  useEffect(() => {
+    if (!schedulePlanOptions.some((opt) => opt.key === schedulePlanKey)) {
+      setSchedulePlanKey("base_2026");
+    }
+  }, [schedulePlanKey, schedulePlanOptions]);
+
+  const activePlan = useMemo(() => {
+    if (schedulePlanKey === "base_2026") {
+      return {
+        type: "base",
+        months: WORK_SCHEDULE_2026_MONTHS.map((m, i) => ({
+          ymd: `2026-${String(i + 1).padStart(2, "0")}`,
+          label: m,
+          index: i,
+        })),
+        rows: Array.isArray(draftRows) ? draftRows : WORK_SCHEDULE_2026_ROWS,
+      };
+    }
+    const startKey = String(schedulePlanKey).replace(/^gen_/, "");
+    const raw = generatedMonthlySchedules?.[startKey];
+    const months = (Array.isArray(raw?.months) ? raw.months : []).map((ym, idx) => ({
+      ymd: String(ym),
+      label: String(ym).replace("-", "년 ") + "월",
+      index: idx,
+    }));
+    return {
+      type: "generated",
+      months,
+      rows: Array.isArray(raw?.rows) ? raw.rows : [],
+    };
+  }, [schedulePlanKey, generatedMonthlySchedules, draftRows]);
+
+  const scheduleYearOptions = useMemo(() => {
+    const years = [...new Set(activePlan.months.map((m) => String(m.ymd).slice(0, 4)).filter((y) => /^\d{4}$/.test(y)))];
+    years.sort();
+    return years;
+  }, [activePlan.months]);
+
+  useEffect(() => {
+    if (scheduleYearFilter === "all") return;
+    if (!scheduleYearOptions.includes(scheduleYearFilter)) setScheduleYearFilter("all");
+  }, [scheduleYearFilter, scheduleYearOptions]);
+
+  const visibleMonths = useMemo(() => {
+    if (scheduleYearFilter === "all") return activePlan.months;
+    return activePlan.months.filter((m) => String(m.ymd).startsWith(`${scheduleYearFilter}-`));
+  }, [activePlan.months, scheduleYearFilter]);
 
   function onDraftCellChange(name, monthIndex, value) {
     setScheduleMsg("");
@@ -3673,6 +3745,20 @@ function DashboardPage({
     }
     setGeneratorResult(result);
     setGeneratorMsg("월별번표를 생성했습니다.");
+  }
+
+  function saveGeneratedRosterToMonthlyView() {
+    if (!generatorResult?.ok) return;
+    const key = String(generatorResult.months?.[0] ?? "").slice(0, 7);
+    if (!key || !Array.isArray(generatorResult.months) || !Array.isArray(generatorResult.rows)) {
+      setGeneratorMsg("저장할 생성 결과가 없습니다.");
+      return;
+    }
+    onSaveGeneratedMonthlySchedule(key, { months: generatorResult.months, rows: generatorResult.rows, savedAt: new Date().toISOString() });
+    setSchedulePlanKey(`gen_${key}`);
+    setDashTab("schedule");
+    setGeneratorMsg("생성 결과를 월간근무표 열람 목록에 저장했습니다.");
+    notifyDone("저장되었습니다.");
   }
 
   return (
@@ -3783,19 +3869,42 @@ function DashboardPage({
       ) : null}
       {dashTab === "schedule" ? (
       <section className={`card work-schedule-card${isAdmin ? " work-schedule-card--admin" : ""}`}>
-        <h2 className="screen-title">2026년 근무표</h2>
+        <h2 className="screen-title">월간 근무표</h2>
+        <div className="row wrap" style={{ gap: 8, marginBottom: 8 }}>
+          <label className="weekly-date-label">
+            번표 묶음
+            <select value={schedulePlanKey} onChange={(e) => setSchedulePlanKey(e.target.value)}>
+              {schedulePlanOptions.map((opt) => (
+                <option key={opt.key} value={opt.key}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="weekly-date-label">
+            년도
+            <select value={scheduleYearFilter} onChange={(e) => setScheduleYearFilter(e.target.value)}>
+              <option value="all">전체</option>
+              {scheduleYearOptions.map((yy) => (
+                <option key={yy} value={yy}>
+                  {yy}년
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <div className="table-wrap work-schedule-wrap">
           <table className="work-schedule-table">
             <thead>
               <tr>
                 <th>이름</th>
-                {WORK_SCHEDULE_2026_MONTHS.map((m) => (
-                  <th key={m}>{m}</th>
+                {visibleMonths.map((m) => (
+                  <th key={m.ymd}>{m.label}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {(Array.isArray(draftRows) ? draftRows : WORK_SCHEDULE_2026_ROWS).map((row) => (
+              {(Array.isArray(activePlan.rows) ? activePlan.rows : []).map((row) => (
                 <tr
                   key={row.name}
                   className={
@@ -3805,27 +3914,30 @@ function DashboardPage({
                   }
                 >
                   <td className="work-schedule-name-cell">{row.name}</td>
-                  {WORK_SCHEDULE_2026_MONTHS.map((_, idx) => {
+                  {visibleMonths.map((m) => {
+                    const idx = m.index;
                     const cellVal = row.values?.[idx] ?? "";
                     const faceLabel = String(cellVal).trim() ? cellVal : "—";
                     return (
-                      <td key={`${row.name}-${idx}`} className="work-schedule-month-cell">
+                      <td key={`${row.name}-${m.ymd}`} className="work-schedule-month-cell">
                         <label className="work-schedule-picker">
                           <span className="work-schedule-picker-face" aria-hidden="true">
                             {faceLabel}
                           </span>
-                          <select
-                            className="work-schedule-select"
-                            value={cellVal}
-                            onChange={(e) => onDraftCellChange(row.name, idx, e.target.value)}
-                            aria-label={`${row.name} ${idx + 1}월 근무`}
-                          >
-                            {WORK_SCHEDULE_OPTIONS.map((opt) => (
-                              <option key={`${row.name}-${idx}-${opt || "empty"}`} value={opt}>
-                                {opt || "-"}
-                              </option>
-                            ))}
-                          </select>
+                          {activePlan.type === "base" ? (
+                            <select
+                              className="work-schedule-select"
+                              value={cellVal}
+                              onChange={(e) => onDraftCellChange(row.name, idx, e.target.value)}
+                              aria-label={`${row.name} ${m.label} 근무`}
+                            >
+                              {WORK_SCHEDULE_OPTIONS.map((opt) => (
+                                <option key={`${row.name}-${m.ymd}-${opt || "empty"}`} value={opt}>
+                                  {opt || "-"}
+                                </option>
+                              ))}
+                            </select>
+                          ) : null}
                         </label>
                       </td>
                     );
@@ -3835,12 +3947,16 @@ function DashboardPage({
             </tbody>
           </table>
         </div>
-        <div className="row work-schedule-save-row" style={{ marginTop: 10 }}>
-          {scheduleMsg ? <span className="help work-schedule-save-msg">{scheduleMsg}</span> : null}
-          <button type="button" onClick={saveWorkSchedule}>
-            근무표 저장
-          </button>
-        </div>
+        {activePlan.type === "base" ? (
+          <div className="row work-schedule-save-row" style={{ marginTop: 10 }}>
+            {scheduleMsg ? <span className="help work-schedule-save-msg">{scheduleMsg}</span> : null}
+            <button type="button" onClick={saveWorkSchedule}>
+              근무표 저장
+            </button>
+          </div>
+        ) : (
+          <p className="help" style={{ marginTop: 10 }}>생성 저장된 번표는 열람 전용입니다.</p>
+        )}
       </section>
       ) : null}
       {dashTab === "weekly" ? (
@@ -3869,6 +3985,9 @@ function DashboardPage({
             </label>
             <button type="button" onClick={generateYearlyRoster}>
               생성
+            </button>
+            <button type="button" onClick={saveGeneratedRosterToMonthlyView} disabled={!generatorResult?.ok}>
+              월간근무표에 저장
             </button>
           </div>
           {generatorMsg ? <p className="help" style={{ marginTop: 8 }}>{generatorMsg}</p> : null}
