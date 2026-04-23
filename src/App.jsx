@@ -4218,7 +4218,7 @@ function DashboardPage({
           ) : null}
           {generatorResult ? (
             <>
-              <div className="table-wrap work-schedule-wrap" style={{ marginTop: 10 }}>
+              <div className="table-wrap work-schedule-wrap monthly-generator-preview" style={{ marginTop: 10 }}>
                 <table className="work-schedule-table">
                   <thead>
                     <tr>

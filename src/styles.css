@@ -3021,6 +3021,40 @@ button.ym-wheel-check:hover {
     min-height: 28px;
     padding: 3px 2px;
   }
+
+  /* 월별번표생성 결과표: 모바일에서 한눈에 보기 좋게 더 압축 */
+  .monthly-generator-preview .work-schedule-table {
+    table-layout: fixed;
+  }
+
+  .monthly-generator-preview .work-schedule-table thead th:not(:first-child) {
+    font-size: 9px;
+    padding: 2px 1px;
+    letter-spacing: -0.02em;
+  }
+
+  .monthly-generator-preview .work-schedule-table th:first-child,
+  .monthly-generator-preview .work-schedule-table td.work-schedule-name-cell {
+    width: 15%;
+    max-width: 3.6rem;
+    font-size: 10px;
+    padding: 3px 4px;
+  }
+
+  .monthly-generator-preview .work-schedule-table td.work-schedule-month-cell {
+    padding: 2px 1px;
+  }
+
+  .monthly-generator-preview .work-schedule-picker {
+    min-height: 24px;
+  }
+
+  .monthly-generator-preview .work-schedule-picker-face {
+    min-height: 24px;
+    font-size: 9px;
+    padding: 2px 1px;
+    border-radius: 6px;
+  }
 }
 
 .badge--count-only {
