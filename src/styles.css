@@ -3149,7 +3149,8 @@ tr.request-cancelled-row td button {
     width: 100%;
   }
 
-  .monthly-generator-controls .weekly-date-label input[type="month"] {
+  .monthly-generator-controls .weekly-date-label input[type="month"],
+  .monthly-generator-controls .weekly-date-label select {
     width: 100%;
   }
 

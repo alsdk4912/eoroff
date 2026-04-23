@@ -3449,6 +3449,7 @@ function buildNonCollidingPrnPlan(prnCandidates, nineFivePlan, maxTry = 240) {
 }
 
 function buildYearlyRoster(startYm, nurseNames) {
+  function tryBuildOnce() {
   const months = ymSequence(startYm, 12);
   if (months.length !== 12) return { ok: false, error: "시작 월은 YYYY-MM 형식으로 입력해 주세요." };
   const names = [...nurseNames];
@@ -3612,6 +3613,14 @@ function buildYearlyRoster(startYm, nurseNames) {
   const noNineFive = stats.filter((s) => s.nineFive === 0).map((s) => s.name);
   const warnings = noNineFive.length !== 4 ? ["9-5 비배정 인원이 4명이 되지 않아 재확인이 필요합니다."] : [];
   return { ok: true, months, rows, stats, warnings };
+  }
+
+  // 강한 제약(방 상한/연속성/특수배정)으로 단일 탐색이 막히는 경우가 있어 다회 재시도한다.
+  for (let attempt = 0; attempt < 160; attempt += 1) {
+    const result = tryBuildOnce();
+    if (result?.ok) return result;
+  }
+  return { ok: false, error: "기본번표배정탐색실패: 제약이 충돌해 생성하지 못했습니다. 다시 생성을 눌러 재시도해 주세요." };
 }
 
 function DashboardPage({
@@ -3642,7 +3651,7 @@ function DashboardPage({
   const [scheduleMsg, setScheduleMsg] = useState("");
   const [generatorStartYm, setGeneratorStartYm] = useState(() => {
     const n = new Date();
-    return `${n.getFullYear()}-03`;
+    return String(n.getFullYear() + 1);
   });
   const [generatorResult, setGeneratorResult] = useState(null);
   const [generatorMsg, setGeneratorMsg] = useState("");
@@ -3765,7 +3774,9 @@ function DashboardPage({
 
   function generateYearlyRoster() {
     const nurseNames = users.filter((u) => u.role === "NURSE").map((u) => u.name).sort((a, b) => a.localeCompare(b, "ko"));
-    const result = buildYearlyRoster(generatorStartYm, nurseNames);
+    const year = Number(generatorStartYm);
+    const startYm = `${Number.isInteger(year) ? year : new Date().getFullYear()}-03`;
+    const result = buildYearlyRoster(startYm, nurseNames);
     if (!result.ok) {
       setGeneratorResult(null);
       setGeneratorMsg(result.error || "생성에 실패했습니다.");
@@ -4005,11 +4016,17 @@ function DashboardPage({
       {isAdmin && dashTab === "monthly-generator" ? (
         <section className="card work-schedule-card work-schedule-card--admin">
           <h2 className="screen-title">월별번표생성</h2>
-          <p className="help page-lead">시작 월부터 12개월(예: 2027-03 ~ 2028-02) 자동 생성합니다.</p>
+          <p className="help page-lead">선택한 년도의 3월부터 다음 해 2월까지 12개월 번표를 자동 생성합니다.</p>
           <div className="row wrap monthly-generator-controls">
             <label className="weekly-date-label">
-              시작 월
-              <input type="month" value={generatorStartYm} onChange={(e) => setGeneratorStartYm(e.target.value)} />
+              년도
+              <select value={generatorStartYm} onChange={(e) => setGeneratorStartYm(e.target.value)}>
+                {Array.from({ length: 12 }, (_, i) => 2025 + i).map((yy) => (
+                  <option key={yy} value={String(yy)}>
+                    {yy}년
+                  </option>
+                ))}
+              </select>
             </label>
             <button type="button" className="monthly-generator-btn" onClick={generateYearlyRoster}>
               생성
