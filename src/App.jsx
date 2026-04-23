@@ -3380,6 +3380,7 @@ const YEARLY_ROSTER_GROUPS = {
 
 const YEARLY_ROSTER_SLOTS = ["1D1", "1D2", "3D1", "3D2", "5D1", "5D2", "6D1", "6D2", "7D1", "7D2", "안D0", "안D0", "안E", "수E", "9-5", "PRN"];
 const YEARLY_ROSTER_FIXED_SPECIAL = new Set(["PRN", "안E", "수E", "9-5"]);
+const YEARLY_ROSTER_LIMITED_ROOMS = new Set(["1", "3", "5", "6", "7", "안"]);
 
 function slotRoomKey(slot) {
   const s = String(slot ?? "").toUpperCase();
@@ -3554,6 +3555,9 @@ function buildYearlyRoster(startYm, nurseNames) {
         for (let si = 0; si < restSlots.length; si += 1) {
           const slot = restSlots[si];
           const room = slotRoomKey(slot);
+          if (YEARLY_ROSTER_LIMITED_ROOMS.has(room) && Number(s.roomCounts[room] || 0) >= 2) {
+            continue;
+          }
           let score = 0;
           if (s.lastRoom === room && s.roomStreak >= 2) score += 1000;
           // 같은 방을 2개월 연속으로 붙여 연속성을 높이고, 3개월 연속은 금지한다.
