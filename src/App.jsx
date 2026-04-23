@@ -4006,15 +4006,15 @@ function DashboardPage({
         <section className="card work-schedule-card work-schedule-card--admin">
           <h2 className="screen-title">월별번표생성</h2>
           <p className="help page-lead">시작 월부터 12개월(예: 2027-03 ~ 2028-02) 자동 생성합니다.</p>
-          <div className="row wrap" style={{ gap: 8 }}>
+          <div className="row wrap monthly-generator-controls">
             <label className="weekly-date-label">
               시작 월
               <input type="month" value={generatorStartYm} onChange={(e) => setGeneratorStartYm(e.target.value)} />
             </label>
-            <button type="button" onClick={generateYearlyRoster}>
+            <button type="button" className="monthly-generator-btn" onClick={generateYearlyRoster}>
               생성
             </button>
-            <button type="button" onClick={saveGeneratedRosterToMonthlyView} disabled={!generatorResult?.ok}>
+            <button type="button" className="monthly-generator-btn" onClick={saveGeneratedRosterToMonthlyView} disabled={!generatorResult?.ok}>
               월간근무표에 저장
             </button>
           </div>

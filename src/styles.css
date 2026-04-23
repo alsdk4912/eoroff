@@ -329,6 +329,17 @@ button.app-header-update-btn:hover {
   font-size: 15px;
 }
 
+.weekly-date-label input[type="month"] {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--separator);
+  font-size: 15px;
+}
+
+.monthly-generator-controls {
+  margin-top: 8px;
+}
+
 .weekly-table-wrap {
   overflow-x: visible;
   max-width: 100%;
@@ -3128,6 +3139,24 @@ tr.request-cancelled-row td button {
 }
 
 @media (max-width: 768px) {
+  .monthly-generator-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .monthly-generator-controls .weekly-date-label {
+    width: 100%;
+  }
+
+  .monthly-generator-controls .weekly-date-label input[type="month"] {
+    width: 100%;
+  }
+
+  .monthly-generator-btn {
+    width: 100%;
+  }
+
   .app.app-shell {
     padding: max(4px, env(safe-area-inset-top)) 10px 0;
   }
