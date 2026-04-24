@@ -3693,8 +3693,10 @@ function buildYearlyRoster(startYm, nurseNames) {
         if (s.lastRoom === room && s.roomStreak === 1) score -= 22;
         if (s.lastRoom === room && s.roomStreak === 1 && isDPairSwitch(s.lastSlot, slot)) score -= 10;
         if (s.lastSlot === slot) score += 24;
-        if (isD1(slot)) score += Math.max(0, s.d1 - s.d2);
-        if (isD2(slot)) score += Math.max(0, s.d2 - s.d1);
+        // 최우선 규칙: 개인별 D1/D2 균형을 먼저 맞춘다.
+        if (isD1(slot)) score += Math.max(0, s.d1 - s.d2) * 18;
+        if (isD2(slot)) score += Math.max(0, s.d2 - s.d1) * 18;
+        if (!isD1(slot) && !isD2(slot)) score += Math.abs(s.d1 - s.d2) * 4;
         score += Number(s.roomCounts[room] || 0) * 1.5;
         cands.push({ slot, score });
       }
