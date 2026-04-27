@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import webpush from "web-push";
+import cron from "node-cron";
 import {
   execute,
   initDb,
@@ -88,6 +89,39 @@ function parseYmdParts(ymd) {
   const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
   if (!m) return null;
   return { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) };
+}
+
+function getKstNowParts(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const year = Number(parts.find((p) => p.type === "year")?.value);
+  const month = Number(parts.find((p) => p.type === "month")?.value);
+  const day = Number(parts.find((p) => p.type === "day")?.value);
+  return { year, month, day };
+}
+
+function kstYmdPlusDays(days = 0, now = new Date()) {
+  const p = getKstNowParts(now);
+  const d = new Date(Date.UTC(p.year, p.month - 1, p.day + Number(days || 0), 0, 0, 0));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+function kstTodayCutoffIsoNineAmOneSecond(now = new Date()) {
+  const p = getKstNowParts(now);
+  return new Date(Date.UTC(p.year, p.month - 1, p.day, 0, 0, 1)).toISOString();
+}
+
+function shuffleArray(arr) {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
 }
 
 function isLongTermGoldkeyDeductionExempt(row, cancelledAt) {
@@ -1966,6 +2000,63 @@ app.post("/api/admin/restore-sql", (req, res) => {
 
 async function main() {
   await initDb();
+  cron.schedule(
+    "1 0 9 * * *",
+    async () => {
+      try {
+        const targetLeaveDate = kstYmdPlusDays(1, new Date());
+        const cutoffIso = kstTodayCutoffIsoNineAmOneSecond(new Date());
+        const appliedRows = await queryAll(
+          `SELECT id, user_id, leave_date, leave_type, status, requested_at
+           FROM requests
+           WHERE ${SQL_REQ_ACTIVE}
+             AND leave_type = 'GENERAL_NORMAL'
+             AND leave_date = ?
+             AND status = 'APPLIED'`,
+          targetLeaveDate
+        );
+        const eligible = (Array.isArray(appliedRows) ? appliedRows : []).filter((r) => String(r.requested_at ?? "") < cutoffIso);
+        if (eligible.length < 2) {
+          console.log(`[auto-ladder] skip ${targetLeaveDate}: eligible < 2`);
+          return;
+        }
+        const shuffled = shuffleArray(eligible);
+        const orderedUserIds = shuffled.map((r) => String(r.user_id));
+        await runTransaction(async (tx) => {
+          for (let i = 0; i < shuffled.length; i += 1) {
+            const row = shuffled[i];
+            const ord = i + 1;
+            await tx.execute("UPDATE requests SET negotiation_order = ?, negotiation_order_locked = 1 WHERE id = ?", ord, row.id);
+            await insertLeaveRequestAuditRow(tx, {
+              leaveRequestId: row.id,
+              action: "AUTO_LADDER_SET",
+              fromStatus: "APPLIED",
+              toStatus: "APPLIED",
+              actorUserId: "system",
+              reason: "GENERAL_NORMAL 내일 휴가 09:00:01 자동 사다리",
+              idempotencyKey: null,
+              metadataJson: { leaveDate: targetLeaveDate, leaveType: "GENERAL_NORMAL", negotiationOrder: ord },
+            });
+          }
+          await tx.execute(
+            "INSERT INTO ladder_results (id, leave_date, leave_type, participants_json, order_json, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            `lrg_auto_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            targetLeaveDate,
+            "GENERAL_NORMAL",
+            JSON.stringify(orderedUserIds),
+            JSON.stringify(orderedUserIds),
+            "system",
+            new Date().toISOString()
+          );
+        });
+        console.log(`[auto-ladder] applied ${targetLeaveDate}: ${eligible.length} rows`);
+      } catch (err) {
+        console.error("[auto-ladder] failed", err);
+      }
+    },
+    { timezone: "Asia/Seoul" }
+  );
+
   app.listen(PORT, HOST, () => {
     console.log(`API server listening on http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT} (clean)`);
     if (HOST === "0.0.0.0") {
