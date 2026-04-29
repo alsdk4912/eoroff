@@ -1308,6 +1308,66 @@ app.post("/api/requests", async (req, res) => {
         idempotencyKey: idem || null,
         metadataJson: { memo: memo || "" },
       });
+
+      // 운영 규칙: 내일(leave_date = KST 기준 tomorrow) 일반휴가-후순위에 신규 신청이 들어오면
+      // 기존 사다리 결과/순번을 초기화해 관리자 재사다리가 가능하도록 만든다.
+      const tomorrowYmd = kstYmdPlusDays(1, new Date());
+      const shouldResetLadder =
+        String(leaveType) === "GENERAL_NORMAL" &&
+        String(leaveDate) === tomorrowYmd;
+      if (shouldResetLadder) {
+        const hasSaved = await tx.queryOne(
+          `SELECT id
+           FROM ladder_results
+           WHERE leave_date = ? AND leave_type = 'GENERAL_NORMAL'
+           LIMIT 1`,
+          leaveDate
+        );
+        if (hasSaved?.id) {
+          const affected = await tx.queryAll(
+            `SELECT id, status, negotiation_order, IFNULL(negotiation_order_locked, 0) AS negotiation_order_locked
+             FROM requests
+             WHERE ${SQL_REQ_ACTIVE}
+               AND leave_date = ?
+               AND leave_type = 'GENERAL_NORMAL'
+               AND status = 'APPLIED'`,
+            leaveDate
+          );
+          await tx.execute(
+            "DELETE FROM ladder_results WHERE leave_date = ? AND leave_type = 'GENERAL_NORMAL'",
+            leaveDate
+          );
+          await tx.execute(
+            `UPDATE requests
+             SET negotiation_order = NULL, negotiation_order_locked = 0
+             WHERE ${SQL_REQ_ACTIVE}
+               AND leave_date = ?
+               AND leave_type = 'GENERAL_NORMAL'
+               AND status = 'APPLIED'`,
+            leaveDate
+          );
+          for (const r of affected) {
+            const hadOrder = r?.negotiation_order != null && r?.negotiation_order !== "";
+            const wasLocked = Number(r?.negotiation_order_locked || 0) === 1;
+            if (!hadOrder && !wasLocked) continue;
+            await insertLeaveRequestAuditRow(tx, {
+              leaveRequestId: String(r.id),
+              action: "AUTO_LADDER_RESET",
+              fromStatus: "APPLIED",
+              toStatus: "APPLIED",
+              actorUserId: String(userId),
+              reason: "내일 일반후순위 신규 신청으로 기존 사다리 초기화",
+              idempotencyKey: null,
+              metadataJson: {
+                leaveDate: String(leaveDate),
+                leaveType: "GENERAL_NORMAL",
+                previousNegotiationOrder: r?.negotiation_order ?? null,
+                previousNegotiationOrderLocked: wasLocked,
+              },
+            });
+          }
+        }
+      }
     });
     if (leaveType === "GOLDKEY") {
       await reconcileGoldkeyUsageByPolicy(requestedAt || new Date().toISOString());
@@ -1317,6 +1377,73 @@ app.post("/api/requests", async (req, res) => {
   } catch (err) {
     console.error("POST /api/requests", err);
     res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
+async function resetLadderForLeaveDateType(tx, { leaveDate, leaveType, actorUserId, reason }) {
+  const affected = await tx.queryAll(
+    `SELECT id, status, negotiation_order, IFNULL(negotiation_order_locked, 0) AS negotiation_order_locked
+     FROM requests
+     WHERE ${SQL_REQ_ACTIVE}
+       AND leave_date = ?
+       AND leave_type = ?
+       AND status = 'APPLIED'`,
+    leaveDate,
+    leaveType
+  );
+  await tx.execute("DELETE FROM ladder_results WHERE leave_date = ? AND leave_type = ?", leaveDate, leaveType);
+  await tx.execute(
+    `UPDATE requests
+     SET negotiation_order = NULL, negotiation_order_locked = 0
+     WHERE ${SQL_REQ_ACTIVE}
+       AND leave_date = ?
+       AND leave_type = ?
+       AND status = 'APPLIED'`,
+    leaveDate,
+    leaveType
+  );
+  for (const r of affected) {
+    const hadOrder = r?.negotiation_order != null && r?.negotiation_order !== "";
+    const wasLocked = Number(r?.negotiation_order_locked || 0) === 1;
+    if (!hadOrder && !wasLocked) continue;
+    await insertLeaveRequestAuditRow(tx, {
+      leaveRequestId: String(r.id),
+      action: "AUTO_LADDER_RESET",
+      fromStatus: "APPLIED",
+      toStatus: "APPLIED",
+      actorUserId: String(actorUserId || "system"),
+      reason: String(reason || "").trim() || "사다리 초기화",
+      idempotencyKey: null,
+      metadataJson: {
+        leaveDate: String(leaveDate),
+        leaveType: String(leaveType),
+        previousNegotiationOrder: r?.negotiation_order ?? null,
+        previousNegotiationOrderLocked: wasLocked,
+      },
+    });
+  }
+}
+
+app.post("/api/admin/ladder/reset", async (req, res) => {
+  try {
+    const actorUserId = String(req.body?.actorUserId ?? "").trim();
+    if (!(await requireAdminUser(actorUserId))) return res.status(403).json({ error: "관리자 권한이 필요합니다." });
+    const leaveDate = String(req.body?.leaveDate ?? "").trim();
+    const leaveType = String(req.body?.leaveType ?? "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(leaveDate)) return res.status(400).json({ error: "leaveDate 형식이 올바르지 않습니다." });
+    if (!leaveType) return res.status(400).json({ error: "leaveType이 필요합니다." });
+    await runTransaction(async (tx) => {
+      await resetLadderForLeaveDateType(tx, {
+        leaveDate,
+        leaveType,
+        actorUserId,
+        reason: String(req.body?.reason ?? "").trim() || "관리자 수동 사다리 초기화",
+      });
+    });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /api/admin/ladder/reset", err);
+    return res.status(500).json({ error: String(err?.message || err) });
   }
 });
 
