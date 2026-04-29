@@ -56,7 +56,7 @@ const FORCE_GOLDKEY_NEGOTIATION_KEYS = new Set([
 ]);
 // 운영 예외: 아래 키는 사다리 비활성화 + 수기 순번 입력만 허용
 const FORCE_MANUAL_ORDER_ONLY_KEYS = new Set([
-  "2026-05-08|GENERAL_NORMAL",
+  "2026-05-08|GENERAL_PRIORITY",
 ]);
 
 /** 같은 날·같은 유형 APPLIED 신청으로부터 사다리 협의 대상자 userId 목록 (사다리 페이지와 동일 규칙) */
