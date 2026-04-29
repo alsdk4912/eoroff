@@ -54,6 +54,10 @@ const FORCE_GOLDKEY_NEGOTIATION_KEYS = new Set([
   "2026-05-22|u_nurse_8", // 임희종
   "2026-05-22|u_nurse_16", // 이현숙
 ]);
+// 운영 예외: 아래 키는 사다리 비활성화 + 수기 순번 입력만 허용
+const FORCE_MANUAL_ORDER_ONLY_KEYS = new Set([
+  "2026-05-08|GENERAL_NORMAL",
+]);
 
 /** 같은 날·같은 유형 APPLIED 신청으로부터 사다리 협의 대상자 userId 목록 (사다리 페이지와 동일 규칙) */
 function getLadderParticipantUserIdsForRequests(requests, leaveDate, leaveType) {
@@ -76,6 +80,10 @@ function hasSavedLadderResultForKey(ladderResults, leaveDate, leaveType) {
     const k = `${String(row?.leaveDate ?? "").trim()}|${String(row?.leaveType ?? "").trim()}`;
     return k === key;
   });
+}
+
+function isForceManualOrderOnly(leaveDate, leaveType) {
+  return FORCE_MANUAL_ORDER_ONLY_KEYS.has(`${String(leaveDate ?? "").trim()}|${String(leaveType ?? "").trim()}`);
 }
 
 /** 사다리 결과 저장 전, 협의 대상자 중 누구라도 수기로 순번을 넣었으면 사다리 실행 불가 */
@@ -4550,7 +4558,8 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
     () => manualNegotiationOrderBlocksLadder(requests, leaveDate, leaveType, ladderResults),
     [requests, leaveDate, leaveType, ladderResults]
   );
-  const canRunLadderForTarget = ladderParticipantUserIds.length >= 2 && !manualOrderBlocksLadder;
+  const forceManualOnly = isForceManualOrderOnly(leaveDate, leaveType);
+  const canRunLadderForTarget = ladderParticipantUserIds.length >= 2 && !manualOrderBlocksLadder && !forceManualOnly;
   const savedLadderKeySet = useMemo(() => {
     const set = new Set();
     for (const row of Array.isArray(ladderResults) ? ladderResults : []) {
@@ -4593,6 +4602,12 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
     }
     if (manualOrderBlocksLadder) {
       const msg = "협의 순번이 수기로 저장되어 사다리를 실행할 수 없습니다.";
+      setLadderMsg(msg);
+      window.alert?.(msg);
+      return null;
+    }
+    if (forceManualOnly) {
+      const msg = "해당 날짜/유형은 사다리를 사용하지 않고 순번만 수기로 입력합니다.";
       setLadderMsg(msg);
       window.alert?.(msg);
       return null;
@@ -5271,6 +5286,11 @@ function CalendarPage({
       byType.get(r.leaveType).push(r);
     }
     for (const [, list] of byType) {
+      const forcedManual = isForceManualOrderOnly(list[0]?.leaveDate, list[0]?.leaveType);
+      if (forcedManual) {
+        for (const r of list) map.set(r.id, { mode: "manual" });
+        continue;
+      }
       if (list.length === 1) {
         const only = list[0];
         if (only.leaveType === "GENERAL_NORMAL" && String(only.leaveDate ?? "").slice(0, 10) > todayYmd) {
@@ -5797,14 +5817,16 @@ function CalendarPage({
                               const meta = negotiationMetaByRequestId.get(r.id) ?? { mode: "single" };
                               const ord = r.negotiationOrder ?? r.negotiation_order;
                               const isNegotiate = meta.mode === "negotiate";
+                              const isManualOnly = meta.mode === "manual";
                               const isAuto = meta.mode === "auto";
                               const isCancelledRow = meta.mode === "cancelled";
                               const autoRank = meta.mode === "auto" ? meta.autoRank : null;
                               const orderLocked = isNegotiationOrderInputLocked(r, ladderDoneKeySet);
-                              const showModePill = isNegotiate || isAuto;
+                              const showModePill = isNegotiate || isAuto || isManualOnly;
                               let prefix = "";
                               if (isAuto && autoRank != null) prefix = `${autoRank}. `;
                               else if (isNegotiate && ord != null && ord !== "") prefix = `${ord}. `;
+                              else if (isManualOnly && ord != null && ord !== "") prefix = `${ord}. `;
                               else if (meta.mode === "single" && ord != null && ord !== "") prefix = `${ord}. `;
 
                               const adminTopText = `${prefix}${nm} · ${typeFullLabel(r.leaveType)}`;
@@ -5819,7 +5841,7 @@ function CalendarPage({
                                   className={`calendar-applicant-item calendar-applicant-item--row${isAdmin ? " calendar-applicant-item--admin" : ""}${r.status === "REJECTED" ? " calendar-applicant-item--rejected" : ""}`}
                                 >
                                   <div className="negotiation-order-cell">
-                                    {isNegotiate && r.status !== "CANCELLED" ? (
+                                    {(isNegotiate || isManualOnly) && r.status !== "CANCELLED" ? (
                                       orderLocked ? (
                                         <span className="negotiation-order-readonly" title="협의 순번 확정(수정 불가)">
                                           {ord != null && ord !== "" ? ord : "—"}
@@ -5841,7 +5863,7 @@ function CalendarPage({
                                   </div>
                                   {showModePill ? (
                                     <span className={`negotiation-mode-pill ${isAuto ? "negotiation-mode-pill--auto" : ""}`}>
-                                      {isNegotiate ? "협의" : "신청순"}
+                                      {isManualOnly ? "수기" : isNegotiate ? "협의" : "신청순"}
                                     </span>
                                   ) : null}
                                   <span
