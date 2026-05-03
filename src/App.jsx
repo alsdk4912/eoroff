@@ -2484,7 +2484,7 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
                       <select
                         className="my-requests-nature-select"
                         value={String(r.leaveNature ?? "PERSONAL")}
-                        onChange={(e) => void onUpdateLeaveNature?.(r.id, e.target.value)}
+                        onChange={(e) => void (onUpdateLeaveNature && onUpdateLeaveNature(r.id, e.target.value))}
                         aria-label="일정 표시"
                         title="확정 후 공가·필수교육 등 표시를 선택합니다. 주간 번표에 반영됩니다."
                       >
