@@ -15,7 +15,7 @@ const NURSE_GOLDKEY_QUOTA_BY_NAME = {
   이지선: 11,
   최유리: 11,
   최유경: 11,
-  정수영: 0,
+  정수영: 4,
 };
 
 export function defaultGoldkeyQuotaForName(name) {
