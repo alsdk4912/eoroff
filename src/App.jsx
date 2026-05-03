@@ -472,7 +472,6 @@ function App() {
   }, []);
 
   const [leaveType, setLeaveType] = useState("GOLDKEY");
-  const [leaveNature, setLeaveNature] = useState("PERSONAL");
   const [leaveDate, setLeaveDate] = useState(() => toLocalYMD(new Date()));
   const [memo, setMemo] = useState("");
   const [message, setMessage] = useState("");
@@ -1377,7 +1376,6 @@ function App() {
     const error = validateRequest({
       leaveType,
       leaveDate,
-      leaveNature,
       now: nowForValidation,
       remainingGoldkey: myGoldkey?.remainingCount ?? 0,
       holidaysCache: holidays,
@@ -1394,7 +1392,7 @@ function App() {
       userId: auth.userId,
       leaveDate,
       leaveType,
-      leaveNature,
+      leaveNature: "PERSONAL",
       status: "APPLIED",
       requestedAt: new Date().toISOString(),
       memo,
@@ -1538,6 +1536,31 @@ function App() {
         setCancellations(prevCancellations);
       }
     }
+  }
+
+  async function updateLeaveNatureForRequest(requestId, nextNature) {
+    const target = requests.find((r) => r.id === requestId);
+    if (!target || !isWinnerStatus(target.status)) return;
+    const n = String(nextNature ?? "").trim();
+    if (!n) return;
+    if (serverMode) {
+      try {
+        await api.patchLeaveNature(requestId, { actorUserId: auth.userId, leaveNature: n });
+        await bootstrap();
+      } catch (e) {
+        window.alert?.(`일정 표시 저장 실패: ${e?.message || e}`);
+      }
+      return;
+    }
+    setRequests((prev) => {
+      const next = prev.map((r) => (r.id === requestId ? { ...r, leaveNature: n } : r));
+      try {
+        localStorage.setItem(LS_REQUESTS, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
   }
 
   async function selectRequest(requestId, substituteOpts = null) {
@@ -1997,8 +2020,6 @@ function App() {
             <RequestPage
               leaveType={leaveType}
               setLeaveType={setLeaveType}
-              leaveNature={leaveNature}
-              setLeaveNature={setLeaveNature}
               leaveDate={leaveDate}
               setLeaveDate={setLeaveDate}
               memo={memo}
@@ -2012,7 +2033,14 @@ function App() {
         <Route
           path="/my"
           element={
-            <MyRequestsPage myRequests={myRequests} cancelRequest={cancelRequest} uncancelRequest={uncancelRequest} canUncancel={isAdmin} />
+            <MyRequestsPage
+              myRequests={myRequests}
+              cancelRequest={cancelRequest}
+              uncancelRequest={uncancelRequest}
+              canUncancel={isAdmin}
+              serverMode={serverMode}
+              onUpdateLeaveNature={updateLeaveNatureForRequest}
+            />
           }
         />
         <Route
@@ -2072,8 +2100,6 @@ function App() {
               users={users}
               leaveType={leaveType}
               setLeaveType={setLeaveType}
-              leaveNature={leaveNature}
-              setLeaveNature={setLeaveNature}
               leaveDate={leaveDate}
               setLeaveDate={setLeaveDate}
               memo={memo}
@@ -2238,8 +2264,6 @@ function LoginPage({ onLogin, onResetPassword }) {
 function RequestPage({
   leaveType,
   setLeaveType,
-  leaveNature,
-  setLeaveNature,
   leaveDate,
   setLeaveDate,
   memo,
@@ -2251,20 +2275,14 @@ function RequestPage({
   return (
     <section className="card">
       <h2 className="screen-title">휴가 신청</h2>
-      <p className="help page-lead">날짜와 종류를 고른 뒤 제출합니다. 캘린더에서도 같은 신청을 할 수 있습니다.</p>
+      <p className="help page-lead">날짜와 구분을 고른 뒤 제출합니다. 캘린더에서도 같은 신청을 할 수 있습니다.</p>
       <form className="grid" onSubmit={submitRequest}>
-        <label className="field-label">휴가 종류</label>
-        <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)} aria-label="휴가 종류">
+        <label className="field-label">휴가 구분</label>
+        <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)} aria-label="휴가 구분">
           <option value="GOLDKEY">골드키</option>
           <option value="GENERAL_PRIORITY">일반휴가-우선순위</option>
           <option value="GENERAL_NORMAL">일반휴가-후순위</option>
           <option value="HALF_DAY">반차</option>
-        </select>
-        <label className="field-label">휴가 성격</label>
-        <select value={leaveNature} onChange={(e) => setLeaveNature(e.target.value)} aria-label="휴가 성격">
-          <option value="PERSONAL">개인휴가</option>
-          <option value="PAID_TRAINING">보수교육공가</option>
-          <option value="REQUIRED_TRAINING">필수교육</option>
         </select>
         <label className="ymd-label">휴가일 (연·월·일)</label>
         <YmdSplitInput value={leaveDate} onChange={setLeaveDate} />
@@ -2325,9 +2343,10 @@ function compareMyRequestsRows(a, b, sortOrder) {
   return cmp;
 }
 
-function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncancel }) {
+function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncancel, serverMode, onUpdateLeaveNature }) {
   const [yearFilter, setYearFilter] = useState("ALL");
   const [leaveTypeFilter, setLeaveTypeFilter] = useState("ALL");
+  const [leaveMarkFilter, setLeaveMarkFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [search, setSearch] = useState("");
   const [sortOrder, setSortOrder] = useState("leaveDateAsc");
@@ -2349,6 +2368,10 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
     if (leaveTypeFilter === "ALL") return true;
     return String(r.leaveType ?? "") === leaveTypeFilter;
   }
+  function matchesLeaveMarkFilter(r) {
+    if (leaveMarkFilter === "ALL") return true;
+    return String(r.leaveNature ?? "PERSONAL") === leaveMarkFilter;
+  }
   function matchesStatusFilter(r) {
     if (statusFilter === "ALL") return true;
     if (statusFilter === "SELECTED") return isWinnerStatus(r.status);
@@ -2359,6 +2382,7 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
       (r) =>
         matchesYearFilter(r) &&
         matchesLeaveTypeFilter(r) &&
+        matchesLeaveMarkFilter(r) &&
         matchesStatusFilter(r) &&
         `${r.leaveDate} ${formatLeaveDateShort(r.leaveDate)} ${buildLeaveDateSearchTokens(r.leaveDate).join(" ")} ${leaveTypeLabel(r.leaveType)} ${leaveNatureLabel(r.leaveNature)} ${statusLabel(r.status)}`
           .toLowerCase()
@@ -2382,14 +2406,18 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
       </div>
       <div className="row wrap my-requests-toolbar">
         <div className="my-requests-filter-row">
-          <select value={leaveTypeFilter} onChange={(e) => setLeaveTypeFilter(e.target.value)} aria-label="휴가성격 필터">
-            <option value="ALL">휴가성격</option>
+          <select value={leaveTypeFilter} onChange={(e) => setLeaveTypeFilter(e.target.value)} aria-label="휴가 구분 필터">
+            <option value="ALL">전체(휴가 구분)</option>
             <option value="GOLDKEY">골드키</option>
             <option value="GENERAL_PRIORITY">일반휴가-우선순위</option>
             <option value="GENERAL_NORMAL">일반휴가-후순위</option>
             <option value="HALF_DAY">반차</option>
-            <option value="PAID_TRAINING">공가</option>
-            <option value="REQUIRED_TRAINING">필수교육</option>
+          </select>
+          <select value={leaveMarkFilter} onChange={(e) => setLeaveMarkFilter(e.target.value)} aria-label="일정 표시 필터">
+            <option value="ALL">전체(일정 표시)</option>
+            <option value="PERSONAL">{leaveNatureLabel("PERSONAL")}</option>
+            <option value="PAID_TRAINING">{leaveNatureLabel("PAID_TRAINING")}</option>
+            <option value="REQUIRED_TRAINING">{leaveNatureLabel("REQUIRED_TRAINING")}</option>
           </select>
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="휴가상태 필터">
             <option value="ALL">휴가상태</option>
@@ -2410,8 +2438,8 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
           <thead>
             <tr>
               <th>휴가일</th>
-              <th>유형</th>
-              <th>성격</th>
+              <th>휴가 구분</th>
+              <th>일정 표시</th>
               <th>상태</th>
               <th>신청시각</th>
               <th>액션</th>
@@ -2451,7 +2479,23 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
                   <td className="my-requests-col my-requests-col--type">
                     <span className={`leave-type-pill ${buildLeaveChipClass(r.leaveType, r.status)}`}>{leaveTypeLabel(r.leaveType)}</span>
                   </td>
-                  <td className="my-requests-col my-requests-col--nature">{leaveNatureLabel(r.leaveNature)}</td>
+                  <td className="my-requests-col my-requests-col--nature">
+                    {isWinnerStatus(r.status) ? (
+                      <select
+                        className="my-requests-nature-select"
+                        value={String(r.leaveNature ?? "PERSONAL")}
+                        onChange={(e) => void onUpdateLeaveNature?.(r.id, e.target.value)}
+                        aria-label="일정 표시"
+                        title="확정 후 공가·필수교육 등 표시를 선택합니다. 주간 번표에 반영됩니다."
+                      >
+                        <option value="PERSONAL">{leaveNatureLabel("PERSONAL")}</option>
+                        <option value="PAID_TRAINING">{leaveNatureLabel("PAID_TRAINING")}</option>
+                        <option value="REQUIRED_TRAINING">{leaveNatureLabel("REQUIRED_TRAINING")}</option>
+                      </select>
+                    ) : (
+                      leaveNatureLabel(r.leaveNature)
+                    )}
+                  </td>
                   <td className="my-requests-col my-requests-col--status">{statusLabel(r.status)}</td>
                   <td className="my-requests-col my-requests-col--time">{formatRequestedAtCompact(r.requestedAt)}</td>
                   <td className="my-requests-col my-requests-col--action">{actionCell}</td>
@@ -2699,6 +2743,11 @@ function effectiveScheduleCell(userId, nurseName, ymd, workScheduleRows, request
       isWinnerStatus(r.status)
   );
   if (approvedLeave) {
+    const nat = String(approvedLeave.leaveNature ?? "");
+    const lt = String(approvedLeave.leaveType ?? "");
+    if (nat === "PAID_TRAINING") return { kind: "leave", main: "공가", sub: typeFullLabel(approvedLeave.leaveType) };
+    if (nat === "REQUIRED_TRAINING") return { kind: "leave", main: "필수교육", sub: typeFullLabel(approvedLeave.leaveType) };
+    if (lt === "HALF_DAY") return { kind: "leave", main: "반차", sub: "" };
     return { kind: "leave", main: "휴가", sub: typeFullLabel(approvedLeave.leaveType) };
   }
   const sub = (substituteAssignments || []).find((s) => s.substituteUserId === userId && String(s.leaveDate ?? "").slice(0, 10) === ld);
@@ -5083,8 +5132,6 @@ function CalendarPage({
   users,
   leaveType,
   setLeaveType,
-  leaveNature,
-  setLeaveNature,
   leaveDate,
   setLeaveDate,
   memo,
@@ -5821,7 +5868,7 @@ function CalendarPage({
                               const isAuto = meta.mode === "auto";
                               const isCancelledRow = meta.mode === "cancelled";
                               const autoRank = meta.mode === "auto" ? meta.autoRank : null;
-                              const orderLocked = isNegotiationOrderInputLocked(r, ladderDoneKeySet);
+                              const orderLocked = isManualOnly ? false : isNegotiationOrderInputLocked(r, ladderDoneKeySet);
                               const showModePill = isNegotiate || isAuto || isManualOnly;
                               let prefix = "";
                               if (isAuto && autoRank != null) prefix = `${autoRank}. `;
@@ -5985,18 +6032,12 @@ function CalendarPage({
                     <div className="calendar-detail-body calendar-detail-body--apply" role="tabpanel">
                       <p className="help">선택한 날짜: {selectedYmd} (아래에서 연·월·일을 바꿀 수 있습니다)</p>
                       <form className="grid calendar-apply-form" onSubmit={submitRequest}>
-                        <label className="field-label">휴가 종류</label>
-                        <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)} aria-label="휴가 종류">
+                        <label className="field-label">휴가 구분</label>
+                        <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)} aria-label="휴가 구분">
                           <option value="GOLDKEY">골드키</option>
                           <option value="GENERAL_PRIORITY">일반휴가-우선순위</option>
                           <option value="GENERAL_NORMAL">일반휴가-후순위</option>
                           <option value="HALF_DAY">반차</option>
-                        </select>
-                        <label className="field-label">휴가 성격</label>
-                        <select value={leaveNature} onChange={(e) => setLeaveNature(e.target.value)} aria-label="휴가 성격">
-                          <option value="PERSONAL">개인휴가</option>
-                          <option value="PAID_TRAINING">보수교육공가</option>
-                          <option value="REQUIRED_TRAINING">필수교육</option>
                         </select>
                         <div className="calendar-apply-ymd">
                           <span className="help">휴가일</span>
@@ -6389,8 +6430,8 @@ function AdminPage({ allRequests, users, notes, goldkeys, cancellations, serverM
                 <th>기록구분</th>
                 <th>간호사</th>
                 <th>휴가일</th>
-                <th>유형</th>
-                <th>성격</th>
+                <th>휴가 구분</th>
+                <th>일정 표시</th>
                 <th>상태</th>
                 <th>협의순</th>
                 <th>기록시각</th>

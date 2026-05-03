@@ -311,16 +311,13 @@ function countActiveGeneralPriorityInMonth(requests, userId, leaveDateYmd) {
 export function validateRequest({
   leaveType,
   leaveDate,
-  leaveNature,
   now,
   remainingGoldkey,
   holidaysCache,
   userId,
   requests,
 }) {
-  if (!leaveType || !leaveDate) return "휴가 종류와 날짜를 입력하세요.";
-  const nature = String(leaveNature ?? "").trim();
-  if (!nature || !ALLOWED_LEAVE_NATURE.has(nature)) return "휴가 성격을 선택하세요.";
+  if (!leaveType || !leaveDate) return "휴가 구분과 날짜를 입력하세요.";
 
   const target = parseYmdAsLocalDate(leaveDate);
   if (Number.isNaN(target.getTime())) return "날짜 형식이 올바르지 않습니다.";

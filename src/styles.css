@@ -1624,6 +1624,13 @@ tbody tr:last-child td {
   white-space: nowrap;
 }
 
+.my-requests-nature-select {
+  max-width: min(100%, 168px);
+  min-width: 0;
+  font: inherit;
+  padding: 4px 8px;
+}
+
 @media (max-width: 768px) {
   .my-requests-card h2 {
     font-size: 17px;

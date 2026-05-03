@@ -1230,8 +1230,6 @@ app.post("/api/requests", async (req, res) => {
       status,
       requestedAt,
       memo = "",
-      leaveNature: leaveNatureRaw,
-      leave_nature,
     } = req.body ?? {};
 
     const idem = getIdempotencyKey(req);
@@ -1242,18 +1240,16 @@ app.post("/api/requests", async (req, res) => {
       }
     }
 
-    const leaveNature = String(leaveNatureRaw ?? leave_nature ?? "PERSONAL").trim();
     const user = await queryOne("SELECT id, role FROM users WHERE id = ?", userId);
     if (!user) return res.status(400).json({ error: "사용자 정보가 올바르지 않습니다." });
     if (user.role !== "NURSE") {
       return res.status(403).json({ error: "마취과 간호사는 휴가 신청을 할 수 없습니다." });
     }
     if (!ALLOWED_LEAVE_TYPES.has(leaveType)) {
-      return res.status(400).json({ error: "지원하지 않는 휴가 종류입니다." });
+      return res.status(400).json({ error: "지원하지 않는 휴가 구분입니다." });
     }
-    if (!ALLOWED_LEAVE_NATURE.has(leaveNature)) {
-      return res.status(400).json({ error: "휴가 성격을 선택하세요." });
-    }
+    /** 신청 시 일정 표시(leave_nature)는 항상 개인휴가. 확정 후 내신청에서 공가/필수교육 지정. */
+    const leaveNature = "PERSONAL";
 
     const duplicate = await queryOne(
       `SELECT id FROM requests
@@ -1513,6 +1509,58 @@ async function handleNegotiationOrder(req, res) {
 }
 app.patch("/api/requests/:id/negotiation-order", handleNegotiationOrder);
 app.post("/api/requests/:id/negotiation-order", handleNegotiationOrder);
+
+/** 확정(SELECTED/APPROVED)된 본인 신청만: 개인휴가/공가/필수교육(일정 표시) 변경 — 주간번표 자동 연동 */
+async function handleLeaveNatureUpdate(req, res) {
+  try {
+    const requestId = decodeURIComponent(String(req.params.id ?? ""));
+    const idem = getIdempotencyKey(req);
+    if (idem) {
+      const prev = await auditRowByIdempotencyKey(idem);
+      if (prev) return res.json({ ok: true, idempotentReplay: true });
+    }
+    const actorUserId = String(req.body?.actorUserId ?? "").trim();
+    if (!actorUserId) return res.status(400).json({ error: "actorUserId가 필요합니다." });
+    const leaveNature = String(req.body?.leaveNature ?? req.body?.leave_nature ?? "").trim();
+    if (!ALLOWED_LEAVE_NATURE.has(leaveNature)) {
+      return res.status(400).json({ error: "지원하지 않는 일정 표시 값입니다." });
+    }
+    const row = await queryOne(
+      `SELECT id, user_id, status, leave_nature FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`,
+      requestId
+    );
+    if (!row) return res.status(404).json({ error: "요청을 찾을 수 없습니다." });
+    if (String(row.user_id) !== actorUserId) {
+      return res.status(403).json({ error: "본인 신청만 변경할 수 있습니다." });
+    }
+    const st = String(row.status ?? "");
+    if (st !== "SELECTED" && st !== "APPROVED") {
+      return res.status(409).json({ error: "확정된 휴가만 일정 표시를 바꿀 수 있습니다." });
+    }
+    const prevNature = String(row.leave_nature ?? "PERSONAL");
+    if (prevNature === leaveNature) return res.json({ ok: true, leaveNature });
+
+    await runTransaction(async (tx) => {
+      await tx.execute("UPDATE requests SET leave_nature = ? WHERE id = ?", leaveNature, requestId);
+      await insertLeaveRequestAuditRow(tx, {
+        leaveRequestId: requestId,
+        action: "LEAVE_NATURE_UPDATE",
+        fromStatus: st,
+        toStatus: st,
+        actorUserId,
+        reason: null,
+        idempotencyKey: idem || null,
+        metadataJson: { previousLeaveNature: prevNature, leaveNature },
+      });
+    });
+    return res.json({ ok: true, leaveNature });
+  } catch (err) {
+    console.error("leave-nature", err);
+    res.status(500).json({ error: String(err?.message || err) });
+  }
+}
+app.patch("/api/requests/:id/leave-nature", handleLeaveNatureUpdate);
+app.post("/api/requests/:id/leave-nature", handleLeaveNatureUpdate);
 
 app.post("/api/requests/:id/cancel", async (req, res) => {
   try {

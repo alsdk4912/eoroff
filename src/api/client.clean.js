@@ -77,6 +77,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  /** 확정 휴가: 일정 표시(개인/공가/필수교육) — 본인만 */
+  patchLeaveNature: (id, payload) =>
+    requestJson(`/requests/${encodeURIComponent(id)}/leave-nature`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   cancelRequest: (id, payload) =>
     requestJson(`/requests/${id}/cancel`, { method: "POST", body: JSON.stringify(payload) }),
   uncancelRequest: (id, payload) =>
