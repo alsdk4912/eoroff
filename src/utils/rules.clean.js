@@ -152,36 +152,6 @@ export function compareSameLeaveDateRequests(a, b, _users) {
   return a.requestedAt.localeCompare(b.requestedAt);
 }
 
-function holidaySetFromCache(holidaysCache) {
-  const arr = Array.isArray(holidaysCache) ? holidaysCache : [];
-  return new Set(arr.filter((h) => h.isHoliday).map((h) => h.holidayDate));
-}
-
-function toLocalYMD(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function getNthBusinessDay(year, monthIndex, n, holidaysCache) {
-  const holidaySet = holidaySetFromCache(holidaysCache);
-  let count = 0;
-  const d = new Date(year, monthIndex, 1);
-
-  while (d.getMonth() === monthIndex) {
-    const dayOfWeek = d.getDay();
-    const iso = toLocalYMD(d);
-    const isBusiness = dayOfWeek !== 0 && dayOfWeek !== 6 && !holidaySet.has(iso);
-    if (isBusiness) {
-      count += 1;
-      if (count === n) return new Date(d);
-    }
-    d.setDate(d.getDate() + 1);
-  }
-  return new Date(year, monthIndex, 1);
-}
-
 /** `YYYY-MM-DD`(date input)를 로컬 자정으로 해석 — `new Date('YYYY-MM-DD')`는 UTC라 타임존에 따라 하루 어긋남 */
 function parseYmdAsLocalDate(ymd) {
   const s = String(ymd ?? "").trim();
@@ -408,11 +378,7 @@ export function validateRequest({
     return "4월 일반-후순위는 4월(당월) 또는 5월(다음달)만 신청 가능합니다.";
   }
 
-  const firstBusiness = getNthBusinessDay(now.getFullYear(), now.getMonth(), 1, holidaysCache);
-  const secondBusiness = getNthBusinessDay(now.getFullYear(), now.getMonth(), 2, holidaysCache);
-  firstBusiness.setHours(0, 0, 0, 0);
-  secondBusiness.setHours(9, 0, 0, 0);
-
+  /** 일반 우선·후순위·반차: 부서 규칙상 달력 매월 1일 00:00 ~ 2일 09:00(영업일 아님) */
   const priorityMonthStart = new Date(nowYear, now.getMonth(), 1, 0, 0, 0, 0);
   const priorityMonth2At0900 = new Date(nowYear, now.getMonth(), 2, 9, 0, 0, 0);
 
@@ -424,12 +390,12 @@ export function validateRequest({
   }
 
   if (leaveType === "GENERAL_NORMAL") {
-    if (now < secondBusiness) return "일반-후순위는 영업일 2일 09시 이후부터 신청 가능합니다.";
+    if (now < priorityMonth2At0900) return "일반-후순위는 매월 2일 09시 이후부터 신청 가능합니다.";
     return "";
   }
 
   if (leaveType === "HALF_DAY") {
-    if (now < secondBusiness) return "반차는 영업일 2일 09시 이후부터 신청 가능합니다.";
+    if (now < priorityMonth2At0900) return "반차는 매월 2일 09시 이후부터 신청 가능합니다.";
     return "";
   }
 
