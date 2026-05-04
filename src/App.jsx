@@ -2556,30 +2556,34 @@ function isSpecialLongTermGoldkeyRequestForDashboardOctober(r) {
   return req.month === 10 && req.day >= 1 && req.day <= 10;
 }
 
-/** 종합현황 표시용 골드키 차감 집계(서버 reconcile와 동일 원칙: 본인 취소는 차감 유지, 장기 모집 면제 취소만 예외) */
+/** 종합현황 표시용 골드키 차감 집계(서버 reconcile와 동일: 동일 휴가일 1회만, 취소 차감 유지·면제 예외) */
 function countGoldkeyApplyUse(requests, userId, nowLike = new Date().toISOString(), cancellations = []) {
   const exemptCancelledIds = new Set();
   for (const c of cancellations || []) {
     if (c.revokedAt) continue;
     if (c.deductionExempt) exemptCancelledIds.add(String(c.leaveRequestId ?? ""));
   }
-  return requests.filter((r) => {
-    if (r.userId !== userId || r.leaveType !== "GOLDKEY") return false;
+  const dates = new Set();
+  for (const r of requests || []) {
+    if (r.userId !== userId || r.leaveType !== "GOLDKEY") continue;
     const st = r.status;
-    if (st === "REJECTED") return false;
-    if (st === "CANCELLED") return !exemptCancelledIds.has(String(r.id ?? ""));
-    if (isSpecialLongTermGoldkeyRequestForDashboardApril(r)) {
-      const leave = parseYmdLoose(r.leaveDate);
-      if (!leave) return true;
-      return isAfterApril10(nowLike, leave.year);
+    if (st === "REJECTED") continue;
+    let counts = false;
+    if (st === "CANCELLED") counts = !exemptCancelledIds.has(String(r.id ?? ""));
+    else if (st === "APPLIED" || st === "SELECTED" || st === "APPROVED") {
+      if (isSpecialLongTermGoldkeyRequestForDashboardApril(r)) {
+        const leave = parseYmdLoose(r.leaveDate);
+        counts = !leave ? true : isAfterApril10(nowLike, leave.year);
+      } else if (isSpecialLongTermGoldkeyRequestForDashboardOctober(r)) {
+        const req = toKstParts(r.requestedAt);
+        counts = !req ? true : isAfterOctober10ForRequestYear(nowLike, req.year);
+      } else counts = true;
     }
-    if (isSpecialLongTermGoldkeyRequestForDashboardOctober(r)) {
-      const req = toKstParts(r.requestedAt);
-      if (!req) return true;
-      return isAfterOctober10ForRequestYear(nowLike, req.year);
-    }
-    return true;
-  }).length;
+    if (!counts) continue;
+    const ymd = String(r.leaveDate ?? "").trim().replace(/\//g, "-").slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) dates.add(ymd);
+  }
+  return dates.size;
 }
 
 /** 종합현황·관리자: 서버 연결 시 API 총량 우선, 오프라인·누락 시 이름별 정책(간호사별 10~15) */

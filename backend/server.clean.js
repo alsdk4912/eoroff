@@ -337,41 +337,42 @@ async function reconcileGoldkeyUsageByPolicy(nowLike = new Date().toISOString())
     if (Number(c.deduction_exempt ?? 0) === 1) exemptCancelledRequestIds.add(String(c.leave_request_id ?? ""));
   }
 
-  const goldkeyRows = await queryAll("SELECT user_id, quota_total FROM goldkeys");
-  const usedByUser = new Map();
-  for (const r of reqRows) {
+  /** 동일 휴가일에 취소+재신청이 있어도 골드키 1일 1회만 차감 */
+  function goldkeyRowCountsTowardUsed(r) {
     const st = String(r.status ?? "").trim();
-    const userId = String(r.user_id ?? "");
-    if (!userId) continue;
-
-    if (st === "REJECTED") continue;
-
+    if (st === "REJECTED") return false;
     if (st === "CANCELLED") {
-      if (exemptCancelledRequestIds.has(String(r.id ?? ""))) continue;
-      usedByUser.set(userId, (usedByUser.get(userId) || 0) + 1);
-      continue;
+      return !exemptCancelledRequestIds.has(String(r.id ?? ""));
     }
-
     if (st === "APPLIED" || st === "SELECTED" || st === "APPROVED") {
-      let shouldCount = true;
       if (isSpecialLongTermGoldkeyRequestApril(r)) {
         const leave = parseYmdParts(r.leave_date);
-        const opened = leave ? isAfterRecruitWindowKst(nowLike, leave.year) : false;
-        shouldCount = opened;
-      } else if (isSpecialLongTermGoldkeyRequestOctober(r)) {
-        const requested = toYmdPartsLoose(r.requested_at);
-        const opened = requested ? isAfterOctoberRecruitBatchKst(nowLike, requested.year) : false;
-        shouldCount = opened;
+        return Boolean(leave && isAfterRecruitWindowKst(nowLike, leave.year));
       }
-      if (!shouldCount) continue;
-      usedByUser.set(userId, (usedByUser.get(userId) || 0) + 1);
+      if (isSpecialLongTermGoldkeyRequestOctober(r)) {
+        const requested = toYmdPartsLoose(r.requested_at);
+        return Boolean(requested && isAfterOctoberRecruitBatchKst(nowLike, requested.year));
+      }
+      return true;
     }
+    return false;
   }
 
+  const usedDatesByUser = new Map();
+  for (const r of reqRows) {
+    if (!goldkeyRowCountsTowardUsed(r)) continue;
+    const userId = String(r.user_id ?? "");
+    const ld = String(r.leave_date ?? "").trim().slice(0, 10);
+    if (!userId || !/^\d{4}-\d{2}-\d{2}$/.test(ld)) continue;
+    if (!usedDatesByUser.has(userId)) usedDatesByUser.set(userId, new Set());
+    usedDatesByUser.get(userId).add(ld);
+  }
+
+  const goldkeyRows = await queryAll("SELECT user_id, quota_total FROM goldkeys");
   for (const g of goldkeyRows) {
     const userId = String(g.user_id ?? "");
     const quota = Number(g.quota_total || 0);
-    const used = Math.max(0, Number(usedByUser.get(userId) || 0));
+    const used = Math.max(0, usedDatesByUser.get(userId)?.size ?? 0);
     const remaining = Math.max(0, quota - used);
     await execute("UPDATE goldkeys SET used_count = ?, remaining_count = ? WHERE user_id = ?", used, remaining, userId);
   }
