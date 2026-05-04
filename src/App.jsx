@@ -1548,7 +1548,7 @@ function App() {
         await api.patchLeaveNature(requestId, { actorUserId: auth.userId, leaveNature: n });
         await bootstrap();
       } catch (e) {
-        window.alert?.(`일정 표시 저장 실패: ${e?.message || e}`);
+        window.alert?.(`휴가 유형 저장 실패: ${e?.message || e}`);
       }
       return;
     }
@@ -2394,41 +2394,64 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
       <h2 id="my-requests-heading" className="screen-title">
         신청내역
       </h2>
-      <div className="my-requests-year-row">
-        <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} aria-label="신청내역 연도 필터">
-          <option value="ALL">연도</option>
-          {yearOptions.map((y) => (
-            <option key={y} value={y}>
-              {y}년
-            </option>
-          ))}
-        </select>
-      </div>
       <div className="row wrap my-requests-toolbar">
-        <div className="my-requests-filter-row">
-          <select value={leaveTypeFilter} onChange={(e) => setLeaveTypeFilter(e.target.value)} aria-label="휴가 구분 필터">
+        <div className="my-requests-filter-grid">
+          <select
+            className="my-requests-sel-year"
+            value={yearFilter}
+            onChange={(e) => setYearFilter(e.target.value)}
+            aria-label="신청내역 연도 필터"
+          >
+            <option value="ALL">연도</option>
+            {yearOptions.map((y) => (
+              <option key={y} value={y}>
+                {y}년
+              </option>
+            ))}
+          </select>
+          <select
+            className="my-requests-sel-sort"
+            value={sortOrder}
+            onChange={(e) => setSortOrder(e.target.value)}
+            aria-label="신청내역 정렬"
+          >
+            <option value="leaveDateAsc">오름차순</option>
+            <option value="leaveDateDesc">내림차순</option>
+          </select>
+          <select
+            className="my-requests-sel-type"
+            value={leaveTypeFilter}
+            onChange={(e) => setLeaveTypeFilter(e.target.value)}
+            aria-label="휴가 구분 필터"
+          >
             <option value="ALL">전체(휴가 구분)</option>
             <option value="GOLDKEY">골드키</option>
             <option value="GENERAL_PRIORITY">일반휴가-우선순위</option>
             <option value="GENERAL_NORMAL">일반휴가-후순위</option>
             <option value="HALF_DAY">반차</option>
           </select>
-          <select value={leaveMarkFilter} onChange={(e) => setLeaveMarkFilter(e.target.value)} aria-label="일정 표시 필터">
-            <option value="ALL">전체(일정 표시)</option>
+          <select
+            className="my-requests-sel-mark"
+            value={leaveMarkFilter}
+            onChange={(e) => setLeaveMarkFilter(e.target.value)}
+            aria-label="휴가 유형 필터"
+          >
+            <option value="ALL">전체(휴가 유형)</option>
             <option value="PERSONAL">{leaveNatureLabel("PERSONAL")}</option>
             <option value="PAID_TRAINING">{leaveNatureLabel("PAID_TRAINING")}</option>
             <option value="REQUIRED_TRAINING">{leaveNatureLabel("REQUIRED_TRAINING")}</option>
           </select>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="휴가상태 필터">
-            <option value="ALL">휴가상태</option>
+          <select
+            className="my-requests-sel-status"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            aria-label="휴가 상태 필터"
+          >
+            <option value="ALL">휴가 상태</option>
             <option value="APPLIED">휴가신청</option>
             <option value="SELECTED">휴가 확정</option>
             <option value="CANCELLED">휴가취소</option>
             <option value="REJECTED">휴가 반려</option>
-          </select>
-          <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} aria-label="신청내역 정렬">
-            <option value="leaveDateAsc">오름차순</option>
-            <option value="leaveDateDesc">내림차순</option>
           </select>
         </div>
         <input placeholder="날짜/유형/상태 검색" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -2439,8 +2462,8 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
             <tr>
               <th>휴가일</th>
               <th>휴가 구분</th>
-              <th>일정 표시</th>
-              <th>상태</th>
+              <th>휴가 유형</th>
+              <th>휴가 상태</th>
               <th>신청시각</th>
               <th>액션</th>
             </tr>
@@ -2485,8 +2508,8 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
                         className="my-requests-nature-select"
                         value={String(r.leaveNature ?? "PERSONAL")}
                         onChange={(e) => void (onUpdateLeaveNature && onUpdateLeaveNature(r.id, e.target.value))}
-                        aria-label="일정 표시"
-                        title="확정 후 공가·필수교육 등 표시를 선택합니다. 주간 번표에 반영됩니다."
+                        aria-label="휴가 유형"
+                        title="확정 후 개인휴가·공가·필수교육을 선택합니다. 주간 번표에 반영됩니다."
                       >
                         <option value="PERSONAL">{leaveNatureLabel("PERSONAL")}</option>
                         <option value="PAID_TRAINING">{leaveNatureLabel("PAID_TRAINING")}</option>
@@ -6442,7 +6465,7 @@ function AdminPage({ allRequests, users, notes, goldkeys, cancellations, serverM
                 <th>간호사</th>
                 <th>휴가일</th>
                 <th>휴가 구분</th>
-                <th>일정 표시</th>
+                <th>휴가 유형</th>
                 <th>상태</th>
                 <th>협의순</th>
                 <th>기록시각</th>

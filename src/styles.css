@@ -1591,28 +1591,40 @@ tbody tr:last-child td {
 }
 
 /* ----- 내 신청내역 ----- */
-.my-requests-filter-row {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.my-requests-filter-grid {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  flex-wrap: nowrap;
   width: 100%;
 }
 
-.my-requests-year-row {
-  margin-bottom: 8px;
-}
-
-.my-requests-year-row > select {
-  width: min(156px, 100%);
+.my-requests-filter-grid > select {
+  min-width: 0;
+  flex: 1 1 auto;
   font-size: 13px;
   padding: 8px 10px;
   min-height: 40px;
 }
 
-.my-requests-filter-row > select {
-  min-width: 0;
+.my-requests-sel-year {
+  flex: 0 1 min(156px, 100%);
+  max-width: 180px;
+}
+
+@media (min-width: 769px) {
+  .my-requests-filter-grid {
+    flex-wrap: nowrap;
+  }
+
+  .my-requests-filter-grid > select {
+    flex: 1 1 0;
+  }
+
+  .my-requests-sel-year {
+    flex: 0 0 min(140px, 22%);
+    max-width: 160px;
+  }
 }
 
 /* 모바일에서 신청 1건 = 가로 한 줄 */
@@ -1642,9 +1654,41 @@ tbody tr:last-child td {
     margin-bottom: 10px;
   }
 
-  .my-requests-filter-row {
+  .my-requests-filter-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "year sort"
+      "type mark"
+      "status status";
+    gap: 8px;
     width: 100%;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .my-requests-sel-year {
+    grid-area: year;
+    max-width: none;
+    width: 100%;
+  }
+
+  .my-requests-sel-sort {
+    grid-area: sort;
+    width: 100%;
+  }
+
+  .my-requests-sel-type {
+    grid-area: type;
+    width: 100%;
+  }
+
+  .my-requests-sel-mark {
+    grid-area: mark;
+    width: 100%;
+  }
+
+  .my-requests-sel-status {
+    grid-area: status;
+    width: 100%;
   }
 
   .my-requests-toolbar select,
