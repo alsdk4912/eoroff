@@ -735,37 +735,7 @@ async function backfillLongTermGoldkeyCancellationExemptions() {
 
   await execute("UPDATE cancellations SET deduction_exempt = 0, deduction_note = NULL WHERE deduction_exempt IS NULL");
 
-  const allGoldkeyByUser = await queryAll(
-    `SELECT user_id, COUNT(*) AS c
-     FROM requests
-     WHERE leave_type = 'GOLDKEY' AND deleted_at IS NULL
-     GROUP BY user_id`
-  );
-  const exemptGoldkeyByUser = await queryAll(
-    `SELECT r.user_id, COUNT(*) AS c
-     FROM cancellations c
-     JOIN requests r ON r.id = c.leave_request_id
-     WHERE r.leave_type = 'GOLDKEY' AND c.deduction_exempt = 1 AND c.revoked_at IS NULL AND r.deleted_at IS NULL
-     GROUP BY r.user_id`
-  );
-
-  const totalMap = new Map(allGoldkeyByUser.map((r) => [String(r.user_id), Number(r.c || 0)]));
-  const exemptMap = new Map(exemptGoldkeyByUser.map((r) => [String(r.user_id), Number(r.c || 0)]));
-  const goldkeyRows = await queryAll("SELECT user_id, quota_total FROM goldkeys");
-  for (const g of goldkeyRows) {
-    const userId = String(g.user_id);
-    const total = totalMap.get(userId) || 0;
-    const exempt = exemptMap.get(userId) || 0;
-    const expectedUsed = Math.max(0, total - exempt);
-    const quota = Number(g.quota_total || 0);
-    const expectedRemaining = Math.max(0, quota - expectedUsed);
-    await execute(
-      "UPDATE goldkeys SET used_count = ?, remaining_count = ? WHERE user_id = ?",
-      expectedUsed,
-      expectedRemaining,
-      userId
-    );
-  }
+  /** 골드키 used/remaining은 API 서버의 reconcileGoldkeyUsageByPolicy만 갱신한다(기동 시 잘못된 합산 덮어쓰기 방지). */
 }
 
 export async function queryAll(sql, ...params) {

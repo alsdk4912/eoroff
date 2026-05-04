@@ -323,27 +323,49 @@ async function sendPushToAllNurses({ title, body, url = "#/calendar" }) {
 
 async function reconcileGoldkeyUsageByPolicy(nowLike = new Date().toISOString()) {
   const reqRows = await queryAll(
-    `SELECT user_id, leave_type, leave_date, requested_at, status FROM requests WHERE leave_type = 'GOLDKEY' AND ${SQL_REQ_ACTIVE}`
+    `SELECT id, user_id, leave_type, leave_date, requested_at, status FROM requests WHERE leave_type = 'GOLDKEY' AND ${SQL_REQ_ACTIVE}`
   );
+  const cancelRows = await queryAll(
+    `SELECT c.leave_request_id, IFNULL(c.deduction_exempt, 0) AS deduction_exempt
+     FROM cancellations c
+     JOIN requests r ON r.id = c.leave_request_id
+     WHERE r.leave_type = 'GOLDKEY' AND r.deleted_at IS NULL AND c.revoked_at IS NULL`
+  );
+  /** 취소했어도 차감 유지 — 장기 모집기간 내 면제(deduction_exempt=1)만 예외로 복원 */
+  const exemptCancelledRequestIds = new Set();
+  for (const c of cancelRows) {
+    if (Number(c.deduction_exempt ?? 0) === 1) exemptCancelledRequestIds.add(String(c.leave_request_id ?? ""));
+  }
+
   const goldkeyRows = await queryAll("SELECT user_id, quota_total FROM goldkeys");
   const usedByUser = new Map();
   for (const r of reqRows) {
     const st = String(r.status ?? "").trim();
-    if (st === "CANCELLED" || st === "REJECTED") continue;
     const userId = String(r.user_id ?? "");
     if (!userId) continue;
-    let shouldCount = true;
-    if (isSpecialLongTermGoldkeyRequestApril(r)) {
-      const leave = parseYmdParts(r.leave_date);
-      const opened = leave ? isAfterRecruitWindowKst(nowLike, leave.year) : false;
-      shouldCount = opened;
-    } else if (isSpecialLongTermGoldkeyRequestOctober(r)) {
-      const requested = toYmdPartsLoose(r.requested_at);
-      const opened = requested ? isAfterOctoberRecruitBatchKst(nowLike, requested.year) : false;
-      shouldCount = opened;
+
+    if (st === "REJECTED") continue;
+
+    if (st === "CANCELLED") {
+      if (exemptCancelledRequestIds.has(String(r.id ?? ""))) continue;
+      usedByUser.set(userId, (usedByUser.get(userId) || 0) + 1);
+      continue;
     }
-    if (!shouldCount) continue;
-    usedByUser.set(userId, (usedByUser.get(userId) || 0) + 1);
+
+    if (st === "APPLIED" || st === "SELECTED" || st === "APPROVED") {
+      let shouldCount = true;
+      if (isSpecialLongTermGoldkeyRequestApril(r)) {
+        const leave = parseYmdParts(r.leave_date);
+        const opened = leave ? isAfterRecruitWindowKst(nowLike, leave.year) : false;
+        shouldCount = opened;
+      } else if (isSpecialLongTermGoldkeyRequestOctober(r)) {
+        const requested = toYmdPartsLoose(r.requested_at);
+        const opened = requested ? isAfterOctoberRecruitBatchKst(nowLike, requested.year) : false;
+        shouldCount = opened;
+      }
+      if (!shouldCount) continue;
+      usedByUser.set(userId, (usedByUser.get(userId) || 0) + 1);
+    }
   }
 
   for (const g of goldkeyRows) {
@@ -1852,6 +1874,9 @@ app.post("/api/requests/:id/reject", async (req, res) => {
       body: `${row.leave_date} 휴가 반려`,
       url: `#/calendar?ymd=${encodeURIComponent(row.leave_date)}&detail=1`,
     });
+    if (String(row.leave_type ?? "") === "GOLDKEY") {
+      await reconcileGoldkeyUsageByPolicy(new Date().toISOString());
+    }
     res.json({ ok: true });
   } catch (err) {
     if (err?.code === "STATUS_CONFLICT") {
@@ -2175,6 +2200,11 @@ app.post("/api/admin/restore-sql", (req, res) => {
 
 async function main() {
   await initDb();
+  try {
+    await reconcileGoldkeyUsageByPolicy(new Date().toISOString());
+  } catch (e) {
+    console.error("[goldkeys] startup reconcile failed", e);
+  }
   cron.schedule(
     "1 0 9 * * *",
     async () => {

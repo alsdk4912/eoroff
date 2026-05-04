@@ -2556,12 +2556,18 @@ function isSpecialLongTermGoldkeyRequestForDashboardOctober(r) {
   return req.month === 10 && req.day >= 1 && req.day <= 10;
 }
 
-/** 종합현황 표시용 신청 집계 (장기 모집 특수건은 각 11일 이후에만 잔여에 반영) */
-function countGoldkeyApplyUse(requests, userId, nowLike = new Date().toISOString()) {
+/** 종합현황 표시용 골드키 차감 집계(서버 reconcile와 동일 원칙: 본인 취소는 차감 유지, 장기 모집 면제 취소만 예외) */
+function countGoldkeyApplyUse(requests, userId, nowLike = new Date().toISOString(), cancellations = []) {
+  const exemptCancelledIds = new Set();
+  for (const c of cancellations || []) {
+    if (c.revokedAt) continue;
+    if (c.deductionExempt) exemptCancelledIds.add(String(c.leaveRequestId ?? ""));
+  }
   return requests.filter((r) => {
     if (r.userId !== userId || r.leaveType !== "GOLDKEY") return false;
     const st = r.status;
-    if (st === "CANCELLED" || st === "REJECTED") return false;
+    if (st === "REJECTED") return false;
+    if (st === "CANCELLED") return !exemptCancelledIds.has(String(r.id ?? ""));
     if (isSpecialLongTermGoldkeyRequestForDashboardApril(r)) {
       const leave = parseYmdLoose(r.leaveDate);
       if (!leave) return true;
@@ -4104,6 +4110,7 @@ function DashboardPage({
             <span>상반기 장기휴가 신청기간(1~6월) : 전년도 10월 1일 ~ 10일</span>
             <span>하반기 장기휴가 신청기간(7~12월) : 해당년도 4월 1일 ~ 10일</span>
             <span>모든 장기휴가는 신청기간 이후 일괄 적용되어 골드키 차감됩니다.</span>
+            <span>골드키는 신청 시점에 차감되며, 본인이 취소해도 사용량은 유지됩니다(장기 모집기간 내 조건 충족 시 면제되는 경우만 예외).</span>
           </p>
           <div className="table-wrap">
             <table>
@@ -4122,7 +4129,7 @@ function DashboardPage({
                   .map((u) => {
                     const g = goldkeys.find((x) => x.userId === u.id);
                     const quotaTotal = goldkeyQuotaTotalForDisplay(u, g, serverMode);
-                    const applyUse = countGoldkeyApplyUse(requests, u.id, new Date().toISOString());
+                    const applyUse = countGoldkeyApplyUse(requests, u.id, new Date().toISOString(), cancellations);
                     const remaining = Math.max(0, quotaTotal - applyUse);
                     return (
                       <tr key={u.id}>
