@@ -2701,12 +2701,20 @@ button.ym-wheel-check:hover {
   border: 1px solid var(--separator);
   border-radius: 12px;
   background: #fff;
+  color: #111827;
   padding: 10px 12px;
   text-align: left;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
   gap: 8px;
+}
+
+.ladder-results-item:hover:not(:disabled),
+.ladder-results-item:active:not(:disabled) {
+  background: #fff;
+  color: #111827;
+  transform: none;
 }
 
 .ladder-results-item__title {

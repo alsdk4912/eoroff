@@ -4295,7 +4295,6 @@ function DashboardPage({
                 onClick={() => setLadderResultModal(r)}
               >
                 <span className="ladder-results-item__title">{`${r.leaveDate} ${leaveTypeLabel(r.leaveType)} 결과`}</span>
-                <span className="ladder-results-item__time">{r.createdAt ? new Date(r.createdAt).toLocaleString("ko-KR") : "-"}</span>
               </button>
             ))}
           </div>
