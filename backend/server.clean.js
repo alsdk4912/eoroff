@@ -1279,6 +1279,12 @@ app.post("/api/requests", async (req, res) => {
        WHERE user_id = ? AND leave_date = ?
          AND ${SQL_REQ_ACTIVE}
          AND status NOT IN ('CANCELLED', 'REJECTED')
+         AND NOT EXISTS (
+           SELECT 1
+           FROM cancellations c
+           WHERE c.leave_request_id = requests.id
+             AND c.revoked_at IS NULL
+         )
        LIMIT 1`,
       userId,
       leaveDate

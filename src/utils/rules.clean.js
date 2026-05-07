@@ -304,10 +304,6 @@ export function validateRequest({
   const aprilEnd = endOfDay(new Date(nowYear, 3, 30));
   const inAprilPolicyMonth = nowMonth === 4;
 
-  if (hasBlockingRequestOnDate(requests, userId, leaveDate)) {
-    return "같은 날짜에는 휴가를 중복 신청할 수 없습니다.";
-  }
-
   if (leaveType === "GENERAL_PRIORITY") {
     const monthlyPriorityCount = countActiveGeneralPriorityInMonth(requests, userId, leaveDate);
     if (monthlyPriorityCount >= 4) {

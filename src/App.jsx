@@ -1373,8 +1373,13 @@ function App() {
       return setMessage("4월 일반-후순위(다음달)는 4/2 09:00 ~ 4/30에만 신청 가능합니다.");
     }
 
+    const priorityMonthStart = new Date(nowForValidation.getFullYear(), nowForValidation.getMonth(), 1, 0, 0, 0, 0);
+    const priorityMonth2At0900 = new Date(nowForValidation.getFullYear(), nowForValidation.getMonth(), 2, 9, 0, 0, 0);
+    const normalizedLeaveType =
+      leaveType === "GENERAL_PRIORITY" && nowForValidation > priorityMonth2At0900 ? "GENERAL_NORMAL" : leaveType;
+
     const error = validateRequest({
-      leaveType,
+      leaveType: normalizedLeaveType,
       leaveDate,
       now: nowForValidation,
       remainingGoldkey: myGoldkey?.remainingCount ?? 0,
@@ -1391,7 +1396,7 @@ function App() {
       id: `lr_${Date.now()}`,
       userId: auth.userId,
       leaveDate,
-      leaveType,
+      leaveType: normalizedLeaveType,
       leaveNature: "PERSONAL",
       status: "APPLIED",
       requestedAt: new Date().toISOString(),
@@ -1400,6 +1405,9 @@ function App() {
     };
     setMessage("");
     let doneNote = "휴가 신청이 등록되었습니다.";
+    if (leaveType === "GENERAL_PRIORITY" && normalizedLeaveType === "GENERAL_NORMAL" && nowForValidation >= priorityMonthStart) {
+      doneNote = "일반휴가-우선순위 기간(매월 2일 09시)이 지나 일반휴가-후순위로 신청되었습니다.";
+    }
 
     if (serverMode) {
       try {
@@ -1424,7 +1432,7 @@ function App() {
         }
         return next;
       });
-      if (leaveType === "GOLDKEY" && myGoldkey) {
+      if (normalizedLeaveType === "GOLDKEY" && myGoldkey) {
         setGoldkeys((prev) => {
           const next = prev.map((g) =>
             g.userId === auth.userId
