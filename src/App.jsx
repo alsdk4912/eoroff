@@ -6375,8 +6375,8 @@ function CalendarPage({
           <div className="admin-day-substitute-grid-wrap">
             <h4>{selectedYmd} 대체자</h4>
             <div className="admin-day-substitute-grid">
-              <div className="admin-day-substitute-grid__head">대체자</div>
               <div className="admin-day-substitute-grid__head">번표</div>
+              <div className="admin-day-substitute-grid__head">대체자</div>
               {selectedCell.approvedApplicants.length === 0 ? (
                 <div className="help" style={{ gridColumn: "1 / -1" }}>없음</div>
               ) : (
@@ -6384,16 +6384,16 @@ function CalendarPage({
                   const subs = getSubstituteRecordsForRequest(substituteAssignments, item.id);
                   if (!subs.length) {
                     return [
-                      <span key={`${item.id}_sub`} className="admin-day-substitute-grid__cell">-</span>,
                       <span key={`${item.id}_code`} className="admin-day-substitute-grid__cell">-</span>,
+                      <span key={`${item.id}_sub`} className="admin-day-substitute-grid__cell">-</span>,
                     ];
                   }
                   return subs.flatMap((s, i) => {
                     const subName = users.find((u) => u.id === s.substituteUserId)?.name ?? s.substituteUserId;
                     const code = String(s.shiftCode ?? "").trim() || "-";
                     return [
-                      <span key={`${item.id}_${i}_sub`} className="admin-day-substitute-grid__cell">{subName}</span>,
                       <span key={`${item.id}_${i}_code`} className="admin-day-substitute-grid__cell">{code}</span>,
+                      <span key={`${item.id}_${i}_sub`} className="admin-day-substitute-grid__cell">{subName}</span>,
                     ];
                   });
                 })
