@@ -4013,6 +4013,7 @@ function DashboardPage({
   const [generatorResult, setGeneratorResult] = useState(null);
   const [generatorMsg, setGeneratorMsg] = useState("");
   const [generatorBusy, setGeneratorBusy] = useState(false);
+  const [ladderResultModal, setLadderResultModal] = useState(null);
   const [schedulePlanKey, setSchedulePlanKey] = useState("base_2026");
   const [scheduleYearFilter, setScheduleYearFilter] = useState("all");
 
@@ -4285,26 +4286,39 @@ function DashboardPage({
       {currentRole !== "ANESTHESIA" && dashTab === "ladder-results" ? (
         <section className="card">
           <h2 className="screen-title">저장된 사다리 결과</h2>
-          <div className="table-wrap ladder-saved-table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>제목</th>
-                  <th>결과</th>
-                  <th>저장시각</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(Array.isArray(ladderResults) ? ladderResults : []).map((r) => (
-                  <tr key={r.id}>
-                    <td>{`${r.leaveDate} ${leaveTypeLabel(r.leaveType)} 사다리 게임 결과`}</td>
-                    <td>{(Array.isArray(r.order) ? r.order : []).map((id, idx) => `${idx + 1}순위 ${users.find((u) => u.id === id)?.name ?? id}`).join(" / ")}</td>
-                    <td>{r.createdAt ? new Date(r.createdAt).toLocaleString("ko-KR") : "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="ladder-results-list">
+            {(Array.isArray(ladderResults) ? ladderResults : []).map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                className="ladder-results-item"
+                onClick={() => setLadderResultModal(r)}
+              >
+                <span className="ladder-results-item__title">{`${r.leaveDate} ${leaveTypeLabel(r.leaveType)} 결과`}</span>
+                <span className="ladder-results-item__time">{r.createdAt ? new Date(r.createdAt).toLocaleString("ko-KR") : "-"}</span>
+              </button>
+            ))}
           </div>
+          {ladderResultModal ? (
+            <div className="ladder-modal-backdrop" role="presentation" onClick={() => setLadderResultModal(null)}>
+              <div className="ladder-modal-dialog" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+                <div className="ladder-modal-header">
+                  <h3 className="ladder-modal-title">{`${ladderResultModal.leaveDate} ${leaveTypeLabel(ladderResultModal.leaveType)} 결과`}</h3>
+                  <button type="button" className="ladder-modal-close" onClick={() => setLadderResultModal(null)} aria-label="닫기">
+                    닫기
+                  </button>
+                </div>
+                <div className="ladder-modal-body">
+                  <p className="help">
+                    {(Array.isArray(ladderResultModal.order) ? ladderResultModal.order : [])
+                      .map((id, idx) => `${idx + 1}순위 ${users.find((u) => u.id === id)?.name ?? id}`)
+                      .join(" / ")}
+                  </p>
+                  <p className="help">저장시각: {ladderResultModal.createdAt ? new Date(ladderResultModal.createdAt).toLocaleString("ko-KR") : "-"}</p>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </section>
       ) : null}
       {dashTab === "schedule" ? (

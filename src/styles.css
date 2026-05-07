@@ -2687,6 +2687,44 @@ button.ym-wheel-check:hover {
   padding: 8px 10px;
 }
 
+.ladder-results-list {
+  max-height: 68vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: grid;
+  gap: 8px;
+  padding-right: 2px;
+}
+
+.ladder-results-item {
+  width: 100%;
+  border: 1px solid var(--separator);
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px 12px;
+  text-align: left;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.ladder-results-item__title {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ladder-results-item__time {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
 .ladder-field {
   display: flex;
   flex-direction: column;
