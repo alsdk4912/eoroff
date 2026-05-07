@@ -4700,9 +4700,11 @@ function laneColor(index) {
 }
 
 function NoticeBoardPage({ notices, users, currentUserId, isAdmin, createNotice, updateNotice, deleteNotice }) {
+  const [composeOpen, setComposeOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
-  const [editingId, setEditingId] = useState("");
+  const [selectedId, setSelectedId] = useState("");
+  const [editingMode, setEditingMode] = useState(false);
   const [editingTitle, setEditingTitle] = useState("");
   const [editingContent, setEditingContent] = useState("");
   const idToName = useMemo(() => new Map((Array.isArray(users) ? users : []).map((u) => [u.id, u.name])), [users]);
@@ -4710,6 +4712,7 @@ function NoticeBoardPage({ notices, users, currentUserId, isAdmin, createNotice,
     () => [...(Array.isArray(notices) ? notices : [])].sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? ""))),
     [notices]
   );
+  const selected = useMemo(() => rows.find((r) => r.id === selectedId) ?? null, [rows, selectedId]);
 
   function canManage(row) {
     if (!row?.id || !currentUserId) return false;
@@ -4721,86 +4724,110 @@ function NoticeBoardPage({ notices, users, currentUserId, isAdmin, createNotice,
     await createNotice?.(title, content);
     setTitle("");
     setContent("");
+    setComposeOpen(false);
   }
 
-  async function saveEdit(id) {
-    await updateNotice?.(id, editingTitle, editingContent);
-    setEditingId("");
+  async function saveEdit() {
+    if (!selected?.id) return;
+    await updateNotice?.(selected.id, editingTitle, editingContent);
+    setEditingMode(false);
     setEditingTitle("");
     setEditingContent("");
   }
 
   return (
-    <section className="card">
+    <section className="card notice-board-card">
       <h2 className="screen-title">공지사항</h2>
       <p className="help page-lead">관리자와 간호사가 함께 공유하는 공지 게시판입니다.</p>
-      <form className="grid" onSubmit={submitNotice}>
-        <input type="text" maxLength={80} placeholder="제목 (최대 80자)" value={title} onChange={(e) => setTitle(e.target.value)} />
-        <textarea rows={4} maxLength={2000} placeholder="내용 (최대 2000자)" value={content} onChange={(e) => setContent(e.target.value)} />
-        <button type="submit">공지 등록</button>
-      </form>
-      <div className="table-wrap" style={{ marginTop: 10 }}>
-        <table>
-          <thead>
-            <tr>
-              <th>제목/내용</th>
-              <th>작성자</th>
-              <th>작성시각</th>
-              <th>액션</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => {
-              const editing = editingId === r.id;
-              return (
-                <tr key={r.id}>
-                  <td>
-                    {editing ? (
-                      <div className="grid">
-                        <input type="text" maxLength={80} value={editingTitle} onChange={(e) => setEditingTitle(e.target.value)} />
-                        <textarea rows={4} maxLength={2000} value={editingContent} onChange={(e) => setEditingContent(e.target.value)} />
-                      </div>
-                    ) : (
-                      <>
-                        <strong>{r.title}</strong>
-                        <div style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>{r.content}</div>
-                      </>
-                    )}
-                  </td>
-                  <td>{idToName.get(r.userId) ?? r.userId}</td>
-                  <td>{r.createdAt ? new Date(r.createdAt).toLocaleString("ko-KR") : "-"}</td>
-                  <td>
-                    {canManage(r) ? (
-                      editing ? (
-                        <>
-                          <button type="button" onClick={() => void saveEdit(r.id)}>저장</button>
-                          <button type="button" onClick={() => setEditingId("")}>취소</button>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingId(r.id);
-                              setEditingTitle(String(r.title ?? ""));
-                              setEditingContent(String(r.content ?? ""));
-                            }}
-                          >
-                            수정
-                          </button>
-                          <button type="button" onClick={() => void deleteNotice?.(r.id)}>삭제</button>
-                        </>
-                      )
-                    ) : (
-                      "-"
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <div className="notice-board-toolbar">
+        <button
+          type="button"
+          className="notice-board-compose-btn"
+          onClick={() => setComposeOpen((v) => !v)}
+        >
+          {composeOpen ? "등록 닫기" : "게시글 등록"}
+        </button>
       </div>
+      {composeOpen ? (
+        <form className="grid notice-compose-form" onSubmit={submitNotice}>
+          <input type="text" maxLength={80} placeholder="제목 (최대 80자)" value={title} onChange={(e) => setTitle(e.target.value)} />
+          <textarea rows={4} maxLength={2000} placeholder="내용 (최대 2000자)" value={content} onChange={(e) => setContent(e.target.value)} />
+          <button type="submit">게시글 등록</button>
+        </form>
+      ) : null}
+
+      <div className="notice-list">
+        {rows.map((r) => (
+          <button
+            type="button"
+            key={r.id}
+            className={`notice-item${selectedId === r.id ? " notice-item--active" : ""}`}
+            onClick={() => {
+              setSelectedId(r.id);
+              setEditingMode(false);
+            }}
+          >
+            <div className="notice-item__title">{r.title}</div>
+            <div className="notice-item__meta">
+              <span>{idToName.get(r.userId) ?? r.userId}</span>
+              <span>{r.createdAt ? new Date(r.createdAt).toLocaleDateString("ko-KR") : "-"}</span>
+            </div>
+            <div className="notice-item__summary">{String(r.content ?? "").replace(/\s+/g, " ").trim()}</div>
+          </button>
+        ))}
+      </div>
+
+      {selected ? (
+        <div className="notice-detail">
+          {editingMode ? (
+            <div className="grid">
+              <input type="text" maxLength={80} value={editingTitle} onChange={(e) => setEditingTitle(e.target.value)} />
+              <textarea rows={6} maxLength={2000} value={editingContent} onChange={(e) => setEditingContent(e.target.value)} />
+            </div>
+          ) : (
+            <>
+              <h3 className="notice-detail__title">{selected.title}</h3>
+              <p className="notice-detail__meta">
+                {idToName.get(selected.userId) ?? selected.userId} · {selected.createdAt ? new Date(selected.createdAt).toLocaleString("ko-KR") : "-"}
+              </p>
+              <div className="notice-detail__content">{selected.content}</div>
+            </>
+          )}
+          {canManage(selected) ? (
+            <div className="notice-detail__actions">
+              {editingMode ? (
+                <>
+                  <button type="button" onClick={() => void saveEdit()}>저장</button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingMode(false);
+                      setEditingTitle("");
+                      setEditingContent("");
+                    }}
+                  >
+                    취소
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingMode(true);
+                      setEditingTitle(String(selected.title ?? ""));
+                      setEditingContent(String(selected.content ?? ""));
+                    }}
+                  >
+                    수정
+                  </button>
+                  <button type="button" onClick={() => void deleteNotice?.(selected.id)}>삭제</button>
+                </>
+              )}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }
