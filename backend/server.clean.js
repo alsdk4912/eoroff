@@ -457,6 +457,7 @@ app.get("/api/health", async (_, res) => {
   }
   res.json({
     ok: true,
+    apiVersion: "2026-05-07-notices-v1",
     storage: remote ? "libsql-remote" : "sqlite-file",
     /** true면 코드 업데이트·재배포 시 로컬 DB 파일이 날아갈 수 있음 (신청 내역 유실) */
     dataLossRiskOnDeploy: ephemeral,
