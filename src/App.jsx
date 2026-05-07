@@ -47,6 +47,7 @@ const LS_GENERATED_MONTHLY_SCHEDULES = "or.generatedMonthlySchedules.v1";
 const LS_SUBSTITUTE_ASSIGNMENTS = "or.substituteAssignments.v1";
 const LS_WEEKLY_CELL_OVERRIDES = "or.weeklyCellOverrides.v1";
 const LS_NOTIFICATIONS = "or.notifications.v1";
+const LS_NOTICES = "or.notices.v1";
 
 /** 운영 예외: 해당 날짜/인원 골드키는 수동 협의로 처리 */
 const FORCE_GOLDKEY_NEGOTIATION_KEYS = new Set([
@@ -461,6 +462,7 @@ function App() {
   /** 주간 번표 셀 수동 표시(기기 로컬) */
   const [weeklyCellOverrides, setWeeklyCellOverrides] = useLocalStorage(LS_WEEKLY_CELL_OVERRIDES, {});
   const [notifications, setNotifications] = useLocalStorage(LS_NOTIFICATIONS, []);
+  const [notices, setNotices] = useLocalStorage(LS_NOTICES, []);
   const [serverNotifications, setServerNotifications] = useState([]);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushEnabledByUser, setPushEnabledByUser] = useLocalStorage("or.pushEnabledByUser.v1", {});
@@ -813,6 +815,19 @@ function App() {
           createdAt: row.created_at ?? row.createdAt,
         }))
         .filter((row) => row.id && row.targetDate && row.userId)
+    );
+    const noticeRows = Array.isArray(data.notices) ? data.notices : [];
+    setNotices(
+      noticeRows
+        .map((row) => ({
+          id: row.id,
+          userId: row.user_id ?? row.userId,
+          title: String(row.title ?? ""),
+          content: String(row.content ?? ""),
+          createdAt: row.created_at ?? row.createdAt,
+          updatedAt: row.updated_at ?? row.updatedAt,
+        }))
+        .filter((row) => row.id && row.userId && row.title && row.content)
     );
 
     const rows = Array.isArray(data.ladderResults) ? data.ladderResults : [];
@@ -1904,6 +1919,68 @@ function App() {
     notifyDone("댓글이 삭제되었습니다.");
   }
 
+  async function createNotice(title, content) {
+    const t = String(title ?? "").trim();
+    const c = String(content ?? "").trim();
+    if (!t || !c || !auth?.userId) return;
+    if (serverMode) {
+      try {
+        await api.createNotice({ actorUserId: auth.userId, title: t, content: c });
+        await bootstrap();
+        notifyDone("공지사항이 등록되었습니다.");
+      } catch (e) {
+        window.alert?.(`공지사항 등록 실패: ${e?.message || e}`);
+      }
+      return;
+    }
+    const nowIso = new Date().toISOString();
+    const row = { id: `ntc_${Date.now()}`, userId: auth.userId, title: t, content: c, createdAt: nowIso, updatedAt: nowIso };
+    setNotices((prev) => [row, ...(Array.isArray(prev) ? prev : [])]);
+    notifyDone("공지사항이 등록되었습니다.");
+  }
+
+  async function updateNotice(noticeId, title, content) {
+    const id = String(noticeId ?? "").trim();
+    const t = String(title ?? "").trim();
+    const c = String(content ?? "").trim();
+    if (!id || !t || !c || !auth?.userId) return;
+    if (serverMode) {
+      try {
+        await api.updateNotice(id, { actorUserId: auth.userId, title: t, content: c });
+        await bootstrap();
+        notifyDone("공지사항이 수정되었습니다.");
+      } catch (e) {
+        window.alert?.(`공지사항 수정 실패: ${e?.message || e}`);
+      }
+      return;
+    }
+    setNotices((prev) =>
+      (Array.isArray(prev) ? prev : []).map((n) =>
+        n.id === id && (isAdmin || n.userId === auth.userId) ? { ...n, title: t, content: c, updatedAt: new Date().toISOString() } : n
+      )
+    );
+    notifyDone("공지사항이 수정되었습니다.");
+  }
+
+  async function deleteNotice(noticeId) {
+    const id = String(noticeId ?? "").trim();
+    if (!id || !auth?.userId) return;
+    if (serverMode) {
+      try {
+        await api.deleteNotice(id, { actorUserId: auth.userId });
+        await bootstrap();
+        notifyDone("공지사항이 삭제되었습니다.");
+      } catch (e) {
+        window.alert?.(`공지사항 삭제 실패: ${e?.message || e}`);
+      }
+      return;
+    }
+    setNotices((prev) =>
+      (Array.isArray(prev) ? prev : []).filter((n) => !(n.id === id && (isAdmin || n.userId === auth.userId)))
+    );
+    notifyDone("공지사항이 삭제되었습니다.");
+  }
+
   async function syncHolidays() {
     try {
       if (serverMode) {
@@ -2059,6 +2136,7 @@ function App() {
               goldkeys={goldkeys}
               requests={requestsVisibleInUi}
               cancellations={cancellations}
+              ladderResults={ladderResults}
               users={users}
               serverMode={serverMode}
               currentRole={currentUser?.role}
@@ -2079,6 +2157,20 @@ function App() {
               unselectRequest={unselectRequest}
               rejectRequest={rejectRequest}
               saveSubstituteForApprovedRequest={saveSubstituteForApprovedRequest}
+            />
+          }
+        />
+        <Route
+          path="/notices"
+          element={
+            <NoticeBoardPage
+              notices={notices}
+              users={users}
+              currentUserId={auth?.userId}
+              isAdmin={isAdmin}
+              createNotice={createNotice}
+              updateNotice={updateNotice}
+              deleteNotice={deleteNotice}
             />
           }
         />
@@ -3892,6 +3984,7 @@ function DashboardPage({
   goldkeys,
   requests,
   cancellations,
+  ladderResults,
   users,
   serverMode,
   currentRole,
@@ -4125,6 +4218,15 @@ function DashboardPage({
           >
             주간 번표
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={dashTab === "ladder-results"}
+            className={`segmented-btn${dashTab === "ladder-results" ? " segmented-btn--active" : ""}`}
+            onClick={() => setDashTab("ladder-results")}
+          >
+            사다리 결과
+          </button>
           {isAdmin ? (
             <button
               type="button"
@@ -4175,6 +4277,31 @@ function DashboardPage({
                       </tr>
                     );
                   })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
+      {currentRole !== "ANESTHESIA" && dashTab === "ladder-results" ? (
+        <section className="card">
+          <h2 className="screen-title">저장된 사다리 결과</h2>
+          <div className="table-wrap ladder-saved-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>제목</th>
+                  <th>결과</th>
+                  <th>저장시각</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(Array.isArray(ladderResults) ? ladderResults : []).map((r) => (
+                  <tr key={r.id}>
+                    <td>{`${r.leaveDate} ${leaveTypeLabel(r.leaveType)} 사다리 게임 결과`}</td>
+                    <td>{(Array.isArray(r.order) ? r.order : []).map((id, idx) => `${idx + 1}순위 ${users.find((u) => u.id === id)?.name ?? id}`).join(" / ")}</td>
+                    <td>{r.createdAt ? new Date(r.createdAt).toLocaleString("ko-KR") : "-"}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -4429,8 +4556,8 @@ function AppBottomNav({ isAdmin, role }) {
         <NavLink to="/admin" className={navLinkClass}>
           기록
         </NavLink>
-        <NavLink to="/ladder" className={navLinkClass}>
-          추첨
+        <NavLink to="/notices" className={navLinkClass}>
+          공지사항
         </NavLink>
         <NavLink to="/settings" className={navLinkClass}>
           설정
@@ -4453,8 +4580,8 @@ function AppBottomNav({ isAdmin, role }) {
         현황
       </NavLink>
       {showLadder ? (
-        <NavLink to="/ladder" className={navLinkClass}>
-          추첨
+        <NavLink to="/notices" className={navLinkClass}>
+          공지사항
         </NavLink>
       ) : null}
     </nav>
@@ -4570,6 +4697,112 @@ function traceLadderLane(startLane, links, laneCount) {
 function laneColor(index) {
   const palette = ["#2563eb", "#0ea5e9", "#14b8a6", "#22c55e", "#f59e0b", "#ef4444", "#a855f7", "#ec4899"];
   return palette[index % palette.length];
+}
+
+function NoticeBoardPage({ notices, users, currentUserId, isAdmin, createNotice, updateNotice, deleteNotice }) {
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+  const [editingId, setEditingId] = useState("");
+  const [editingTitle, setEditingTitle] = useState("");
+  const [editingContent, setEditingContent] = useState("");
+  const idToName = useMemo(() => new Map((Array.isArray(users) ? users : []).map((u) => [u.id, u.name])), [users]);
+  const rows = useMemo(
+    () => [...(Array.isArray(notices) ? notices : [])].sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? ""))),
+    [notices]
+  );
+
+  function canManage(row) {
+    if (!row?.id || !currentUserId) return false;
+    return isAdmin || String(row.userId) === String(currentUserId);
+  }
+
+  async function submitNotice(e) {
+    e.preventDefault();
+    await createNotice?.(title, content);
+    setTitle("");
+    setContent("");
+  }
+
+  async function saveEdit(id) {
+    await updateNotice?.(id, editingTitle, editingContent);
+    setEditingId("");
+    setEditingTitle("");
+    setEditingContent("");
+  }
+
+  return (
+    <section className="card">
+      <h2 className="screen-title">공지사항</h2>
+      <p className="help page-lead">관리자와 간호사가 함께 공유하는 공지 게시판입니다.</p>
+      <form className="grid" onSubmit={submitNotice}>
+        <input type="text" maxLength={80} placeholder="제목 (최대 80자)" value={title} onChange={(e) => setTitle(e.target.value)} />
+        <textarea rows={4} maxLength={2000} placeholder="내용 (최대 2000자)" value={content} onChange={(e) => setContent(e.target.value)} />
+        <button type="submit">공지 등록</button>
+      </form>
+      <div className="table-wrap" style={{ marginTop: 10 }}>
+        <table>
+          <thead>
+            <tr>
+              <th>제목/내용</th>
+              <th>작성자</th>
+              <th>작성시각</th>
+              <th>액션</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const editing = editingId === r.id;
+              return (
+                <tr key={r.id}>
+                  <td>
+                    {editing ? (
+                      <div className="grid">
+                        <input type="text" maxLength={80} value={editingTitle} onChange={(e) => setEditingTitle(e.target.value)} />
+                        <textarea rows={4} maxLength={2000} value={editingContent} onChange={(e) => setEditingContent(e.target.value)} />
+                      </div>
+                    ) : (
+                      <>
+                        <strong>{r.title}</strong>
+                        <div style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>{r.content}</div>
+                      </>
+                    )}
+                  </td>
+                  <td>{idToName.get(r.userId) ?? r.userId}</td>
+                  <td>{r.createdAt ? new Date(r.createdAt).toLocaleString("ko-KR") : "-"}</td>
+                  <td>
+                    {canManage(r) ? (
+                      editing ? (
+                        <>
+                          <button type="button" onClick={() => void saveEdit(r.id)}>저장</button>
+                          <button type="button" onClick={() => setEditingId("")}>취소</button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingId(r.id);
+                              setEditingTitle(String(r.title ?? ""));
+                              setEditingContent(String(r.content ?? ""));
+                            }}
+                          >
+                            수정
+                          </button>
+                          <button type="button" onClick={() => void deleteNotice?.(r.id)}>삭제</button>
+                        </>
+                      )
+                    ) : (
+                      "-"
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
 }
 
 function LadderGamePage({ users, requests, ladderResults, createLadderResult, applyLadderResultToNegotiationOrder, currentUserId }) {

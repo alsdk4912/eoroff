@@ -485,6 +485,7 @@ app.get("/api/bootstrap", async (_, res) => {
       selections: await queryAll("SELECT * FROM selections"),
       logs: await queryAll("SELECT * FROM logs"),
       ladderResults: await queryAll("SELECT * FROM ladder_results ORDER BY created_at DESC"),
+      notices: await queryAll("SELECT id, user_id, title, content, created_at, updated_at FROM notices ORDER BY created_at DESC"),
       holidayDuties: await queryAll("SELECT * FROM holiday_duties"),
       adminDayMemos: await queryAll("SELECT * FROM admin_day_memos"),
       dayComments: await queryAll("SELECT * FROM day_comments ORDER BY created_at ASC"),
@@ -973,6 +974,79 @@ app.post("/api/day-comments/:id/delete", async (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     console.error("POST /api/day-comments/:id/delete", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
+app.post("/api/notices", async (req, res) => {
+  try {
+    const { actorUserId, title, content } = req.body ?? {};
+    const actor = await queryOne("SELECT id FROM users WHERE id = ? AND role IN ('ADMIN', 'NURSE')", actorUserId);
+    if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
+    const t = String(title ?? "").trim();
+    const c = String(content ?? "").trim();
+    if (!t) return res.status(400).json({ error: "제목을 입력하세요." });
+    if (!c) return res.status(400).json({ error: "내용을 입력하세요." });
+    if (t.length > 80) return res.status(400).json({ error: "제목은 80자 이내로 입력하세요." });
+    if (c.length > 2000) return res.status(400).json({ error: "내용은 2000자 이내로 입력하세요." });
+    const nowIso = new Date().toISOString();
+    const id = `ntc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    await execute(
+      "INSERT INTO notices (id, user_id, title, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+      id,
+      actorUserId,
+      t,
+      c,
+      nowIso,
+      nowIso
+    );
+    return res.json({ ok: true, id });
+  } catch (err) {
+    console.error("POST /api/notices", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
+app.post("/api/notices/:id/update", async (req, res) => {
+  try {
+    const noticeId = String(req.params.id ?? "").trim();
+    if (!noticeId) return res.status(400).json({ error: "notice id가 필요합니다." });
+    const { actorUserId, title, content } = req.body ?? {};
+    const actor = await queryOne("SELECT id, role FROM users WHERE id = ? AND role IN ('ADMIN', 'NURSE')", actorUserId);
+    if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
+    const row = await queryOne("SELECT id, user_id FROM notices WHERE id = ?", noticeId);
+    if (!row) return res.status(404).json({ error: "공지사항을 찾을 수 없습니다." });
+    const canManage = actor.role === "ADMIN" || String(row.user_id) === String(actorUserId);
+    if (!canManage) return res.status(403).json({ error: "작성자 또는 관리자만 수정할 수 있습니다." });
+    const t = String(title ?? "").trim();
+    const c = String(content ?? "").trim();
+    if (!t) return res.status(400).json({ error: "제목을 입력하세요." });
+    if (!c) return res.status(400).json({ error: "내용을 입력하세요." });
+    if (t.length > 80) return res.status(400).json({ error: "제목은 80자 이내로 입력하세요." });
+    if (c.length > 2000) return res.status(400).json({ error: "내용은 2000자 이내로 입력하세요." });
+    await execute("UPDATE notices SET title = ?, content = ?, updated_at = ? WHERE id = ?", t, c, new Date().toISOString(), noticeId);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /api/notices/:id/update", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
+app.post("/api/notices/:id/delete", async (req, res) => {
+  try {
+    const noticeId = String(req.params.id ?? "").trim();
+    if (!noticeId) return res.status(400).json({ error: "notice id가 필요합니다." });
+    const { actorUserId } = req.body ?? {};
+    const actor = await queryOne("SELECT id, role FROM users WHERE id = ? AND role IN ('ADMIN', 'NURSE')", actorUserId);
+    if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
+    const row = await queryOne("SELECT id, user_id FROM notices WHERE id = ?", noticeId);
+    if (!row) return res.status(404).json({ error: "공지사항을 찾을 수 없습니다." });
+    const canManage = actor.role === "ADMIN" || String(row.user_id) === String(actorUserId);
+    if (!canManage) return res.status(403).json({ error: "작성자 또는 관리자만 삭제할 수 있습니다." });
+    await execute("DELETE FROM notices WHERE id = ?", noticeId);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /api/notices/:id/delete", err);
     return res.status(500).json({ error: String(err?.message || err) });
   }
 });

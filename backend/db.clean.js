@@ -250,6 +250,19 @@ CREATE TABLE IF NOT EXISTS notifications (
 CREATE INDEX IF NOT EXISTS idx_notifications_user_created
   ON notifications(user_id, created_at DESC);
 
+-- 공지사항 게시판 (관리자/간호사 공용)
+CREATE TABLE IF NOT EXISTS notices (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_notices_created
+  ON notices(created_at DESC);
+
 -- 휴가 신청 상태 변경 감사(승인/거절/취소/순번 변경 등). 메인 requests와 분리해 이력 누적·복구·분석에 사용.
 CREATE TABLE IF NOT EXISTS leave_request_audit (
   id TEXT PRIMARY KEY,
@@ -801,6 +814,7 @@ export async function resetLeaveDataToDefaults() {
     await tx.execute("DELETE FROM ladder_results");
     await tx.execute("DELETE FROM substitute_assignments");
     await tx.execute("DELETE FROM weekly_cell_overrides");
+    await tx.execute("DELETE FROM notices");
     await tx.execute("DELETE FROM requests");
     for (const n of nurses) {
       const q = defaultGoldkeyQuotaForName(n.name);
