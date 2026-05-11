@@ -45,6 +45,19 @@ const LS_WORK_SCHEDULE_2026 = "or.workSchedule2026.v1";
 const LS_GENERATED_MONTHLY_SCHEDULES = "or.generatedMonthlySchedules.v1";
 /** 승인 시 지정하는 대체 근무(서버 동기화 + 로컬 캐시) */
 const LS_SUBSTITUTE_ASSIGNMENTS = "or.substituteAssignments.v1";
+
+/** 휴가 신청 없이 날짜만으로 대체 번표를 저장할 때 DB·API와 맞춘 자리표시자 */
+const STANDALONE_SUBSTITUTE_LEAVE_USER_ID = "__none__";
+function standaloneSubstituteRequestId(ymd) {
+  return `standalone_sub:${String(ymd ?? "").slice(0, 10)}`;
+}
+function isStandaloneSubstituteRequestId(id) {
+  return /^standalone_sub:\d{4}-\d{2}-\d{2}$/.test(String(id ?? ""));
+}
+function parseStandaloneSubstituteLeaveDate(requestId) {
+  const m = /^standalone_sub:(\d{4}-\d{2}-\d{2})$/.exec(String(requestId ?? ""));
+  return m ? m[1] : "";
+}
 const LS_WEEKLY_CELL_OVERRIDES = "or.weeklyCellOverrides.v1";
 const LS_NOTIFICATIONS = "or.notifications.v1";
 const LS_NOTICES = "or.notices.v1";
@@ -1763,6 +1776,78 @@ function App() {
     }
   }
 
+  async function saveStandaloneSubstituteAssignments(leaveDate, items) {
+    const ld = String(leaveDate ?? "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ld)) return;
+    if (!serverMode) {
+      window.alert?.("서버 연결 상태에서만 대체 근무를 저장할 수 있습니다. 잠시 후 다시 시도해 주세요.");
+      return;
+    }
+    const requestId = standaloneSubstituteRequestId(ld);
+    const rawItems = Array.isArray(items) ? items : [];
+    const normalizedItems = rawItems
+      .map((it, idx) => ({
+        id: String(it?.id ?? `sub_${Date.now()}_${idx}`).trim(),
+        requestId,
+        leaveDate: ld,
+        leaveUserId: STANDALONE_SUBSTITUTE_LEAVE_USER_ID,
+        substituteUserId: String(it?.substituteUserId ?? "").trim(),
+        shiftCode: normalizeShiftCodeForSave(it?.shiftCode),
+      }))
+      .filter((it) => it.substituteUserId || it.shiftCode);
+    if (normalizedItems.length === 0) {
+      const prevSnapshot = Array.isArray(substituteAssignments) ? substituteAssignments : [];
+      setSubstituteAssignments((prev) => (Array.isArray(prev) ? prev : []).filter((x) => x.requestId !== requestId));
+      try {
+        await api.upsertSubstituteAssignments(requestId, { actorUserId: auth?.userId, items: [] });
+        await bootstrap();
+        notifyDone("대체 근무 지정을 삭제했습니다.");
+      } catch (e) {
+        setSubstituteAssignments(prevSnapshot);
+        window.alert?.(`대체 근무 삭제 실패: ${e?.message || e}`);
+      }
+      return;
+    }
+    const subItems = [];
+    for (const it of normalizedItems) {
+      const err = validateSubstitutePayload({
+        leaveDate: ld,
+        leaveUserId: STANDALONE_SUBSTITUTE_LEAVE_USER_ID,
+        substituteUserId: it.substituteUserId,
+        shiftCode: it.shiftCode,
+        requests,
+        substituteAssignments: [...(Array.isArray(substituteAssignments) ? substituteAssignments : []), ...subItems],
+        excludeRequestId: requestId,
+      });
+      if (err) {
+        window.alert?.(err);
+        return;
+      }
+      subItems.push(it);
+    }
+    const prevSnapshot = Array.isArray(substituteAssignments) ? substituteAssignments : [];
+    setSubstituteAssignments((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const rest = list.filter((x) => x.requestId !== requestId);
+      return [...rest, ...subItems];
+    });
+    try {
+      await api.upsertSubstituteAssignments(requestId, {
+        actorUserId: auth?.userId,
+        items: subItems.map((it) => ({
+          id: it.id,
+          substituteUserId: it.substituteUserId,
+          shiftCode: it.shiftCode,
+        })),
+      });
+      await bootstrap();
+      notifyDone("대체 근무가 저장되었습니다.");
+    } catch (e) {
+      setSubstituteAssignments(prevSnapshot);
+      window.alert?.(`대체 근무 저장 실패: ${e?.message || e}`);
+    }
+  }
+
   async function rejectRequest(requestId) {
     const target = requests.find((r) => r.id === requestId);
     setSubstituteAssignments((prev) => (Array.isArray(prev) ? prev : []).filter((x) => x.requestId !== requestId));
@@ -2848,7 +2933,9 @@ function validateSubstitutePayload({
   const hasSub = Boolean(substituteUserId) || Boolean(shiftCode);
   if (!hasSub) return null;
   if (!substituteUserId || !shiftCode) return "대체 근무를 쓰려면 간호사와 번표를 모두 선택하세요.";
-  if (substituteUserId === leaveUserId) return "휴가자 본인을 대체 인력으로 지정할 수 없습니다.";
+  if (substituteUserId === leaveUserId && String(leaveUserId ?? "") !== STANDALONE_SUBSTITUTE_LEAVE_USER_ID) {
+    return "휴가자 본인을 대체 인력으로 지정할 수 없습니다.";
+  }
   const ld = String(leaveDate ?? "").slice(0, 10);
   const others = (Array.isArray(substituteAssignments) ? substituteAssignments : []).filter((s) => s.requestId !== excludeRequestId);
   if (others.some((s) => s.leaveDate === ld && s.substituteUserId === substituteUserId)) {
@@ -5582,9 +5669,28 @@ function CalendarPage({
       return;
     }
     const targets = calendarSubTargetRequests;
+    const sid = standaloneSubstituteRequestId(selectedYmd);
+    const orphanRecs = getSubstituteRecordsForRequest(substituteAssignments, sid);
+
+    const shiftCell = (s) => {
+      const rawShift = String(s?.shiftCode ?? "");
+      if (!rawShift) return "";
+      return WORK_SCHEDULE_OPTION_SET.has(rawShift) ? rawShift : toCustomShiftCode(rawShift);
+    };
+
     if (targets.length === 0) {
-      // 휴가 신청 대상이 없는 날짜도 관리자가 박스를 볼 수 있게 기본 1행 표시
-      setCalendarSubRows([{ rowId: `cal_sub_empty_${selectedYmd}`, requestId: "", substituteUserId: "", shiftCode: "" }]);
+      if (orphanRecs.length > 0) {
+        setCalendarSubRows(
+          orphanRecs.map((s, idx) => ({
+            rowId: `cal_standalone_${sid}_${idx}`,
+            requestId: sid,
+            substituteUserId: String(s?.substituteUserId ?? ""),
+            shiftCode: shiftCell(s),
+          }))
+        );
+        return;
+      }
+      setCalendarSubRows([{ rowId: `cal_sub_empty_${selectedYmd}`, requestId: sid, substituteUserId: "", shiftCode: "" }]);
       return;
     }
 
@@ -5600,13 +5706,18 @@ function CalendarPage({
           rowId: `cal_sub_${t.id}_${idx}`,
           requestId: t.id,
           substituteUserId: String(s?.substituteUserId ?? ""),
-          shiftCode: (() => {
-            const rawShift = String(s?.shiftCode ?? "");
-            if (!rawShift) return "";
-            return WORK_SCHEDULE_OPTION_SET.has(rawShift) ? rawShift : toCustomShiftCode(rawShift);
-          })(),
+          shiftCode: shiftCell(s),
         });
       }
+    }
+    for (let idx = 0; idx < orphanRecs.length; idx += 1) {
+      const s = orphanRecs[idx];
+      restored.push({
+        rowId: `cal_standalone_${sid}_${idx}`,
+        requestId: sid,
+        substituteUserId: String(s?.substituteUserId ?? ""),
+        shiftCode: shiftCell(s),
+      });
     }
     if (restored.length > 0) {
       setCalendarSubRows(restored);
@@ -5816,20 +5927,24 @@ function CalendarPage({
   function removeCalendarSubRow(rowId) {
     setCalendarSubRows((prev) => {
       const next = (Array.isArray(prev) ? prev : []).filter((r) => r.rowId !== rowId);
-      return next.length > 0 ? next : [{ rowId: `cal_sub_empty_${Date.now()}`, requestId: "", substituteUserId: "", shiftCode: "" }];
+      const sid = selectedYmd ? standaloneSubstituteRequestId(selectedYmd) : "";
+      return next.length > 0
+        ? next
+        : [{ rowId: `cal_sub_empty_${Date.now()}`, requestId: sid, substituteUserId: "", shiftCode: "" }];
     });
   }
 
   function addCalendarSubRow() {
     const targets = calendarSubTargetRequests;
+    const sid = selectedYmd ? standaloneSubstituteRequestId(selectedYmd) : "";
     if (!Array.isArray(calendarSubRows) || calendarSubRows.length === 0) {
-      setCalendarSubRows([{ rowId: `cal_sub_empty_${Date.now()}`, requestId: "", substituteUserId: "", shiftCode: "" }]);
+      setCalendarSubRows([{ rowId: `cal_sub_empty_${Date.now()}`, requestId: sid, substituteUserId: "", shiftCode: "" }]);
       return;
     }
     if (targets.length === 0) {
       setCalendarSubRows((prev) => [
         ...(Array.isArray(prev) ? prev : []),
-        { rowId: `cal_sub_empty_${Date.now()}`, requestId: "", substituteUserId: "", shiftCode: "" },
+        { rowId: `cal_sub_empty_${Date.now()}`, requestId: sid, substituteUserId: "", shiftCode: "" },
       ]);
       return;
     }
@@ -5847,8 +5962,22 @@ function CalendarPage({
 
   async function applyCalendarSubRow(row) {
     const requestId = String(row?.requestId ?? "");
+    if (isStandaloneSubstituteRequestId(requestId)) {
+      const leaveDate = parseStandaloneSubstituteLeaveDate(requestId);
+      const groupedRows = (Array.isArray(calendarSubRows) ? calendarSubRows : []).filter(
+        (r) => String(r?.requestId ?? "") === requestId
+      );
+      const items = groupedRows
+        .map((r) => ({
+          substituteUserId: String(r?.substituteUserId ?? "").trim(),
+          shiftCode: normalizeShiftCodeForSave(r?.shiftCode),
+        }))
+        .filter((it) => it.substituteUserId && it.shiftCode);
+      await saveStandaloneSubstituteAssignments(leaveDate, items);
+      return;
+    }
     if (!requestId) {
-      window.alert?.("해당 날짜의 휴가 신청 대상이 없어 저장할 수 없습니다.");
+      window.alert?.("저장할 대체 행이 올바르게 연결되지 않았습니다. 날짜를 다시 선택한 뒤 시도해 주세요.");
       return;
     }
     const target = (Array.isArray(dayRequests) ? dayRequests : []).find((r) => r.id === requestId);
@@ -6284,7 +6413,9 @@ function CalendarPage({
                             휴가자 선택 없이 대체 인력/번표만 입력 후 저장합니다.
                           </p>
                           {calendarSubTargetRequests.length === 0 ? (
-                            <p className="help admin-calendar-substitute-lead">해당 날짜에 연결할 휴가 신청 대상이 없어 저장은 불가합니다.</p>
+                            <p className="help admin-calendar-substitute-lead">
+                              이 날짜에 휴가 신청이 없어도 대체 인력·번표만 지정해 저장할 수 있습니다.
+                            </p>
                           ) : null}
                           <div className="admin-calendar-substitute-stack">
                             {calendarSubRows.map((row, idx) => (
@@ -6390,27 +6521,43 @@ function CalendarPage({
             <div className="admin-day-substitute-grid">
               <div className="admin-day-substitute-grid__head">번표</div>
               <div className="admin-day-substitute-grid__head">대체자</div>
-              {selectedCell.approvedApplicants.length === 0 ? (
-                <div className="help" style={{ gridColumn: "1 / -1" }}>없음</div>
-              ) : (
-                selectedCell.approvedApplicants.flatMap((item) => {
+              {(() => {
+                const sid = standaloneSubstituteRequestId(selectedYmd);
+                const orphanSubs = getSubstituteRecordsForRequest(substituteAssignments, sid);
+                const cells = [];
+                for (const item of selectedCell.approvedApplicants) {
                   const subs = getSubstituteRecordsForRequest(substituteAssignments, item.id);
                   if (!subs.length) {
-                    return [
+                    cells.push(
                       <span key={`${item.id}_code`} className="admin-day-substitute-grid__cell">-</span>,
-                      <span key={`${item.id}_sub`} className="admin-day-substitute-grid__cell">-</span>,
-                    ];
+                      <span key={`${item.id}_sub`} className="admin-day-substitute-grid__cell">-</span>
+                    );
+                  } else {
+                    subs.forEach((s, i) => {
+                      const subName = users.find((u) => u.id === s.substituteUserId)?.name ?? s.substituteUserId;
+                      const code = String(s.shiftCode ?? "").trim() || "-";
+                      cells.push(
+                        <span key={`${item.id}_${i}_code`} className="admin-day-substitute-grid__cell">{code}</span>,
+                        <span key={`${item.id}_${i}_sub`} className="admin-day-substitute-grid__cell">{subName}</span>
+                      );
+                    });
                   }
-                  return subs.flatMap((s, i) => {
-                    const subName = users.find((u) => u.id === s.substituteUserId)?.name ?? s.substituteUserId;
-                    const code = String(s.shiftCode ?? "").trim() || "-";
-                    return [
-                      <span key={`${item.id}_${i}_code`} className="admin-day-substitute-grid__cell">{code}</span>,
-                      <span key={`${item.id}_${i}_sub`} className="admin-day-substitute-grid__cell">{subName}</span>,
-                    ];
-                  });
-                })
-              )}
+                }
+                orphanSubs.forEach((s, i) => {
+                  const subName = users.find((u) => u.id === s.substituteUserId)?.name ?? s.substituteUserId;
+                  const code = String(s.shiftCode ?? "").trim() || "-";
+                  cells.push(
+                    <span key={`orphan_${sid}_${i}_code`} className="admin-day-substitute-grid__cell">{code}</span>,
+                    <span key={`orphan_${sid}_${i}_sub`} className="admin-day-substitute-grid__cell">
+                      {subName} <span className="help">(휴가 없음)</span>
+                    </span>
+                  );
+                });
+                if (cells.length === 0) {
+                  return <div className="help" style={{ gridColumn: "1 / -1" }}>없음</div>;
+                }
+                return cells;
+              })()}
             </div>
           </div>
           <div style={{ marginTop: 10 }} data-calendar-scroll-target="duty-memo">

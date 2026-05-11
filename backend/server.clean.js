@@ -1162,8 +1162,11 @@ app.post("/api/admin/holiday-duties", async (req, res) => {
   }
 });
 
+const STANDALONE_SUBSTITUTE_LEAVE_USER_ID = "__none__";
+
 /**
  * 확정(APPROVED) 휴가 건의 대체 근무를 요청 단위로 교체 저장.
+ * `standalone_sub:YYYY-MM-DD` 형태의 requestId는 해당일 휴가 신청 없이 대체 번표만 저장한다.
  * actor: ADMIN/NURSE/ANESTHESIA (실사용은 관리자 화면)
  */
 app.post("/api/substitute-assignments/:requestId/upsert", async (req, res) => {
@@ -1179,13 +1182,23 @@ app.post("/api/substitute-assignments/:requestId/upsert", async (req, res) => {
     );
     if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
 
-    const reqRow = await queryOne(
-      `SELECT id, user_id, leave_date, status FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`,
-      requestId
-    );
-    if (!reqRow) return res.status(404).json({ error: "휴가 신청을 찾을 수 없습니다." });
-    if (String(reqRow.status) !== "APPROVED") {
-      return res.status(409).json({ error: "확정(APPROVED)된 신청만 대체 근무를 저장할 수 있습니다." });
+    const standaloneM = /^standalone_sub:(\d{4}-\d{2}-\d{2})$/.exec(requestId);
+    let leaveDateFromRequest = "";
+    let leaveUserIdForSub = "";
+    if (standaloneM) {
+      leaveDateFromRequest = standaloneM[1];
+      leaveUserIdForSub = STANDALONE_SUBSTITUTE_LEAVE_USER_ID;
+    } else {
+      const reqRow = await queryOne(
+        `SELECT id, user_id, leave_date, status FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`,
+        requestId
+      );
+      if (!reqRow) return res.status(404).json({ error: "휴가 신청을 찾을 수 없습니다." });
+      if (String(reqRow.status) !== "APPROVED") {
+        return res.status(409).json({ error: "확정(APPROVED)된 신청만 대체 근무를 저장할 수 있습니다." });
+      }
+      leaveDateFromRequest = String(reqRow.leave_date);
+      leaveUserIdForSub = String(reqRow.user_id);
     }
 
     const normalized = [];
@@ -1197,14 +1210,14 @@ app.post("/api/substitute-assignments/:requestId/upsert", async (req, res) => {
       if (!substituteUserId || !shiftCode) {
         return res.status(400).json({ error: "대체 인력과 근무 코드를 모두 입력해야 합니다." });
       }
-      if (substituteUserId === String(reqRow.user_id)) {
+      if (!standaloneM && substituteUserId === leaveUserIdForSub) {
         return res.status(400).json({ error: "휴가자 본인을 대체 인력으로 지정할 수 없습니다." });
       }
       normalized.push({
         id: String(it.id ?? `sub_${Date.now()}_${i}`).trim() || `sub_${Date.now()}_${i}`,
         requestId,
-        leaveDate: String(reqRow.leave_date),
-        leaveUserId: String(reqRow.user_id),
+        leaveDate: leaveDateFromRequest,
+        leaveUserId: leaveUserIdForSub,
         substituteUserId,
         shiftCode,
       });
