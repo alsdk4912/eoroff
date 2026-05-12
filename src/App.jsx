@@ -2303,6 +2303,7 @@ function App() {
               rejectRequest={rejectRequest}
               substituteAssignments={substituteAssignments}
               saveSubstituteForApprovedRequest={saveSubstituteForApprovedRequest}
+              saveStandaloneSubstituteAssignments={saveStandaloneSubstituteAssignments}
               adminDayMemos={adminDayMemos}
               saveAdminDayMemo={saveAdminDayMemo}
               dayComments={dayComments}
@@ -5552,6 +5553,7 @@ function CalendarPage({
   rejectRequest,
   substituteAssignments,
   saveSubstituteForApprovedRequest,
+  saveStandaloneSubstituteAssignments,
   adminDayMemos,
   saveAdminDayMemo,
   dayComments,
