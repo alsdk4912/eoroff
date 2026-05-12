@@ -61,6 +61,7 @@ function parseStandaloneSubstituteLeaveDate(requestId) {
 const LS_WEEKLY_CELL_OVERRIDES = "or.weeklyCellOverrides.v1";
 const LS_NOTIFICATIONS = "or.notifications.v1";
 const LS_NOTICES = "or.notices.v1";
+const LS_NOTICE_COMMENTS = "or.noticeComments.v1";
 
 /** 운영 예외: 해당 날짜/인원 골드키는 수동 협의로 처리 */
 const FORCE_GOLDKEY_NEGOTIATION_KEYS = new Set([
@@ -476,6 +477,7 @@ function App() {
   const [weeklyCellOverrides, setWeeklyCellOverrides] = useLocalStorage(LS_WEEKLY_CELL_OVERRIDES, {});
   const [notifications, setNotifications] = useLocalStorage(LS_NOTIFICATIONS, []);
   const [notices, setNotices] = useLocalStorage(LS_NOTICES, []);
+  const [noticeComments, setNoticeComments] = useLocalStorage(LS_NOTICE_COMMENTS, []);
   const [serverNotifications, setServerNotifications] = useState([]);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushEnabledByUser, setPushEnabledByUser] = useLocalStorage("or.pushEnabledByUser.v1", {});
@@ -841,6 +843,19 @@ function App() {
           updatedAt: row.updated_at ?? row.updatedAt,
         }))
         .filter((row) => row.id && row.userId && row.title && row.content)
+    );
+    const noticeCommentRows = Array.isArray(data.noticeComments) ? data.noticeComments : [];
+    setNoticeComments(
+      noticeCommentRows
+        .map((row) => ({
+          id: row.id,
+          noticeId: row.notice_id ?? row.noticeId,
+          userId: row.user_id ?? row.userId,
+          content: String(row.content ?? ""),
+          createdAt: row.created_at ?? row.createdAt,
+          updatedAt: row.updated_at ?? row.updatedAt,
+        }))
+        .filter((row) => row.id && row.noticeId && row.userId && row.content)
     );
 
     const rows = Array.isArray(data.ladderResults) ? data.ladderResults : [];
@@ -2063,7 +2078,100 @@ function App() {
     setNotices((prev) =>
       (Array.isArray(prev) ? prev : []).filter((n) => !(n.id === id && (isAdmin || n.userId === auth.userId)))
     );
+    setNoticeComments((prev) => (Array.isArray(prev) ? prev : []).filter((c) => String(c.noticeId) !== id));
     notifyDone("공지사항이 삭제되었습니다.");
+  }
+
+  async function createNoticeComment(noticeId, content) {
+    const nid = String(noticeId ?? "").trim();
+    const txt = String(content ?? "").trim();
+    if (!nid || !txt || !auth?.userId) return false;
+    if (txt.length > 500) {
+      window.alert?.("댓글은 500자 이내로 입력하세요.");
+      return false;
+    }
+    if (serverMode) {
+      try {
+        await api.createNoticeComment({
+          actorUserId: auth.userId,
+          noticeId: nid,
+          content: txt,
+        });
+        await bootstrap();
+        notifyDone("댓글이 등록되었습니다.");
+        return true;
+      } catch (e) {
+        window.alert?.(`댓글 등록 실패: ${e?.message || e}`);
+        return false;
+      }
+    }
+    const nowIso = new Date().toISOString();
+    const row = {
+      id: `nc_${Date.now()}`,
+      noticeId: nid,
+      userId: auth.userId,
+      content: txt,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+    setNoticeComments((prev) => [...(Array.isArray(prev) ? prev : []), row]);
+    notifyDone("댓글이 등록되었습니다.");
+    return true;
+  }
+
+  async function updateNoticeComment(commentId, content) {
+    const id = String(commentId ?? "").trim();
+    const txt = String(content ?? "").trim();
+    if (!id || !txt || !auth?.userId) return false;
+    if (txt.length > 500) {
+      window.alert?.("댓글은 500자 이내로 입력하세요.");
+      return false;
+    }
+    if (serverMode) {
+      try {
+        await api.updateNoticeComment(id, {
+          actorUserId: auth.userId,
+          content: txt,
+        });
+        await bootstrap();
+        notifyDone("댓글이 수정되었습니다.");
+        return true;
+      } catch (e) {
+        window.alert?.(`댓글 수정 실패: ${e?.message || e}`);
+        return false;
+      }
+    }
+    const nowIso = new Date().toISOString();
+    setNoticeComments((prev) =>
+      (Array.isArray(prev) ? prev : []).map((row) =>
+        row.id === id && row.userId === auth.userId ? { ...row, content: txt, updatedAt: nowIso } : row
+      )
+    );
+    notifyDone("댓글이 수정되었습니다.");
+    return true;
+  }
+
+  async function deleteNoticeComment(commentId) {
+    const id = String(commentId ?? "").trim();
+    if (!id || !auth?.userId) return false;
+    if (serverMode) {
+      try {
+        await api.deleteNoticeComment(id, {
+          actorUserId: auth.userId,
+        });
+        await bootstrap();
+        notifyDone("댓글이 삭제되었습니다.");
+        return true;
+      } catch (e) {
+        window.alert?.(`댓글 삭제 실패: ${e?.message || e}`);
+        return false;
+      }
+    }
+    setNoticeComments((prev) =>
+      (Array.isArray(prev) ? prev : []).filter((row) => !(row.id === id && row.userId === auth.userId))
+    );
+    notifyDone("댓글이 삭제되었습니다.");
+    return true;
   }
 
   async function syncHolidays() {
@@ -2250,12 +2358,16 @@ function App() {
           element={
             <NoticeBoardPage
               notices={notices}
+              noticeComments={noticeComments}
               users={users}
               currentUserId={auth?.userId}
               isAdmin={isAdmin}
               createNotice={createNotice}
               updateNotice={updateNotice}
               deleteNotice={deleteNotice}
+              createNoticeComment={createNoticeComment}
+              updateNoticeComment={updateNoticeComment}
+              deleteNoticeComment={deleteNoticeComment}
             />
           }
         />
@@ -4800,7 +4912,19 @@ function laneColor(index) {
   return palette[index % palette.length];
 }
 
-function NoticeBoardPage({ notices, users, currentUserId, isAdmin, createNotice, updateNotice, deleteNotice }) {
+function NoticeBoardPage({
+  notices,
+  noticeComments,
+  users,
+  currentUserId,
+  isAdmin,
+  createNotice,
+  updateNotice,
+  deleteNotice,
+  createNoticeComment,
+  updateNoticeComment,
+  deleteNoticeComment,
+}) {
   const [composeOpen, setComposeOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -4808,16 +4932,44 @@ function NoticeBoardPage({ notices, users, currentUserId, isAdmin, createNotice,
   const [editingMode, setEditingMode] = useState(false);
   const [editingTitle, setEditingTitle] = useState("");
   const [editingContent, setEditingContent] = useState("");
+  const [commentDraft, setCommentDraft] = useState("");
+  const [editingCommentId, setEditingCommentId] = useState("");
+  const [editingCommentDraft, setEditingCommentDraft] = useState("");
   const idToName = useMemo(() => new Map((Array.isArray(users) ? users : []).map((u) => [u.id, u.name])), [users]);
   const rows = useMemo(
     () => [...(Array.isArray(notices) ? notices : [])].sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? ""))),
     [notices]
   );
   const selected = useMemo(() => rows.find((r) => r.id === selectedId) ?? null, [rows, selectedId]);
+  const currentRole = useMemo(
+    () => (Array.isArray(users) ? users : []).find((u) => String(u.id) === String(currentUserId))?.role,
+    [users, currentUserId]
+  );
+  const canWriteNoticeComments =
+    currentRole === "ADMIN" || currentRole === "NURSE" || currentRole === "ANESTHESIA";
+
+  const commentsForSelected = useMemo(() => {
+    if (!selected?.id) return [];
+    return (Array.isArray(noticeComments) ? noticeComments : [])
+      .filter((c) => String(c.noticeId) === String(selected.id))
+      .slice()
+      .sort((a, b) => String(a.createdAt ?? "").localeCompare(String(b.createdAt ?? "")));
+  }, [noticeComments, selected?.id]);
+
+  useEffect(() => {
+    setCommentDraft("");
+    setEditingCommentId("");
+    setEditingCommentDraft("");
+  }, [selectedId]);
 
   function canManage(row) {
     if (!row?.id || !currentUserId) return false;
     return isAdmin || String(row.userId) === String(currentUserId);
+  }
+
+  function canManageNoticeComment(c) {
+    if (!c?.id || !currentUserId) return false;
+    return isAdmin || String(c.userId) === String(currentUserId);
   }
 
   async function submitNotice(e) {
@@ -4927,6 +5079,116 @@ function NoticeBoardPage({ notices, users, currentUserId, isAdmin, createNotice,
               )}
             </div>
           ) : null}
+
+          <div className="notice-comments-section">
+            <h4 className="notice-comments-title">댓글</h4>
+            {commentsForSelected.length === 0 ? (
+              <p className="help notice-comments-empty">등록된 댓글이 없습니다.</p>
+            ) : (
+              <ul className="notice-comment-list">
+                {commentsForSelected.map((c) => (
+                  <li key={c.id} className="notice-comment-item">
+                    <div className="notice-comment-item__meta">
+                      <span className="notice-comment-item__author">{idToName.get(c.userId) ?? c.userId}</span>
+                      <span className="notice-comment-item__time">
+                        {c.updatedAt && c.createdAt && String(c.updatedAt) !== String(c.createdAt)
+                          ? `${new Date(c.updatedAt).toLocaleString("ko-KR")} (수정됨)`
+                          : c.createdAt
+                            ? new Date(c.createdAt).toLocaleString("ko-KR")
+                            : "-"}
+                      </span>
+                    </div>
+                    {editingCommentId === c.id ? (
+                      <div className="notice-comment-edit">
+                        <textarea
+                          rows={3}
+                          maxLength={500}
+                          value={editingCommentDraft}
+                          onChange={(e) => setEditingCommentDraft(e.target.value)}
+                          aria-label="댓글 수정"
+                        />
+                        <div className="notice-comment-edit__actions">
+                          <button
+                            type="button"
+                            disabled={!editingCommentDraft.trim()}
+                            onClick={async () => {
+                              const ok = await updateNoticeComment?.(c.id, editingCommentDraft);
+                              if (ok) {
+                                setEditingCommentId("");
+                                setEditingCommentDraft("");
+                              }
+                            }}
+                          >
+                            저장
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingCommentId("");
+                              setEditingCommentDraft("");
+                            }}
+                          >
+                            취소
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="notice-comment-item__body">{c.content}</div>
+                        {canManageNoticeComment(c) ? (
+                          <div className="notice-comment-item__actions">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingCommentId(c.id);
+                                setEditingCommentDraft(String(c.content ?? ""));
+                              }}
+                            >
+                              수정
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (!window.confirm("이 댓글을 삭제할까요?")) return;
+                                await deleteNoticeComment?.(c.id);
+                              }}
+                            >
+                              삭제
+                            </button>
+                          </div>
+                        ) : null}
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {canWriteNoticeComments ? (
+              <div className="notice-comment-compose">
+                <textarea
+                  rows={3}
+                  maxLength={500}
+                  placeholder="댓글을 입력하세요 (500자 이내)"
+                  value={commentDraft}
+                  onChange={(e) => setCommentDraft(e.target.value)}
+                  aria-label="새 댓글"
+                />
+                <button
+                  type="button"
+                  className="notice-comment-submit"
+                  disabled={!commentDraft.trim()}
+                  onClick={async () => {
+                    const ok = await createNoticeComment?.(selected.id, commentDraft);
+                    if (ok) setCommentDraft("");
+                  }}
+                >
+                  댓글 등록
+                </button>
+              </div>
+            ) : (
+              <p className="help notice-comments-login-hint">댓글을 작성하려면 간호사·마취·관리자 계정으로 로그인하세요.</p>
+            )}
+          </div>
         </div>
       ) : null}
     </section>

@@ -263,6 +263,19 @@ CREATE TABLE IF NOT EXISTS notices (
 CREATE INDEX IF NOT EXISTS idx_notices_created
   ON notices(created_at DESC);
 
+-- 공지사항 댓글
+CREATE TABLE IF NOT EXISTS notice_comments (
+  id TEXT PRIMARY KEY,
+  notice_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_notice_comments_notice_created
+  ON notice_comments(notice_id, created_at ASC);
+
 -- 휴가 신청 상태 변경 감사(승인/거절/취소/순번 변경 등). 메인 requests와 분리해 이력 누적·복구·분석에 사용.
 CREATE TABLE IF NOT EXISTS leave_request_audit (
   id TEXT PRIMARY KEY,
@@ -814,6 +827,7 @@ export async function resetLeaveDataToDefaults() {
     await tx.execute("DELETE FROM ladder_results");
     await tx.execute("DELETE FROM substitute_assignments");
     await tx.execute("DELETE FROM weekly_cell_overrides");
+    await tx.execute("DELETE FROM notice_comments");
     await tx.execute("DELETE FROM notices");
     await tx.execute("DELETE FROM requests");
     for (const n of nurses) {

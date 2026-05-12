@@ -136,6 +136,12 @@ export const api = {
     requestJson(`/notices/${encodeURIComponent(id)}/update`, { method: "POST", body: JSON.stringify(payload) }),
   deleteNotice: (id, payload) =>
     requestJson(`/notices/${encodeURIComponent(id)}/delete`, { method: "POST", body: JSON.stringify(payload) }),
+  createNoticeComment: (payload) =>
+    requestJson("/notice-comments", { method: "POST", body: JSON.stringify(payload) }),
+  updateNoticeComment: (id, payload) =>
+    requestJson(`/notice-comments/${encodeURIComponent(id)}/update`, { method: "POST", body: JSON.stringify(payload) }),
+  deleteNoticeComment: (id, payload) =>
+    requestJson(`/notice-comments/${encodeURIComponent(id)}/delete`, { method: "POST", body: JSON.stringify(payload) }),
   listNotifications: (userId) =>
     requestJson(`/notifications?userId=${encodeURIComponent(String(userId ?? ""))}`),
   markAllNotificationsRead: (payload) =>
