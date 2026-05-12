@@ -6550,9 +6550,7 @@ function CalendarPage({
                   const code = String(s.shiftCode ?? "").trim() || "-";
                   cells.push(
                     <span key={`orphan_${sid}_${i}_code`} className="admin-day-substitute-grid__cell">{code}</span>,
-                    <span key={`orphan_${sid}_${i}_sub`} className="admin-day-substitute-grid__cell">
-                      {subName} <span className="help">(휴가 없음)</span>
-                    </span>
+                    <span key={`orphan_${sid}_${i}_sub`} className="admin-day-substitute-grid__cell">{subName}</span>
                   );
                 });
                 if (cells.length === 0) {
