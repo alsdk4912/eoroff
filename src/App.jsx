@@ -490,6 +490,24 @@ function App() {
     dropStaleOfflineLeaveKeys();
   }, []);
 
+  /** 로컬 캐시에 남은 2026 근무표 오입력 보정 */
+  useEffect(() => {
+    setWorkScheduleRows((prev) => {
+      if (!Array.isArray(prev)) return prev;
+      let fix = false;
+      const next = prev.map((row) => {
+        if (row.name === "이현숙" && row.values?.[8] === "7D2") {
+          fix = true;
+          const vals = [...row.values];
+          vals[8] = "수E";
+          return { ...row, values: vals };
+        }
+        return row;
+      });
+      return fix ? next : prev;
+    });
+  }, [setWorkScheduleRows]);
+
   const [leaveType, setLeaveType] = useState("GOLDKEY");
   const [leaveDate, setLeaveDate] = useState(() => toLocalYMD(new Date()));
   const [memo, setMemo] = useState("");
@@ -2926,7 +2944,7 @@ const WORK_SCHEDULE_2026_ROWS = [
   { name: "임희종", values: ["안E", "수E", "안D0", "9-5", "5D2", "3D1", "7D2", "6D2", "6D1", "7D1", "3D1", "안D0"] },
   { name: "이양희", values: ["수E", "6D2", "6D2", "3D1", "9-5", "3D2", "5D2", "5D1", "1D2", "1D1", "안D0", "3D1"] },
   { name: "허정숙", values: ["6D2", "안E", "5D2", "5D2", "7D2", "9-5", "3D1", "3D2", "안D0", "1D2", "1D1", "5D2"] },
-  { name: "이현숙", values: ["9-5", "안D0", "3D2", "3D2", "수E", "1D2", "6D2", "5D2", "7D2", "3D2/3D1", "6D2", "6D2"] },
+  { name: "이현숙", values: ["9-5", "안D0", "3D2", "3D2", "수E", "1D2", "6D2", "5D2", "수E", "3D2/3D1", "6D2", "6D2"] },
   { name: "유진", values: ["안D0", "5D2", "3D1", "7D2", "7D1", "안E", "안D0", "PRN", "3D2", "6D2", "6D1", "3D2"] },
   { name: "김해림", values: ["7D2", "PRN", "안D0", "1D2", "1D1", "7D1", "수E", "9-5", "3D1", "안D0", "1D2", "9-5"] },
   { name: "양현아", values: ["5D2", "3D1", "안E", "PRN", "6D2", "6D2", "9-5", "안D0", "9-5", "안D0", "7D2", "7D1"] },
@@ -4668,10 +4686,7 @@ function DashboardPage({
                     const cellVal = row.values?.[idx] ?? "";
                     const displayVal = isCustomShiftCodeValue(cellVal) ? customShiftText(cellVal) : String(cellVal);
                     const faceLabel = String(displayVal).trim() ? displayVal : "—";
-                    const selectValue =
-                      isCustomShiftCodeValue(cellVal) || (cellVal && !WORK_SCHEDULE_OPTION_SET.has(cellVal))
-                        ? CUSTOM_SHIFT_SENTINEL
-                        : cellVal;
+                    const selectValue = isCustomShiftCodeValue(cellVal) ? CUSTOM_SHIFT_SENTINEL : cellVal;
                     const extraOpts =
                       cellVal && !WORK_SCHEDULE_OPTION_SET.has(cellVal) && !isCustomShiftCodeValue(cellVal) ? [cellVal] : [];
                     return (
@@ -4708,7 +4723,7 @@ function DashboardPage({
                             </select>
                           ) : null}
                         </label>
-                        {activePlan.type === "base" && selectValue === CUSTOM_SHIFT_SENTINEL ? (
+                        {activePlan.type === "base" && isCustomShiftCodeValue(cellVal) ? (
                           <input
                             type="text"
                             className="work-schedule-custom-input"
