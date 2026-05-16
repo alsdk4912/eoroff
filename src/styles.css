@@ -3190,11 +3190,11 @@ button.ym-wheel-check:hover {
   position: sticky;
   left: 0;
   z-index: 2;
-  width: 18%;
-  min-width: 0;
-  max-width: 5rem;
+  width: 3.25rem;
+  min-width: 2.75rem;
+  max-width: 3.25rem;
   white-space: nowrap;
-  padding: 4px 5px;
+  padding: 4px 3px;
   font-size: 11px;
   background: var(--surface);
   box-shadow: 2px 0 6px rgba(0, 0, 0, 0.06);
@@ -3213,7 +3213,7 @@ button.ym-wheel-check:hover {
 .work-schedule-table td.work-schedule-month-cell {
   min-width: 0;
   width: auto;
-  padding: 4px 2px;
+  padding: 4px 3px;
   vertical-align: middle;
 }
 
@@ -3284,9 +3284,22 @@ button.ym-wheel-check:hover {
 }
 
 @media (max-width: 768px) {
+  .work-schedule-table th:first-child,
+  .work-schedule-table td.work-schedule-name-cell {
+    width: 2.85rem;
+    min-width: 2.6rem;
+    max-width: 2.85rem;
+    padding: 3px 2px;
+    font-size: 10px;
+  }
+
   .work-schedule-table thead th:not(:first-child) {
     font-size: 10px;
-    padding: 3px 1px;
+    padding: 3px 2px;
+  }
+
+  .work-schedule-table td.work-schedule-month-cell {
+    padding: 3px 2px;
   }
 
   .work-schedule-picker-face {
