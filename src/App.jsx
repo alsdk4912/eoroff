@@ -4363,8 +4363,8 @@ function DashboardPage({
       .filter(([, v]) => Array.isArray(v?.months) && Array.isArray(v?.rows))
       .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
     return [
-      { key: "base_2026", label: "기본 2026 근무표", months: WORK_SCHEDULE_2026_MONTHS.map((m, i) => `2026-${String(i + 1).padStart(2, "0")}`) },
-      { key: "base_2027", label: "기본 2027 근무표", months: WORK_SCHEDULE_2027_MONTHS.map((m, i) => `2027-${String(i + 1).padStart(2, "0")}`) },
+      { key: "base_2026", label: "2026 근무표", months: WORK_SCHEDULE_2026_MONTHS.map((m, i) => `2026-${String(i + 1).padStart(2, "0")}`) },
+      { key: "base_2027", label: "2027 근무표", months: WORK_SCHEDULE_2027_MONTHS.map((m, i) => `2027-${String(i + 1).padStart(2, "0")}`) },
       ...generated.map(([k, v]) => ({
         key: `gen_${k}`,
         label: `${k} 시작 12개월`,
