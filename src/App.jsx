@@ -41,7 +41,8 @@ const LS_HOLIDAY_DUTIES = "or.holidayDuties.v1";
 const LS_LADDER_RESULTS = "or.ladderResults.v1";
 const LS_ADMIN_DAY_MEMOS = "or.adminDayMemos.v1";
 const LS_DAY_COMMENTS = "or.dayComments.v1";
-const LS_WORK_SCHEDULE_2026 = "or.workSchedule2026.v1";
+const LS_WORK_SCHEDULE_2026 = "or.workSchedule2026.v2";
+const LS_WORK_SCHEDULE_2027 = "or.workSchedule2027.v1";
 const LS_GENERATED_MONTHLY_SCHEDULES = "or.generatedMonthlySchedules.v1";
 /** 승인 시 지정하는 대체 근무(서버 동기화 + 로컬 캐시) */
 const LS_SUBSTITUTE_ASSIGNMENTS = "or.substituteAssignments.v1";
@@ -471,6 +472,7 @@ function App() {
   const [adminDayMemos, setAdminDayMemos] = useLocalStorage(LS_ADMIN_DAY_MEMOS, {});
   const [dayComments, setDayComments] = useLocalStorage(LS_DAY_COMMENTS, []);
   const [workScheduleRows, setWorkScheduleRows] = useLocalStorage(LS_WORK_SCHEDULE_2026, WORK_SCHEDULE_2026_ROWS);
+  const [workScheduleRows2027, setWorkScheduleRows2027] = useLocalStorage(LS_WORK_SCHEDULE_2027, WORK_SCHEDULE_2027_ROWS);
   const [generatedMonthlySchedules, setGeneratedMonthlySchedules] = useLocalStorage(LS_GENERATED_MONTHLY_SCHEDULES, {});
   const [substituteAssignments, setSubstituteAssignments] = useLocalStorage(LS_SUBSTITUTE_ASSIGNMENTS, []);
   /** 주간 번표 셀 수동 표시(기기 로컬) */
@@ -2334,7 +2336,9 @@ function App() {
               serverMode={serverMode}
               currentRole={currentUser?.role}
               workScheduleRows={workScheduleRows}
+              workScheduleRows2027={workScheduleRows2027}
               onSaveWorkScheduleRows={setWorkScheduleRows}
+              onSaveWorkScheduleRows2027={setWorkScheduleRows2027}
               generatedMonthlySchedules={generatedMonthlySchedules}
               onSaveGeneratedMonthlySchedule={(key, payload) =>
                 setGeneratedMonthlySchedules((prev) => ({ ...(prev && typeof prev === "object" ? prev : {}), [key]: payload }))
@@ -2917,24 +2921,44 @@ function goldkeyQuotaTotalForDisplay(user, g, serverMode) {
   return policy;
 }
 
-const WORK_SCHEDULE_2026_MONTHS = ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월"];
+const WORK_SCHEDULE_2026_MONTHS = ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"];
 const WORK_SCHEDULE_2026_ROWS = [
-  { name: "임희종", values: ["안E", "수E", "안D0", "9-5", "5D2", "3D1", "7D2", "6D2", "6D1"] },
-  { name: "이양희", values: ["수E", "6D2", "6D2", "3D1", "9-5", "3D2", "5D2", "5D1", "1D2"] },
-  { name: "허정숙", values: ["6D2", "안E", "5D2", "5D2", "7D2", "9-5", "3D1", "3D2", "안D0"] },
-  { name: "이현숙", values: ["9-5", "안D0", "3D2", "3D2", "수E", "1D2", "6D2", "5D2", "7D2"] },
-  { name: "유진", values: ["안D0", "5D2", "3D1", "7D2", "7D1", "안E", "안D0", "PRN", "3D2"] },
-  { name: "김해림", values: ["7D2", "PRN", "안D0", "1D2", "1D1", "7D1", "수E", "9-5", "3D1"] },
-  { name: "양현아", values: ["5D2", "3D1", "안E", "PRN", "6D2", "6D2", "9-5", "안D0", "9-5"] },
-  { name: "장지은", values: ["1D2", "6D1", "6D1", "6D2", "5D1", "7D2", "안D0", "안D0", "수E"] },
-  { name: "손다솜", values: ["PRN", "1D2", "1D2", "1D1", "3D1", "5D2", "3D2", "7D1", "안E"] },
-  { name: "오민아", values: ["안D0", "3D2", "9-5", "7D1", "PRN", "안D0", "5D1", "안E", "5D2"] },
-  { name: "최종선", values: ["3D2", "9-5", "PRN", "안D0", "안D0", "수E", "1D2", "1D2", "7D1"] },
-  { name: "장성필", values: ["6D1", "안D0", "수E", "안E", "3D2", "PRN", "7D1", "7D2", "5D1"] },
-  { name: "이지선", values: ["7D1", "7D2", "7D2", "안D0", "1D2", "1D1", "6D1", "3D1", "안D0"] },
-  { name: "최유리", values: ["3D1", "1D1", "1D1", "수E", "안E", "5D1", "PRN", "6D1", "6D2"] },
-  { name: "최유경", values: ["1D1", "7D1", "7D1", "5D1", "안D0", "안D0", "안E", "수E", "PRN"] },
-  { name: "정수영", values: ["", "", "6D1", "6D1", "6D1", "6D1", "1D1", "1D1", "1D1"] },
+  { name: "임희종", values: ["안E", "수E", "안D0", "9-5", "5D2", "3D1", "7D2", "6D2", "6D1", "7D1", "3D1", "안D0"] },
+  { name: "이양희", values: ["수E", "6D2", "6D2", "3D1", "9-5", "3D2", "5D2", "5D1", "1D2", "1D1", "안D0", "3D1"] },
+  { name: "허정숙", values: ["6D2", "안E", "5D2", "5D2", "7D2", "9-5", "3D1", "3D2", "안D0", "1D2", "1D1", "5D2"] },
+  { name: "이현숙", values: ["9-5", "안D0", "3D2", "3D2", "수E", "1D2", "6D2", "5D2", "7D2", "3D2/3D1", "6D2", "6D2"] },
+  { name: "유진", values: ["안D0", "5D2", "3D1", "7D2", "7D1", "안E", "안D0", "PRN", "3D2", "6D2", "6D1", "3D2"] },
+  { name: "김해림", values: ["7D2", "PRN", "안D0", "1D2", "1D1", "7D1", "수E", "9-5", "3D1", "안D0", "1D2", "9-5"] },
+  { name: "양현아", values: ["5D2", "3D1", "안E", "PRN", "6D2", "6D2", "9-5", "안D0", "9-5", "안D0", "7D2", "7D1"] },
+  { name: "장지은", values: ["1D2", "6D1", "6D1", "6D2", "5D1", "7D2", "안D0", "안D0", "수E", "수E", "9-5", "1D1"] },
+  { name: "손다솜", values: ["PRN", "1D2", "1D2", "1D1", "3D1", "5D2", "3D2", "7D1", "안E", "9-5", "3D2", "안D0"] },
+  { name: "오민아", values: ["안D0", "3D2", "9-5", "7D1", "PRN", "안D0", "5D1", "안E", "5D2", "PRN", "안D0", "1D2"] },
+  { name: "최종선", values: ["3D2", "9-5", "PRN", "안D0", "안D0", "수E", "1D2", "1D2", "7D1", "7D2", "안E", "6D1"] },
+  { name: "장성필", values: ["6D1", "안D0", "수E", "안E", "3D2", "PRN", "7D1", "7D2", "5D1", "5D2", "5D2", "안E"] },
+  { name: "이지선", values: ["7D1", "7D2", "7D2", "안D0", "1D2", "1D1", "6D1", "3D1", "안D0", "안E", "PRN", "수E"] },
+  { name: "최유리", values: ["3D1", "1D1", "1D1", "수E", "안E", "5D1", "PRN", "6D1", "6D2", "3D1/3D2", "7D1", "7D2"] },
+  { name: "최유경", values: ["1D1", "7D1", "7D1", "5D1", "안D0", "안D0", "안E", "수E", "PRN", "6D1", "수E", "PRN"] },
+  { name: "정수영", values: ["", "", "6D1", "6D1", "6D1", "6D1", "1D1", "1D1", "1D1", "5D1", "5D1", "5D1"] },
+];
+
+const WORK_SCHEDULE_2027_MONTHS = ["1월", "2월"];
+const WORK_SCHEDULE_2027_ROWS = [
+  { name: "임희종", values: ["6D2", "5D2"] },
+  { name: "이양희", values: ["1D1", "7D2"] },
+  { name: "허정숙", values: ["수E", "6D1"] },
+  { name: "이현숙", values: ["5D2", "안D0"] },
+  { name: "유진", values: ["9-5", "9-5"] },
+  { name: "김해림", values: ["3D2", "3D2"] },
+  { name: "양현아", values: ["5D1", "1D1"] },
+  { name: "장지은", values: ["1D2", "안E"] },
+  { name: "손다솜", values: ["안E", "6D2"] },
+  { name: "오민아", values: ["7D2", "7D1"] },
+  { name: "최종선", values: ["6D1", "안D0"] },
+  { name: "장성필", values: ["안D0", "1D2"] },
+  { name: "이지선", values: ["PRN", "5D1"] },
+  { name: "최유리", values: ["안D0", "PRN"] },
+  { name: "최유경", values: ["7D1", "수E"] },
+  { name: "정수영", values: ["3D1", "3D1"] },
 ];
 const WORK_SCHEDULE_OPTIONS = [
   "",
@@ -3003,21 +3027,29 @@ function addDaysToYmd(ymd, deltaDays) {
   return toLocalYMD(d);
 }
 
-/** 2026 근무표 월 컬럼 인덱스 0~8 (1~9월), 범위 밖이면 -1 */
-function scheduleMonthIndexFromYmd(ymd) {
+function baseMonthCodeForNurseName(name, ymd, workRows2026, workRows2027) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd ?? "").trim());
-  if (!m) return -1;
+  if (!m) return "—";
+  const year = Number(m[1]);
   const month = Number(m[2]);
-  if (month < 1 || month > WORK_SCHEDULE_2026_MONTHS.length) return -1;
-  return month - 1;
-}
-
-function baseMonthCodeForNurseName(name, ymd, workRows) {
-  const mi = scheduleMonthIndexFromYmd(ymd);
-  if (mi < 0) return "—";
-  const row = (Array.isArray(workRows) ? workRows : []).find((r) => r.name === name);
-  const v = row?.values?.[mi];
-  return v != null && String(v).trim() !== "" ? String(v).trim() : "—";
+  let rows;
+  let monthLen;
+  if (year === 2026) {
+    rows = workRows2026;
+    monthLen = WORK_SCHEDULE_2026_MONTHS.length;
+  } else if (year === 2027) {
+    rows = workRows2027;
+    monthLen = WORK_SCHEDULE_2027_MONTHS.length;
+  } else {
+    return "—";
+  }
+  if (month < 1 || month > monthLen) return "—";
+  const mi = month - 1;
+  const row = (Array.isArray(rows) ? rows : []).find((r) => r.name === name);
+  const raw = row?.values?.[mi];
+  if (raw == null || String(raw).trim() === "") return "—";
+  if (isCustomShiftCodeValue(raw)) return customShiftText(raw).trim() || "—";
+  return String(raw).trim();
 }
 
 function getSubstituteRecordsForRequest(substituteAssignments, requestId) {
@@ -3067,7 +3099,7 @@ function validateSubstitutePayload({
   return null;
 }
 
-function effectiveScheduleCell(userId, nurseName, ymd, workScheduleRows, requests, substituteAssignments) {
+function effectiveScheduleCell(userId, nurseName, ymd, workScheduleRows, workScheduleRows2027, requests, substituteAssignments) {
   const ld = String(ymd).slice(0, 10);
   const approvedLeave = (requests || []).find(
     (r) =>
@@ -3087,7 +3119,7 @@ function effectiveScheduleCell(userId, nurseName, ymd, workScheduleRows, request
   if (sub) {
     return { kind: "sub", main: sub.shiftCode, sub: "대체" };
   }
-  return { kind: "base", main: baseMonthCodeForNurseName(nurseName, ld, workScheduleRows), sub: "" };
+  return { kind: "base", main: baseMonthCodeForNurseName(nurseName, ld, workScheduleRows, workScheduleRows2027), sub: "" };
 }
 
 function isWeekendYmd(ymd) {
@@ -3113,7 +3145,17 @@ function dutyNurseIdSet(ymd, holidayDuties) {
   return s;
 }
 
-function effectiveWeeklyCell(userId, nurseName, ymd, workScheduleRows, requests, substituteAssignments, holidays, holidayDuties) {
+function effectiveWeeklyCell(
+  userId,
+  nurseName,
+  ymd,
+  workScheduleRows,
+  workScheduleRows2027,
+  requests,
+  substituteAssignments,
+  holidays,
+  holidayDuties
+) {
   const ld = String(ymd).slice(0, 10);
   const sub = (substituteAssignments || []).find((s) => s.substituteUserId === userId && String(s.leaveDate ?? "").slice(0, 10) === ld);
   if (sub) {
@@ -3138,7 +3180,7 @@ function effectiveWeeklyCell(userId, nurseName, ymd, workScheduleRows, requests,
     }
     return { kind: "leave", main: "off", sub: "" };
   }
-  return { kind: "base", main: baseMonthCodeForNurseName(nurseName, ld, workScheduleRows), sub: "" };
+  return { kind: "base", main: baseMonthCodeForNurseName(nurseName, ld, workScheduleRows, workScheduleRows2027), sub: "" };
 }
 
 function weeklyCellKey(userId, ymd) {
@@ -3290,6 +3332,7 @@ function downloadWeeklyOfficialHtmlFile(filename, html) {
 /** 주간 번표: 유진·임희종·최유경 행 — 월간 근무표 강조(#ecfdf5 / #d1fae5) 톤과 조화되는 구분색 */
 function WeeklyScheduleTab({
   workScheduleRows,
+  workScheduleRows2027,
   requests,
   substituteAssignments,
   users,
@@ -3329,7 +3372,17 @@ function WeeklyScheduleTab({
   );
 
   function computedCell(u, d) {
-    return effectiveWeeklyCell(u.id, u.name, d, workScheduleRows, requests, substituteAssignments, holidays, holidayDuties);
+    return effectiveWeeklyCell(
+      u.id,
+      u.name,
+      d,
+      workScheduleRows,
+      workScheduleRows2027,
+      requests,
+      substituteAssignments,
+      holidays,
+      holidayDuties
+    );
   }
 
   function displayCellWithOverrideMap(u, d, ovMap) {
@@ -4189,7 +4242,9 @@ function DashboardPage({
   serverMode,
   currentRole,
   workScheduleRows,
+  workScheduleRows2027,
   onSaveWorkScheduleRows,
+  onSaveWorkScheduleRows2027,
   generatedMonthlySchedules,
   onSaveGeneratedMonthlySchedule,
   isAdmin,
@@ -4205,6 +4260,9 @@ function DashboardPage({
 }) {
   const [dashTab, setDashTab] = useState(() => (currentRole === "ANESTHESIA" ? "schedule" : "summary"));
   const [draftRows, setDraftRows] = useState(Array.isArray(workScheduleRows) ? workScheduleRows : WORK_SCHEDULE_2026_ROWS);
+  const [draftRows2027, setDraftRows2027] = useState(
+    Array.isArray(workScheduleRows2027) ? workScheduleRows2027 : WORK_SCHEDULE_2027_ROWS
+  );
   const [scheduleMsg, setScheduleMsg] = useState("");
   const [generatorStartYm, setGeneratorStartYm] = useState(() => {
     const n = new Date();
@@ -4221,19 +4279,32 @@ function DashboardPage({
     setDraftRows(Array.isArray(workScheduleRows) ? workScheduleRows : WORK_SCHEDULE_2026_ROWS);
   }, [workScheduleRows]);
 
+  useEffect(() => {
+    setDraftRows2027(Array.isArray(workScheduleRows2027) ? workScheduleRows2027 : WORK_SCHEDULE_2027_ROWS);
+  }, [workScheduleRows2027]);
+
   const scheduleChanges = useMemo(() => {
-    const saved = Array.isArray(workScheduleRows) ? workScheduleRows : WORK_SCHEDULE_2026_ROWS;
+    const is2027 = schedulePlanKey === "base_2027";
+    const monthLabels = is2027 ? WORK_SCHEDULE_2027_MONTHS : WORK_SCHEDULE_2026_MONTHS;
+    const saved = is2027
+      ? Array.isArray(workScheduleRows2027)
+        ? workScheduleRows2027
+        : WORK_SCHEDULE_2027_ROWS
+      : Array.isArray(workScheduleRows)
+        ? workScheduleRows
+        : WORK_SCHEDULE_2026_ROWS;
+    const draft = is2027 ? draftRows2027 : draftRows;
     const savedMap = new Map(saved.map((r) => [r.name, r.values || []]));
     const changes = [];
-    for (const row of draftRows) {
+    for (const row of draft) {
       const prevVals = savedMap.get(row.name) || [];
       const nextVals = row.values || [];
-      for (let i = 0; i < WORK_SCHEDULE_2026_MONTHS.length; i += 1) {
+      for (let i = 0; i < monthLabels.length; i += 1) {
         const before = String(prevVals[i] ?? "");
         const after = String(nextVals[i] ?? "");
         if (before !== after) {
           changes.push({
-            monthLabel: WORK_SCHEDULE_2026_MONTHS[i],
+            monthLabel: monthLabels[i],
             name: row.name,
             before: before || "-",
             after: after || "-",
@@ -4242,7 +4313,7 @@ function DashboardPage({
       }
     }
     return changes;
-  }, [draftRows, workScheduleRows]);
+  }, [draftRows, draftRows2027, workScheduleRows, workScheduleRows2027, schedulePlanKey]);
 
   const schedulePlanOptions = useMemo(() => {
     const generated = Object.entries(generatedMonthlySchedules && typeof generatedMonthlySchedules === "object" ? generatedMonthlySchedules : {})
@@ -4250,6 +4321,7 @@ function DashboardPage({
       .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
     return [
       { key: "base_2026", label: "기본 2026 근무표", months: WORK_SCHEDULE_2026_MONTHS.map((m, i) => `2026-${String(i + 1).padStart(2, "0")}`) },
+      { key: "base_2027", label: "기본 2027 근무표", months: WORK_SCHEDULE_2027_MONTHS.map((m, i) => `2027-${String(i + 1).padStart(2, "0")}`) },
       ...generated.map(([k, v]) => ({
         key: `gen_${k}`,
         label: `${k} 시작 12개월`,
@@ -4268,12 +4340,27 @@ function DashboardPage({
     if (schedulePlanKey === "base_2026") {
       return {
         type: "base",
+        saveKey: "base_2026",
         months: WORK_SCHEDULE_2026_MONTHS.map((m, i) => ({
           ymd: `2026-${String(i + 1).padStart(2, "0")}`,
           label: m,
           index: i,
         })),
         rows: Array.isArray(draftRows) ? draftRows : WORK_SCHEDULE_2026_ROWS,
+        monthCount: WORK_SCHEDULE_2026_MONTHS.length,
+      };
+    }
+    if (schedulePlanKey === "base_2027") {
+      return {
+        type: "base",
+        saveKey: "base_2027",
+        months: WORK_SCHEDULE_2027_MONTHS.map((m, i) => ({
+          ymd: `2027-${String(i + 1).padStart(2, "0")}`,
+          label: m,
+          index: i,
+        })),
+        rows: Array.isArray(draftRows2027) ? draftRows2027 : WORK_SCHEDULE_2027_ROWS,
+        monthCount: WORK_SCHEDULE_2027_MONTHS.length,
       };
     }
     const startKey = String(schedulePlanKey).replace(/^gen_/, "");
@@ -4285,10 +4372,12 @@ function DashboardPage({
     }));
     return {
       type: "generated",
+      saveKey: schedulePlanKey,
       months,
       rows: Array.isArray(raw?.rows) ? raw.rows : [],
+      monthCount: months.length,
     };
-  }, [schedulePlanKey, generatedMonthlySchedules, draftRows]);
+  }, [schedulePlanKey, generatedMonthlySchedules, draftRows, draftRows2027]);
 
   const scheduleYearOptions = useMemo(() => {
     const years = [...new Set(activePlan.months.map((m) => String(m.ymd).slice(0, 4)).filter((y) => /^\d{4}$/.test(y)))];
@@ -4308,10 +4397,13 @@ function DashboardPage({
 
   function onDraftCellChange(name, monthIndex, value) {
     setScheduleMsg("");
-    setDraftRows((prev) =>
-      (Array.isArray(prev) ? prev : WORK_SCHEDULE_2026_ROWS).map((row) => {
+    const monthLen = activePlan.monthCount ?? WORK_SCHEDULE_2026_MONTHS.length;
+    const defaultRows = schedulePlanKey === "base_2027" ? WORK_SCHEDULE_2027_ROWS : WORK_SCHEDULE_2026_ROWS;
+    const setter = schedulePlanKey === "base_2027" ? setDraftRows2027 : setDraftRows;
+    setter((prev) =>
+      (Array.isArray(prev) ? prev : defaultRows).map((row) => {
         if (row.name !== name) return row;
-        const vals = Array.isArray(row.values) ? [...row.values] : Array.from({ length: WORK_SCHEDULE_2026_MONTHS.length }, () => "");
+        const vals = Array.isArray(row.values) ? [...row.values] : Array.from({ length: monthLen }, () => "");
         vals[monthIndex] = String(value ?? "");
         return { ...row, values: vals };
       })
@@ -4326,7 +4418,11 @@ function DashboardPage({
     const lines = scheduleChanges.map((c) => `- ${c.monthLabel} ${c.name}: ${c.before} -> ${c.after}`);
     const ok = window.confirm(`아래 근무표 변경을 저장할까요?\n\n${lines.join("\n")}`);
     if (!ok) return;
-    onSaveWorkScheduleRows(draftRows);
+    if (schedulePlanKey === "base_2027") {
+      onSaveWorkScheduleRows2027?.(draftRows2027);
+    } else {
+      onSaveWorkScheduleRows(draftRows);
+    }
     setScheduleMsg("근무표가 저장되었습니다.");
     notifyDone("저장되었습니다.");
   }
@@ -4570,7 +4666,14 @@ function DashboardPage({
                   {visibleMonths.map((m) => {
                     const idx = m.index;
                     const cellVal = row.values?.[idx] ?? "";
-                    const faceLabel = String(cellVal).trim() ? cellVal : "—";
+                    const displayVal = isCustomShiftCodeValue(cellVal) ? customShiftText(cellVal) : String(cellVal);
+                    const faceLabel = String(displayVal).trim() ? displayVal : "—";
+                    const selectValue =
+                      isCustomShiftCodeValue(cellVal) || (cellVal && !WORK_SCHEDULE_OPTION_SET.has(cellVal))
+                        ? CUSTOM_SHIFT_SENTINEL
+                        : cellVal;
+                    const extraOpts =
+                      cellVal && !WORK_SCHEDULE_OPTION_SET.has(cellVal) && !isCustomShiftCodeValue(cellVal) ? [cellVal] : [];
                     return (
                       <td key={`${row.name}-${m.ymd}`} className="work-schedule-month-cell">
                         <label className="work-schedule-picker">
@@ -4580,8 +4683,15 @@ function DashboardPage({
                           {activePlan.type === "base" ? (
                             <select
                               className="work-schedule-select"
-                              value={cellVal}
-                              onChange={(e) => onDraftCellChange(row.name, idx, e.target.value)}
+                              value={selectValue}
+                              onChange={(e) => {
+                                const next = String(e.target.value ?? "");
+                                if (next === CUSTOM_SHIFT_SENTINEL) {
+                                  onDraftCellChange(row.name, idx, toCustomShiftCode(customShiftText(cellVal) || ""));
+                                  return;
+                                }
+                                onDraftCellChange(row.name, idx, next);
+                              }}
                               aria-label={`${row.name} ${m.label} 근무`}
                             >
                               {WORK_SCHEDULE_OPTIONS.map((opt) => (
@@ -4589,9 +4699,24 @@ function DashboardPage({
                                   {opt || "-"}
                                 </option>
                               ))}
+                              {extraOpts.map((opt) => (
+                                <option key={`${row.name}-${m.ymd}-extra-${opt}`} value={opt}>
+                                  {opt}
+                                </option>
+                              ))}
+                              <option value={CUSTOM_SHIFT_SENTINEL}>직접입력</option>
                             </select>
                           ) : null}
                         </label>
+                        {activePlan.type === "base" && selectValue === CUSTOM_SHIFT_SENTINEL ? (
+                          <input
+                            type="text"
+                            className="work-schedule-custom-input"
+                            placeholder="예: 3D2/3D1"
+                            value={customShiftText(cellVal)}
+                            onChange={(e) => onDraftCellChange(row.name, idx, toCustomShiftCode(e.target.value))}
+                          />
+                        ) : null}
                       </td>
                     );
                   })}
@@ -4615,6 +4740,7 @@ function DashboardPage({
       {dashTab === "weekly" ? (
         <WeeklyScheduleTab
           workScheduleRows={workScheduleRows}
+          workScheduleRows2027={workScheduleRows2027}
           requests={requests}
           substituteAssignments={substituteAssignments}
           users={users}

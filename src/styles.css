@@ -1998,6 +1998,15 @@ tbody tr:last-child td {
   font-weight: 600;
 }
 
+.work-schedule-custom-input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  font-size: 11px;
+  padding: 4px 6px;
+  box-sizing: border-box;
+}
+
 .msg {
   color: var(--accent);
   font-weight: 600;
