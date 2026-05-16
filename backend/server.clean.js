@@ -13,7 +13,11 @@ import {
   resetLeaveDataToDefaults,
   runTransaction,
 } from "./db.clean.js";
-import { isLeaveDateBeforeTodayKst } from "../src/utils/rules.clean.js";
+import {
+  generalNormalLadderLockedMessage,
+  isGeneralNormalLadderTimeLocked,
+  isLeaveDateBeforeTodayKst,
+} from "../src/utils/rules.clean.js";
 
 const app = express();
 app.use(cors());
@@ -1392,6 +1396,10 @@ app.post("/api/ladder-results", async (req, res) => {
 
     const lt = String(leaveType ?? "").trim();
     if (!lt) return res.status(400).json({ error: "leaveType이 필요합니다." });
+
+    if (isGeneralNormalLadderTimeLocked(ld, lt)) {
+      return res.status(409).json({ error: generalNormalLadderLockedMessage(ld) });
+    }
 
     const pArr = Array.isArray(participants) ? participants : [];
     const oArr = Array.isArray(order) ? order : [];

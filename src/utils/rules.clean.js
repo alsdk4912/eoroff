@@ -398,3 +398,51 @@ export function validateRequest({
   return "";
 }
 
+function parseStrictYmd(ymd) {
+  const s = String(ymd ?? "").trim().slice(0, 10);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  return { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) };
+}
+
+function ymdAddDays(ymd, deltaDays) {
+  const p = parseStrictYmd(ymd);
+  if (!p) return "";
+  const d = new Date(Date.UTC(p.year, p.month - 1, p.day + Number(deltaDays || 0)));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+/** 해당 KST 날짜 09:00 시각(UTC ms). KST 09:00 = 당일 00:00 UTC */
+function kstNineAmMs(ymd) {
+  const p = parseStrictYmd(ymd);
+  if (!p) return NaN;
+  return Date.UTC(p.year, p.month - 1, p.day, 0, 0, 0);
+}
+
+/**
+ * 일반휴가-후순위: 휴가일 전날 09:00(KST)부터 사다리 실행 가능.
+ * 예) 5/15 휴가 확정 → 5/14 09:00 이후 사다리 가능.
+ */
+export function isGeneralNormalLadderUnlocked(leaveDateYmd, now = new Date()) {
+  const ld = String(leaveDateYmd ?? "").slice(0, 10);
+  const prevYmd = ymdAddDays(ld, -1);
+  if (!prevYmd) return true;
+  const unlockMs = kstNineAmMs(prevYmd);
+  if (!Number.isFinite(unlockMs)) return true;
+  return now.getTime() >= unlockMs;
+}
+
+export function isGeneralNormalLadderTimeLocked(leaveDateYmd, leaveType, now = new Date()) {
+  if (String(leaveType ?? "") !== "GENERAL_NORMAL") return false;
+  return !isGeneralNormalLadderUnlocked(leaveDateYmd, now);
+}
+
+export function generalNormalLadderLockedMessage(leaveDateYmd) {
+  const ld = String(leaveDateYmd ?? "").slice(0, 10);
+  const prevYmd = ymdAddDays(ld, -1);
+  if (!prevYmd || !ld) {
+    return "일반휴가-후순위는 휴가 전날 09:00 이후부터 사다리를 실행할 수 있습니다.";
+  }
+  return `일반휴가-후순위(${ld})는 전날(${prevYmd}) 09:00 이후부터 사다리를 실행할 수 있습니다.`;
+}
+
