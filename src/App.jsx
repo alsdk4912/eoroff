@@ -490,18 +490,28 @@ function App() {
     dropStaleOfflineLeaveKeys();
   }, []);
 
-  /** 로컬 캐시에 남은 2026 근무표 9월 오입력 보정 */
+  /** 로컬 캐시에 남은 2026 근무표 9·10월 오입력 보정 */
   useEffect(() => {
     setWorkScheduleRows((prev) => {
       if (!Array.isArray(prev)) return prev;
       let fix = false;
       const next = prev.map((row) => {
-        const rule = SEPT_2026_SCHEDULE_FIXES.get(row.name);
-        if (!rule || row.values?.[8] !== rule.from) return row;
-        fix = true;
-        const vals = [...row.values];
-        vals[8] = rule.to;
-        return { ...row, values: vals };
+        const vals = Array.isArray(row.values) ? [...row.values] : [];
+        let rowFix = false;
+        const septRule = SEPT_2026_SCHEDULE_FIXES.get(row.name);
+        if (septRule && vals[8] === septRule.from) {
+          vals[8] = septRule.to;
+          rowFix = true;
+        }
+        const octCompound = OCT_2026_COMPOUND_TO_SIMPLE.get(row.name);
+        const octRaw = String(vals[9] ?? "");
+        const octDisplay = octRaw.startsWith("__CUSTOM_SHIFT__:") ? octRaw.slice("__CUSTOM_SHIFT__:".length) : octRaw;
+        if (octCompound?.has(octDisplay) || octCompound?.has(octRaw)) {
+          vals[9] = "3";
+          rowFix = true;
+        }
+        if (rowFix) fix = true;
+        return rowFix ? { ...row, values: vals } : row;
       });
       return fix ? next : prev;
     });
@@ -2943,7 +2953,7 @@ const WORK_SCHEDULE_2026_ROWS = [
   { name: "임희종", values: ["안E", "수E", "안D0", "9-5", "5D2", "3D1", "7D2", "6D2", "6D1", "7D1", "3D1", "안D0"] },
   { name: "이양희", values: ["수E", "6D2", "6D2", "3D1", "9-5", "3D2", "5D2", "5D1", "1D2", "1D1", "안D0", "3D1"] },
   { name: "허정숙", values: ["6D2", "안E", "5D2", "5D2", "7D2", "9-5", "3D1", "3D2", "안D0", "1D2", "1D1", "5D2"] },
-  { name: "이현숙", values: ["9-5", "안D0", "3D2", "3D2", "수E", "1D2", "6D2", "5D2", "수E", "3D2/3D1", "6D2", "6D2"] },
+  { name: "이현숙", values: ["9-5", "안D0", "3D2", "3D2", "수E", "1D2", "6D2", "5D2", "수E", "3", "6D2", "6D2"] },
   { name: "유진", values: ["안D0", "5D2", "3D1", "7D2", "7D1", "안E", "안D0", "PRN", "3D2", "6D2", "6D1", "3D2"] },
   { name: "김해림", values: ["7D2", "PRN", "안D0", "1D2", "1D1", "7D1", "수E", "9-5", "3D1", "안D0", "1D2", "9-5"] },
   { name: "양현아", values: ["5D2", "3D1", "안E", "PRN", "6D2", "6D2", "9-5", "안D0", "9-5", "안D0", "7D2", "7D1"] },
@@ -2953,7 +2963,7 @@ const WORK_SCHEDULE_2026_ROWS = [
   { name: "최종선", values: ["3D2", "9-5", "PRN", "안D0", "안D0", "수E", "1D2", "1D2", "7D2", "7D2", "안E", "6D1"] },
   { name: "장성필", values: ["6D1", "안D0", "수E", "안E", "3D2", "PRN", "7D1", "7D2", "7D1", "5D2", "5D2", "안E"] },
   { name: "이지선", values: ["7D1", "7D2", "7D2", "안D0", "1D2", "1D1", "6D1", "3D1", "안D0", "안E", "PRN", "수E"] },
-  { name: "최유리", values: ["3D1", "1D1", "1D1", "수E", "안E", "5D1", "PRN", "6D1", "6D2", "3D1/3D2", "7D1", "7D2"] },
+  { name: "최유리", values: ["3D1", "1D1", "1D1", "수E", "안E", "5D1", "PRN", "6D1", "6D2", "3", "7D1", "7D2"] },
   { name: "최유경", values: ["1D1", "7D1", "7D1", "5D1", "안D0", "안D0", "안E", "수E", "5D1", "6D1", "수E", "PRN"] },
   { name: "정수영", values: ["", "", "6D1", "6D1", "6D1", "6D1", "1D1", "1D1", "1D1", "5D1", "5D1", "5D1"] },
 ];
@@ -2965,6 +2975,12 @@ const SEPT_2026_SCHEDULE_FIXES = new Map([
   ["최종선", { from: "7D1", to: "7D2" }],
   ["장성필", { from: "5D1", to: "7D1" }],
   ["최유경", { from: "PRN", to: "5D1" }],
+]);
+
+/** 2026년 10월(인덱스 9) 복합 번표 → 모바일 가독용 "3" */
+const OCT_2026_COMPOUND_TO_SIMPLE = new Map([
+  ["이현숙", new Set(["3D2/3D1", "3D1/3D2"])],
+  ["최유리", new Set(["3D1/3D2", "3D2/3D1"])],
 ]);
 
 const WORK_SCHEDULE_2027_MONTHS = ["1월", "2월"];
@@ -2993,6 +3009,7 @@ const WORK_SCHEDULE_OPTIONS = [
   "수E",
   "9-5",
   "5D2",
+  "3",
   "3D1",
   "7D2",
   "6D2",
