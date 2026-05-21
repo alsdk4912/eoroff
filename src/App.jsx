@@ -46,6 +46,18 @@ import {
   monthlyRowSection,
   separatorBeforeMonthlyRow,
 } from "./data/shiftCodes.js";
+import {
+  WORK_SCHEDULE_MONTH_LABELS,
+  SCHEDULE_MONTH_COUNT,
+  getWorkScheduleTemplateForYear,
+  listBaseScheduleYears,
+  loadWorkScheduleByYearFromStorage,
+  normalizeWorkScheduleByYear,
+  padScheduleRowValues,
+  parseBaseSchedulePlanKey,
+  workScheduleMonthYmds,
+  generatorYearOptions,
+} from "./data/workScheduleYears.js";
 import { consumeManualVersionReloadToast, restoreHashAfterReload, useAppUpdate } from "./useAppUpdate.js";
 import { buildAutoHolidayDutyPlan } from "./utils/holidayDutyPlan.clean.js";
 import {
@@ -77,6 +89,7 @@ const LS_ADMIN_DAY_MEMOS = "or.adminDayMemos.v1";
 const LS_DAY_COMMENTS = "or.dayComments.v1";
 const LS_WORK_SCHEDULE_2026 = "or.workSchedule2026.v2";
 const LS_WORK_SCHEDULE_2027 = "or.workSchedule2027.v1";
+const LS_WORK_SCHEDULE_BY_YEAR = "or.workScheduleByYear.v1";
 const LS_GENERATED_MONTHLY_SCHEDULES = "or.generatedMonthlySchedules.v1";
 /** 승인 시 지정하는 대체 근무(서버 동기화 + 로컬 캐시) */
 const LS_SUBSTITUTE_ASSIGNMENTS = "or.substituteAssignments.v1";
@@ -505,18 +518,25 @@ function App() {
   const [ladderResults, setLadderResults] = useLocalStorage(LS_LADDER_RESULTS, initialLadderResults);
   const [adminDayMemos, setAdminDayMemos] = useLocalStorage(LS_ADMIN_DAY_MEMOS, {});
   const [dayComments, setDayComments] = useLocalStorage(LS_DAY_COMMENTS, []);
-  const [workScheduleRows, setWorkScheduleRows] = useLocalStorage(LS_WORK_SCHEDULE_2026, WORK_SCHEDULE_2026_ROWS);
-  const [workScheduleRows2027, setWorkScheduleRows2027] = useLocalStorage(LS_WORK_SCHEDULE_2027, WORK_SCHEDULE_2027_ROWS);
+  const [workScheduleByYear, setWorkScheduleByYear] = useLocalStorage(LS_WORK_SCHEDULE_BY_YEAR, () =>
+    loadWorkScheduleByYearFromStorage(
+      { byYear: LS_WORK_SCHEDULE_BY_YEAR, y2026: LS_WORK_SCHEDULE_2026, y2027: LS_WORK_SCHEDULE_2027 },
+      WORK_SCHEDULE_TEMPLATES
+    )
+  );
   useEffect(() => {
-    setWorkScheduleRows((prev) => {
-      const merged = mergeWorkScheduleRows(prev, WORK_SCHEDULE_2026_ROWS);
+    setWorkScheduleByYear((prev) => {
+      const merged = normalizeWorkScheduleByYear(prev, WORK_SCHEDULE_TEMPLATES);
       return JSON.stringify(merged) === JSON.stringify(prev) ? prev : merged;
     });
-    setWorkScheduleRows2027((prev) => {
-      const merged = mergeWorkScheduleRows(prev, WORK_SCHEDULE_2027_ROWS);
-      return JSON.stringify(merged) === JSON.stringify(prev) ? prev : merged;
-    });
-  }, [setWorkScheduleRows, setWorkScheduleRows2027]);
+  }, [setWorkScheduleByYear]);
+  const saveWorkScheduleForYear = (year, rows) => {
+    const y = String(year);
+    setWorkScheduleByYear((prev) => ({
+      ...normalizeWorkScheduleByYear(prev, WORK_SCHEDULE_TEMPLATES),
+      [y]: mergeWorkScheduleRows(rows, getWorkScheduleTemplateForYear(Number(y), WORK_SCHEDULE_TEMPLATES)),
+    }));
+  };
   const [generatedMonthlySchedules, setGeneratedMonthlySchedules] = useLocalStorage(LS_GENERATED_MONTHLY_SCHEDULES, {});
   const [substituteAssignments, setSubstituteAssignments] = useLocalStorage(LS_SUBSTITUTE_ASSIGNMENTS, []);
   /** 주간 번표 셀 수동 표시(기기 로컬) */
@@ -2468,10 +2488,8 @@ function App() {
               users={users}
               serverMode={serverMode}
               currentRole={currentUser?.role}
-              workScheduleRows={workScheduleRows}
-              workScheduleRows2027={workScheduleRows2027}
-              onSaveWorkScheduleRows={setWorkScheduleRows}
-              onSaveWorkScheduleRows2027={setWorkScheduleRows2027}
+              workScheduleByYear={workScheduleByYear}
+              onSaveWorkScheduleForYear={saveWorkScheduleForYear}
               generatedMonthlySchedules={generatedMonthlySchedules}
               onSaveGeneratedMonthlySchedule={(key, payload) =>
                 setGeneratedMonthlySchedules((prev) => ({ ...(prev && typeof prev === "object" ? prev : {}), [key]: payload }))
@@ -3065,7 +3083,7 @@ function goldkeyQuotaTotalForDisplay(user, g, serverMode) {
   return policy;
 }
 
-const WORK_SCHEDULE_2026_MONTHS = ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"];
+const WORK_SCHEDULE_2026_MONTHS = WORK_SCHEDULE_MONTH_LABELS;
 const WORK_SCHEDULE_2026_ROWS = [
   { name: "임희종", values: ["안E", "수E", "안D0", "9-5", "5D2", "3D1", "7D2", "6D2", "6D1", "7D1", "3D1", "안D0"] },
   { name: "이양희", values: ["수E", "6D2", "6D2", "3D1", "9-5", "3D2", "5D2", "5D1", "1D2", "1D1", "안D0", "3D1"] },
@@ -3102,8 +3120,8 @@ const OCT_2026_COMPOUND_TO_SIMPLE = new Map([
   ["최유리", new Set(["3D1/3D2", "3D2/3D1"])],
 ]);
 
-const WORK_SCHEDULE_2027_MONTHS = ["1월", "2월"];
-const WORK_SCHEDULE_2027_ROWS = [
+const WORK_SCHEDULE_2027_MONTHS = WORK_SCHEDULE_MONTH_LABELS;
+const WORK_SCHEDULE_2027_ROWS_SEED = [
   { name: "임희종", values: ["6D2", "5D2"] },
   { name: "이양희", values: ["1D1", "7D2"] },
   { name: "허정숙", values: ["수E", "6D1"] },
@@ -3120,9 +3138,12 @@ const WORK_SCHEDULE_2027_ROWS = [
   { name: "최유리", values: ["안D0", "PRN"] },
   { name: "최유경", values: ["7D1", "수E"] },
   { name: "정수영", values: ["3D1", "3D1"] },
-  ...ANESTHESIA_MONTHLY_NAMES.map((name) => ({ name, values: emptyScheduleMonthValues(2) })),
-  ...CHIEF_MONTHLY_NAMES.map((name) => ({ name, values: emptyScheduleMonthValues(2) })),
+  ...ANESTHESIA_MONTHLY_NAMES.map((name) => ({ name, values: ["", ""] })),
+  ...CHIEF_MONTHLY_NAMES.map((name) => ({ name, values: ["", ""] })),
 ];
+const WORK_SCHEDULE_2027_ROWS = WORK_SCHEDULE_2027_ROWS_SEED.map((r) => padScheduleRowValues(r, SCHEDULE_MONTH_COUNT));
+
+const WORK_SCHEDULE_TEMPLATES = { rows2026: WORK_SCHEDULE_2026_ROWS, rows2027: WORK_SCHEDULE_2027_ROWS };
 /** 수술실 월간·주간 번표 (마취·주임은 shiftCodes.js 역할별 목록) */
 const WORK_SCHEDULE_OPTIONS = NURSE_SHIFT_OPTIONS;
 const CUSTOM_SHIFT_SENTINEL = "__CUSTOM_SHIFT__";
@@ -3176,22 +3197,16 @@ function addDaysToYmd(ymd, deltaDays) {
   return toLocalYMD(d);
 }
 
-function baseMonthCodeForNurseName(name, ymd, workRows2026, workRows2027) {
+function baseMonthCodeForNurseName(name, ymd, workScheduleByYear) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd ?? "").trim());
   if (!m) return "—";
   const year = Number(m[1]);
   const month = Number(m[2]);
-  let rows;
-  let monthLen;
-  if (year === 2026) {
-    rows = workRows2026;
-    monthLen = WORK_SCHEDULE_2026_MONTHS.length;
-  } else if (year === 2027) {
-    rows = workRows2027;
-    monthLen = WORK_SCHEDULE_2027_MONTHS.length;
-  } else {
-    return "—";
-  }
+  if (year < 2026 || month < 1 || month > SCHEDULE_MONTH_COUNT) return "—";
+  const by = workScheduleByYear && typeof workScheduleByYear === "object" ? workScheduleByYear : {};
+  const rows =
+    by[String(year)] ?? getWorkScheduleTemplateForYear(year, WORK_SCHEDULE_TEMPLATES);
+  const monthLen = SCHEDULE_MONTH_COUNT;
   if (month < 1 || month > monthLen) return "—";
   const mi = month - 1;
   const row = (Array.isArray(rows) ? rows : []).find((r) => r.name === name);
@@ -3248,7 +3263,7 @@ function validateSubstitutePayload({
   return null;
 }
 
-function effectiveScheduleCell(userId, nurseName, ymd, workScheduleRows, workScheduleRows2027, requests, substituteAssignments) {
+function effectiveScheduleCell(userId, nurseName, ymd, workScheduleByYear, requests, substituteAssignments) {
   const ld = String(ymd).slice(0, 10);
   const approvedLeave = (requests || []).find(
     (r) =>
@@ -3268,7 +3283,7 @@ function effectiveScheduleCell(userId, nurseName, ymd, workScheduleRows, workSch
   if (sub) {
     return { kind: "sub", main: sub.shiftCode, sub: "대체" };
   }
-  return { kind: "base", main: baseMonthCodeForNurseName(nurseName, ld, workScheduleRows, workScheduleRows2027), sub: "" };
+  return { kind: "base", main: baseMonthCodeForNurseName(nurseName, ld, workScheduleByYear), sub: "" };
 }
 
 function isWeekendYmd(ymd) {
@@ -3298,8 +3313,7 @@ function effectiveWeeklyCell(
   userId,
   nurseName,
   ymd,
-  workScheduleRows,
-  workScheduleRows2027,
+  workScheduleByYear,
   requests,
   substituteAssignments,
   holidays,
@@ -3329,7 +3343,7 @@ function effectiveWeeklyCell(
     }
     return { kind: "leave", main: "off", sub: "" };
   }
-  return { kind: "base", main: baseMonthCodeForNurseName(nurseName, ld, workScheduleRows, workScheduleRows2027), sub: "" };
+  return { kind: "base", main: baseMonthCodeForNurseName(nurseName, ld, workScheduleByYear), sub: "" };
 }
 
 function weeklyCellKey(userId, ymd) {
@@ -3480,8 +3494,7 @@ function downloadWeeklyOfficialHtmlFile(filename, html) {
 
 /** 주간 번표: 유진·임희종·최유경 행 — 월간 근무표 강조(#ecfdf5 / #d1fae5) 톤과 조화되는 구분색 */
 function WeeklyScheduleTab({
-  workScheduleRows,
-  workScheduleRows2027,
+  workScheduleByYear,
   requests,
   substituteAssignments,
   users,
@@ -3532,8 +3545,7 @@ function WeeklyScheduleTab({
       u.id,
       u.name,
       d,
-      workScheduleRows,
-      workScheduleRows2027,
+      workScheduleByYear,
       requests,
       substituteAssignments,
       holidays,
@@ -4406,10 +4418,8 @@ function DashboardPage({
   users,
   serverMode,
   currentRole,
-  workScheduleRows,
-  workScheduleRows2027,
-  onSaveWorkScheduleRows,
-  onSaveWorkScheduleRows2027,
+  workScheduleByYear,
+  onSaveWorkScheduleForYear,
   generatedMonthlySchedules,
   onSaveGeneratedMonthlySchedule,
   isAdmin,
@@ -4424,10 +4434,6 @@ function DashboardPage({
   saveSubstituteForApprovedRequest,
 }) {
   const [dashTab, setDashTab] = useState("schedule");
-  const [draftRows, setDraftRows] = useState(() => mergeWorkScheduleRows(workScheduleRows, WORK_SCHEDULE_2026_ROWS));
-  const [draftRows2027, setDraftRows2027] = useState(() =>
-    mergeWorkScheduleRows(workScheduleRows2027, WORK_SCHEDULE_2027_ROWS)
-  );
   const [scheduleMsg, setScheduleMsg] = useState("");
   const [generatorStartYm, setGeneratorStartYm] = useState(() => {
     const n = new Date();
@@ -4440,36 +4446,38 @@ function DashboardPage({
   const [schedulePlanKey, setSchedulePlanKey] = useState("base_2026");
   const [scheduleYearFilter, setScheduleYearFilter] = useState("all");
 
-  useEffect(() => {
-    setDraftRows(mergeWorkScheduleRows(workScheduleRows, WORK_SCHEDULE_2026_ROWS));
-  }, [workScheduleRows]);
+  const baseScheduleYear = parseBaseSchedulePlanKey(schedulePlanKey);
+  const activeBaseTemplate = useMemo(
+    () =>
+      baseScheduleYear
+        ? getWorkScheduleTemplateForYear(baseScheduleYear, WORK_SCHEDULE_TEMPLATES)
+        : WORK_SCHEDULE_2026_ROWS,
+    [baseScheduleYear]
+  );
+  const [draftRows, setDraftRows] = useState(() =>
+    mergeWorkScheduleRows(workScheduleByYear?.["2026"], WORK_SCHEDULE_2026_ROWS)
+  );
 
   useEffect(() => {
-    setDraftRows2027(mergeWorkScheduleRows(workScheduleRows2027, WORK_SCHEDULE_2027_ROWS));
-  }, [workScheduleRows2027]);
+    if (!baseScheduleYear) return;
+    const saved = workScheduleByYear?.[String(baseScheduleYear)];
+    setDraftRows(mergeWorkScheduleRows(saved, activeBaseTemplate));
+  }, [baseScheduleYear, workScheduleByYear, activeBaseTemplate]);
 
   const scheduleChanges = useMemo(() => {
-    const is2027 = schedulePlanKey === "base_2027";
-    const monthLabels = is2027 ? WORK_SCHEDULE_2027_MONTHS : WORK_SCHEDULE_2026_MONTHS;
-    const saved = is2027
-      ? Array.isArray(workScheduleRows2027)
-        ? workScheduleRows2027
-        : WORK_SCHEDULE_2027_ROWS
-      : Array.isArray(workScheduleRows)
-        ? workScheduleRows
-        : WORK_SCHEDULE_2026_ROWS;
-    const draft = is2027 ? draftRows2027 : draftRows;
-    const savedMap = new Map(saved.map((r) => [r.name, r.values || []]));
+    if (!baseScheduleYear) return [];
+    const saved = workScheduleByYear?.[String(baseScheduleYear)] ?? activeBaseTemplate;
+    const savedMap = new Map((Array.isArray(saved) ? saved : []).map((r) => [r.name, r.values || []]));
     const changes = [];
-    for (const row of draft) {
+    for (const row of draftRows) {
       const prevVals = savedMap.get(row.name) || [];
       const nextVals = row.values || [];
-      for (let i = 0; i < monthLabels.length; i += 1) {
+      for (let i = 0; i < WORK_SCHEDULE_MONTH_LABELS.length; i += 1) {
         const before = String(prevVals[i] ?? "");
         const after = String(nextVals[i] ?? "");
         if (before !== after) {
           changes.push({
-            monthLabel: monthLabels[i],
+            monthLabel: WORK_SCHEDULE_MONTH_LABELS[i],
             name: row.name,
             before: before || "-",
             after: after || "-",
@@ -4478,22 +4486,30 @@ function DashboardPage({
       }
     }
     return changes;
-  }, [draftRows, draftRows2027, workScheduleRows, workScheduleRows2027, schedulePlanKey]);
+  }, [draftRows, workScheduleByYear, baseScheduleYear, activeBaseTemplate]);
+
+  const baseScheduleYearList = useMemo(
+    () => listBaseScheduleYears(workScheduleByYear, 2026, baseScheduleYear),
+    [workScheduleByYear, baseScheduleYear]
+  );
 
   const schedulePlanOptions = useMemo(() => {
     const generated = Object.entries(generatedMonthlySchedules && typeof generatedMonthlySchedules === "object" ? generatedMonthlySchedules : {})
       .filter(([, v]) => Array.isArray(v?.months) && Array.isArray(v?.rows))
       .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
     return [
-      { key: "base_2026", label: "2026 근무표", months: WORK_SCHEDULE_2026_MONTHS.map((m, i) => `2026-${String(i + 1).padStart(2, "0")}`) },
-      { key: "base_2027", label: "2027 근무표", months: WORK_SCHEDULE_2027_MONTHS.map((m, i) => `2027-${String(i + 1).padStart(2, "0")}`) },
+      ...baseScheduleYearList.map((y) => ({
+        key: `base_${y}`,
+        label: `${y}년 근무표`,
+        months: workScheduleMonthYmds(y).map((m) => m.ymd),
+      })),
       ...generated.map(([k, v]) => ({
         key: `gen_${k}`,
         label: `${k} 시작 12개월`,
         months: v.months,
       })),
     ];
-  }, [generatedMonthlySchedules]);
+  }, [generatedMonthlySchedules, baseScheduleYearList]);
 
   useEffect(() => {
     if (!schedulePlanOptions.some((opt) => opt.key === schedulePlanKey)) {
@@ -4502,30 +4518,15 @@ function DashboardPage({
   }, [schedulePlanKey, schedulePlanOptions]);
 
   const activePlan = useMemo(() => {
-    if (schedulePlanKey === "base_2026") {
+    if (baseScheduleYear) {
       return {
         type: "base",
-        saveKey: "base_2026",
-        months: WORK_SCHEDULE_2026_MONTHS.map((m, i) => ({
-          ymd: `2026-${String(i + 1).padStart(2, "0")}`,
-          label: m,
-          index: i,
-        })),
-        rows: Array.isArray(draftRows) ? draftRows : WORK_SCHEDULE_2026_ROWS,
-        monthCount: WORK_SCHEDULE_2026_MONTHS.length,
-      };
-    }
-    if (schedulePlanKey === "base_2027") {
-      return {
-        type: "base",
-        saveKey: "base_2027",
-        months: WORK_SCHEDULE_2027_MONTHS.map((m, i) => ({
-          ymd: `2027-${String(i + 1).padStart(2, "0")}`,
-          label: m,
-          index: i,
-        })),
-        rows: Array.isArray(draftRows2027) ? draftRows2027 : WORK_SCHEDULE_2027_ROWS,
-        monthCount: WORK_SCHEDULE_2027_MONTHS.length,
+        saveKey: `base_${baseScheduleYear}`,
+        calendarYear: baseScheduleYear,
+        months: workScheduleMonthYmds(baseScheduleYear),
+        rows: Array.isArray(draftRows) ? draftRows : activeBaseTemplate,
+        monthCount: SCHEDULE_MONTH_COUNT,
+        templateRows: activeBaseTemplate,
       };
     }
     const startKey = String(schedulePlanKey).replace(/^gen_/, "");
@@ -4542,7 +4543,7 @@ function DashboardPage({
       rows: Array.isArray(raw?.rows) ? raw.rows : [],
       monthCount: months.length,
     };
-  }, [schedulePlanKey, generatedMonthlySchedules, draftRows, draftRows2027]);
+  }, [schedulePlanKey, generatedMonthlySchedules, draftRows, baseScheduleYear, activeBaseTemplate]);
 
   const scheduleYearOptions = useMemo(() => {
     const years = [...new Set(activePlan.months.map((m) => String(m.ymd).slice(0, 4)).filter((y) => /^\d{4}$/.test(y)))];
@@ -4562,10 +4563,9 @@ function DashboardPage({
 
   function onDraftCellChange(name, monthIndex, value) {
     setScheduleMsg("");
-    const monthLen = activePlan.monthCount ?? WORK_SCHEDULE_2026_MONTHS.length;
-    const defaultRows = schedulePlanKey === "base_2027" ? WORK_SCHEDULE_2027_ROWS : WORK_SCHEDULE_2026_ROWS;
-    const setter = schedulePlanKey === "base_2027" ? setDraftRows2027 : setDraftRows;
-    setter((prev) =>
+    const monthLen = activePlan.monthCount ?? SCHEDULE_MONTH_COUNT;
+    const defaultRows = activePlan.templateRows ?? activeBaseTemplate;
+    setDraftRows((prev) =>
       (Array.isArray(prev) ? prev : defaultRows).map((row) => {
         if (row.name !== name) return row;
         const vals = Array.isArray(row.values) ? [...row.values] : Array.from({ length: monthLen }, () => "");
@@ -4576,6 +4576,7 @@ function DashboardPage({
   }
 
   function saveWorkSchedule() {
+    if (!baseScheduleYear) return;
     if (scheduleChanges.length === 0) {
       setScheduleMsg("변경된 항목이 없습니다.");
       return;
@@ -4583,15 +4584,10 @@ function DashboardPage({
     const lines = scheduleChanges.map((c) => `- ${c.monthLabel} ${c.name}: ${c.before} -> ${c.after}`);
     const ok = window.confirm(`아래 근무표 변경을 저장할까요?\n\n${lines.join("\n")}`);
     if (!ok) return;
-    if (schedulePlanKey === "base_2027") {
-      const next = mergeMonthlySaveDraft(workScheduleRows2027, draftRows2027, WORK_SCHEDULE_2027_ROWS, currentRole);
-      onSaveWorkScheduleRows2027?.(next);
-      setDraftRows2027(next);
-    } else {
-      const next = mergeMonthlySaveDraft(workScheduleRows, draftRows, WORK_SCHEDULE_2026_ROWS, currentRole);
-      onSaveWorkScheduleRows(next);
-      setDraftRows(next);
-    }
+    const saved = workScheduleByYear?.[String(baseScheduleYear)];
+    const next = mergeMonthlySaveDraft(saved, draftRows, activeBaseTemplate, currentRole);
+    onSaveWorkScheduleForYear?.(baseScheduleYear, next);
+    setDraftRows(next);
     setScheduleMsg("근무표가 저장되었습니다.");
     notifyDone("저장되었습니다.");
   }
@@ -4809,7 +4805,13 @@ function DashboardPage({
         <div className="row wrap" style={{ gap: 8, marginBottom: 8 }}>
           <label className="weekly-date-label">
             번표 묶음
-            <select value={schedulePlanKey} onChange={(e) => setSchedulePlanKey(e.target.value)}>
+            <select
+              value={schedulePlanKey}
+              onChange={(e) => {
+                setSchedulePlanKey(e.target.value);
+                setScheduleYearFilter("all");
+              }}
+            >
               {schedulePlanOptions.map((opt) => (
                 <option key={opt.key} value={opt.key}>
                   {opt.label}
@@ -4817,18 +4819,41 @@ function DashboardPage({
               ))}
             </select>
           </label>
-          <label className="weekly-date-label">
-            년도
-            <select value={scheduleYearFilter} onChange={(e) => setScheduleYearFilter(e.target.value)}>
-              <option value="all">전체</option>
-              {scheduleYearOptions.map((yy) => (
-                <option key={yy} value={yy}>
-                  {yy}년
-                </option>
-              ))}
-            </select>
-          </label>
+          {baseScheduleYear ? (
+            <label className="weekly-date-label">
+              근무표 연도
+              <input
+                type="number"
+                min={2026}
+                step={1}
+                value={baseScheduleYear}
+                onChange={(e) => {
+                  const y = Math.max(2026, Math.floor(Number(e.target.value) || 2026));
+                  setSchedulePlanKey(`base_${y}`);
+                  setScheduleYearFilter("all");
+                }}
+                aria-label="근무표 연도 직접 입력"
+              />
+            </label>
+          ) : (
+            <label className="weekly-date-label">
+              년도
+              <select value={scheduleYearFilter} onChange={(e) => setScheduleYearFilter(e.target.value)}>
+                <option value="all">전체</option>
+                {scheduleYearOptions.map((yy) => (
+                  <option key={yy} value={yy}>
+                    {yy}년
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
+        {baseScheduleYear ? (
+          <p className="help" style={{ marginTop: 0, marginBottom: 8 }}>
+            {baseScheduleYear}년 1~12월 표시 · 3월 이후 미입력 칸은 빈칸(—)으로 두고 직접 입력할 수 있습니다.
+          </p>
+        ) : null}
         <div className="table-wrap work-schedule-wrap">
           <table className="work-schedule-table">
             <thead>
@@ -4958,8 +4983,7 @@ function DashboardPage({
       ) : null}
       {dashTab === "weekly" ? (
         <WeeklyScheduleTab
-          workScheduleRows={workScheduleRows}
-          workScheduleRows2027={workScheduleRows2027}
+          workScheduleByYear={workScheduleByYear}
           requests={requests}
           substituteAssignments={substituteAssignments}
           users={users}
@@ -4988,7 +5012,7 @@ function DashboardPage({
             <label className="weekly-date-label">
               년도
               <select value={generatorStartYm} onChange={(e) => setGeneratorStartYm(e.target.value)}>
-                {Array.from({ length: 12 }, (_, i) => 2025 + i).map((yy) => (
+                {generatorYearOptions(2025, 20).map((yy) => (
                   <option key={yy} value={String(yy)}>
                     {yy}년
                   </option>
