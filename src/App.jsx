@@ -1499,10 +1499,6 @@ function App() {
       setMessage("휴가 신청 권한이 없습니다.");
       return;
     }
-    if (viewerRole === "ANESTHESIA" && leaveType === "GOLDKEY") {
-      setMessage("마취과 간호사는 골드키 휴가를 신청할 수 없습니다.");
-      return;
-    }
     const payload = {
       id: `lr_${Date.now()}`,
       userId: auth.userId,
@@ -2406,6 +2402,7 @@ function App() {
               dashboard={dashboard}
               goldkeys={goldkeys}
               requests={requestsVisibleInUi}
+              requestsForGoldkey={requestsRawVisible}
               cancellations={cancellations}
               ladderResults={ladderResults}
               users={users}
@@ -4332,6 +4329,7 @@ function DashboardPage({
   dashboard,
   goldkeys,
   requests,
+  requestsForGoldkey,
   cancellations,
   ladderResults,
   users,
@@ -4581,6 +4579,15 @@ function DashboardPage({
           >
             주간 번표
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={dashTab === "summary"}
+            className={`segmented-btn${dashTab === "summary" ? " segmented-btn--active" : ""}`}
+            onClick={() => setDashTab("summary")}
+          >
+            골드키
+          </button>
         </div>
       ) : (
         <div className="segmented-wrap segmented-wrap--multi" role="tablist" aria-label="현황 구분">
@@ -4633,9 +4640,9 @@ function DashboardPage({
           ) : null}
         </div>
       )}
-      {currentRole !== "ANESTHESIA" && currentRole !== "ADMIN2" && dashTab === "summary" ? (
+      {dashTab === "summary" ? (
         <section className="card">
-          <h2 className="screen-title">골드키</h2>
+          <h2 className="screen-title">골드키{currentRole === "ANESTHESIA" || currentRole === "ADMIN2" ? " (마취과)" : ""}</h2>
           <p className="help page-lead goldkey-policy-note">
             <span>상반기 장기휴가 신청기간(1~6월) : 전년도 10월 1일 ~ 10일</span>
             <span>하반기 장기휴가 신청기간(7~12월) : 해당년도 4월 1일 ~ 10일</span>
@@ -4654,12 +4661,19 @@ function DashboardPage({
               </thead>
               <tbody>
                 {users
-                  .filter((u) => u.role === "NURSE")
+                  .filter((u) =>
+                    currentRole === "ANESTHESIA" || currentRole === "ADMIN2" ? u.role === "ANESTHESIA" : u.role === "NURSE"
+                  )
                   .sort((a, b) => a.name.localeCompare(b.name, "ko"))
                   .map((u) => {
                     const g = goldkeys.find((x) => x.userId === u.id);
                     const quotaTotal = goldkeyQuotaTotalForDisplay(u, g, serverMode);
-                    const applyUse = countGoldkeyApplyUse(requests, u.id, new Date().toISOString(), cancellations);
+                    const applyUse = countGoldkeyApplyUse(
+                      requestsForGoldkey ?? requests,
+                      u.id,
+                      new Date().toISOString(),
+                      cancellations
+                    );
                     const remaining = Math.max(0, quotaTotal - applyUse);
                     return (
                       <tr key={u.id}>
@@ -7135,7 +7149,7 @@ function CalendarPage({
                       <form className="grid calendar-apply-form" onSubmit={submitRequest}>
                         <label className="field-label">휴가 구분</label>
                         <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)} aria-label="휴가 구분">
-                          {viewerRole !== "ANESTHESIA" ? <option value="GOLDKEY">골드키</option> : null}
+                          <option value="GOLDKEY">골드키</option>
                           <option value="GENERAL_PRIORITY">일반휴가-우선순위</option>
                           <option value="GENERAL_NORMAL">일반휴가-후순위</option>
                           <option value="HALF_DAY">반차</option>
@@ -7147,7 +7161,7 @@ function CalendarPage({
                         <input type="text" placeholder="신청 메모" value={memo} onChange={(e) => setMemo(e.target.value)} />
                         <button type="submit">신청</button>
                       </form>
-                      {viewerRole !== "ANESTHESIA" ? (
+                      {(viewerRole === "NURSE" || viewerRole === "ANESTHESIA") && myGoldkey ? (
                         <p className="help">내 골드키 잔여: {myGoldkey?.remainingCount ?? 0} / {myGoldkey?.quotaTotal ?? 0}</p>
                       ) : null}
                       {message ? <p className="msg">{message}</p> : null}

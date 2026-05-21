@@ -74,15 +74,26 @@ export const users = [
   })),
 ];
 
-export const initialGoldkeys = NURSE_NAMES.map((name, idx) => {
-  const q = defaultGoldkeyQuotaForName(name);
-  return {
-    userId: `u_nurse_${idx + 1}`,
-    quotaTotal: q,
-    usedCount: 0,
-    remainingCount: q,
-  };
-});
+export const initialGoldkeys = [
+  ...NURSE_NAMES.map((name, idx) => {
+    const q = defaultGoldkeyQuotaForName(name);
+    return {
+      userId: `u_nurse_${idx + 1}`,
+      quotaTotal: q,
+      usedCount: 0,
+      remainingCount: q,
+    };
+  }),
+  ...ANESTHESIA_NAMES.map((name, idx) => {
+    const q = defaultGoldkeyQuotaForName(name);
+    return {
+      userId: `u_anesthesia_${idx + 1}`,
+      quotaTotal: q,
+      usedCount: 0,
+      remainingCount: q,
+    };
+  }),
+];
 
 export const initialRequests = [];
 export const initialPriorityNotes = [];

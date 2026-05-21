@@ -594,7 +594,7 @@ async function seedDefaultsIfEmpty() {
 }
 
 async function ensureGoldkeyDefaults() {
-  const nurses = await queryAll("SELECT id, name FROM users WHERE role = 'NURSE'");
+  const nurses = await queryAll("SELECT id, name FROM users WHERE role IN ('NURSE', 'ANESTHESIA')");
 
   for (const nurse of nurses) {
     const target = defaultGoldkeyQuotaForName(nurse.name);
@@ -832,7 +832,7 @@ export async function runTransaction(fn) {
 
 /** 휴가 신청·부가 테이블 전부 삭제 후 간호사 골드키를 이름별 기본 총량·미사용으로 되돌림 */
 export async function resetLeaveDataToDefaults() {
-  const nurses = await queryAll("SELECT id, name FROM users WHERE role = 'NURSE'");
+  const nurses = await queryAll("SELECT id, name FROM users WHERE role IN ('NURSE', 'ANESTHESIA')");
   await runTransaction(async (tx) => {
     await tx.execute("DELETE FROM leave_request_audit");
     await tx.execute("DELETE FROM notes");

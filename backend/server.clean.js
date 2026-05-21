@@ -1511,9 +1511,6 @@ app.post("/api/requests", async (req, res) => {
     if (user.role !== "NURSE" && user.role !== "ANESTHESIA") {
       return res.status(403).json({ error: "휴가 신청 권한이 없습니다." });
     }
-    if (user.role === "ANESTHESIA" && leaveType === "GOLDKEY") {
-      return res.status(403).json({ error: "마취과 간호사는 골드키 휴가를 신청할 수 없습니다." });
-    }
     if (!ALLOWED_LEAVE_TYPES.has(leaveType)) {
       return res.status(400).json({ error: "지원하지 않는 휴가 구분입니다." });
     }
