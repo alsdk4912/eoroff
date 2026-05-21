@@ -99,6 +99,25 @@ export function canSaveMonthlyWorkSchedule(viewerRole) {
   return ["ADMIN", "NURSE", "ANESTHESIA", "ADMIN2", "CHIEF", "ADMIN3"].includes(role);
 }
 
+/** 주간 번표 셀 선택박스 편집 (역할·본인 행 기준) */
+export function canEditWeeklyScheduleCell(viewerRole, staffUser, viewerUserId) {
+  const vr = String(viewerRole ?? "").trim();
+  const tr = String(staffUser?.role ?? "").trim();
+  const sid = String(staffUser?.id ?? "");
+  const vid = String(viewerUserId ?? "");
+  if (vr === "ADMIN") return true;
+  if (sid && vid && sid === vid) return true;
+  if (tr === "ANESTHESIA") return vr === "ANESTHESIA" || vr === "ADMIN2";
+  if (tr === "CHIEF") return vr === "CHIEF" || vr === "ADMIN3";
+  if (tr === "NURSE") return vr === "NURSE" || vr === "ADMIN";
+  return false;
+}
+
+export function canUseWeeklyScheduleEditor(viewerRole) {
+  const role = String(viewerRole ?? "").trim();
+  return ["ADMIN", "NURSE", "ANESTHESIA", "ADMIN2", "CHIEF", "ADMIN3"].includes(role);
+}
+
 /** 역할별 저장 시 다른 섹션 행은 기존 값 유지 */
 export function mergeMonthlySaveDraft(saved, draft, templateRows, viewerRole) {
   const base = mergeWorkScheduleRows(saved, templateRows);

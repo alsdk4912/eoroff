@@ -40,6 +40,8 @@ import {
   ANESTHESIA_MONTHLY_NAMES,
   CHIEF_MONTHLY_NAMES,
   canEditMonthlyScheduleCell,
+  canEditWeeklyScheduleCell,
+  canUseWeeklyScheduleEditor,
   canSaveMonthlyWorkSchedule,
   emptyScheduleMonthValues,
   mergeMonthlySaveDraft,
@@ -2498,6 +2500,7 @@ function App() {
               users={users}
               serverMode={serverMode}
               currentRole={currentUser?.role}
+              currentUserId={auth?.userId}
               workScheduleByYear={workScheduleByYear}
               onSaveWorkScheduleForYear={saveWorkScheduleForYear}
               generatedMonthlySchedules={generatedMonthlySchedules}
@@ -3513,9 +3516,9 @@ function WeeklyScheduleTab({
   weeklyCellOverrides,
   setWeeklyCellOverrides,
   persistWeeklyCellOverridesToServer,
-  canEditWeekly,
   isAdmin,
   viewerRole,
+  viewerUserId,
 }) {
   const [weekAnchor, setWeekAnchor] = useState(() => toLocalYMD(new Date()));
   const [draftOverrides, setDraftOverrides] = useState(() => ({ ...(weeklyCellOverrides || {}) }));
@@ -3663,8 +3666,7 @@ function WeeklyScheduleTab({
               const prevName = rowIdx > 0 ? rows[rowIdx - 1]?.name : null;
               const sep = separatorBeforeMonthlyRow(u.name, prevName);
               const sec = monthlyRowSection(u.name);
-              const cellEditable =
-                canEditWeekly && canEditMonthlyScheduleCell(viewerRole, u.name);
+              const cellEditable = canEditWeeklyScheduleCell(viewerRole, u, viewerUserId);
               const out = [];
               if (sep) {
                 out.push(
@@ -3731,7 +3733,7 @@ function WeeklyScheduleTab({
           </tbody>
         </table>
       </div>
-      {canEditWeekly ? (
+      {canUseWeeklyScheduleEditor(viewerRole) ? (
         <div className="weekly-table-footer">
           <div className="weekly-footer-actions">
             {weeklyMsg ? (
@@ -4447,6 +4449,7 @@ function DashboardPage({
   users,
   serverMode,
   currentRole,
+  currentUserId,
   workScheduleByYear,
   onSaveWorkScheduleForYear,
   generatedMonthlySchedules,
@@ -5021,16 +5024,9 @@ function DashboardPage({
           weeklyCellOverrides={weeklyCellOverrides}
           setWeeklyCellOverrides={setWeeklyCellOverrides}
           persistWeeklyCellOverridesToServer={persistWeeklyCellOverridesToServer}
-          canEditWeekly={
-            currentRole === "NURSE" ||
-            currentRole === "ADMIN" ||
-            currentRole === "ANESTHESIA" ||
-            currentRole === "ADMIN2" ||
-            currentRole === "CHIEF" ||
-            currentRole === "ADMIN3"
-          }
           isAdmin={isAdmin}
           viewerRole={currentRole}
+          viewerUserId={currentUserId}
         />
       ) : null}
       {isAdmin && dashTab === "monthly-generator" ? (
