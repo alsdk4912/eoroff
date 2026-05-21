@@ -1350,6 +1350,9 @@ app.post("/api/substitute-assignments/:requestId/upsert", async (req, res) => {
     if (standaloneM) {
       leaveDateFromRequest = standaloneM[1];
       leaveUserIdForSub = STANDALONE_SUBSTITUTE_LEAVE_USER_ID;
+      if (actor.role !== "ADMIN") {
+        return res.status(403).json({ error: "수술실 대체 근무는 관리자만 지정할 수 있습니다." });
+      }
     } else {
       const reqRow = await queryOne(
         `SELECT id, user_id, leave_date, status FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`,
@@ -1370,16 +1373,12 @@ app.post("/api/substitute-assignments/:requestId/upsert", async (req, res) => {
         if (actor.role !== "ADMIN3") {
           return res.status(403).json({ error: "주임 대체 근무는 관리자3만 지정할 수 있습니다." });
         }
-      } else if (!standaloneM && leaveRole === "NURSE") {
+      } else if (leaveRole === "NURSE") {
         if (actor.role !== "ADMIN") {
           return res.status(403).json({ error: "수술실 대체 근무는 관리자만 지정할 수 있습니다." });
         }
-      } else if (!standaloneM) {
+      } else {
         return res.status(403).json({ error: "권한이 없습니다." });
-      }
-    } else if (standaloneM) {
-      if (actor.role !== "ADMIN") {
-        return res.status(403).json({ error: "수술실 대체 근무는 관리자만 지정할 수 있습니다." });
       }
     }
 
