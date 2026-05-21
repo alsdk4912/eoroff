@@ -29,6 +29,14 @@ import {
 } from "./utils/rules";
 import { api } from "./api/client";
 import { defaultGoldkeyQuotaForName } from "./data/goldkeyQuotas.js";
+import {
+  ANESTHESIA_SHIFT_OPTIONS,
+  CHIEF_SHIFT_OPTIONS,
+  NURSE_SHIFT_OPTIONS,
+  shiftOptionSetForRole,
+  shiftOptionsForRole,
+  weeklyStaffForViewer,
+} from "./data/shiftCodes.js";
 import { consumeManualVersionReloadToast, restoreHashAfterReload, useAppUpdate } from "./useAppUpdate.js";
 import { buildAutoHolidayDutyPlan } from "./utils/holidayDutyPlan.clean.js";
 import {
@@ -3092,31 +3100,10 @@ const WORK_SCHEDULE_2027_ROWS = [
   { name: "최유경", values: ["7D1", "수E"] },
   { name: "정수영", values: ["3D1", "3D1"] },
 ];
-const WORK_SCHEDULE_OPTIONS = [
-  "",
-  "안E",
-  "안D0",
-  "수E",
-  "9-5",
-  "5D2",
-  "3",
-  "3D1",
-  "7D2",
-  "6D2",
-  "6D1",
-  "3D2",
-  "1D2",
-  "7D1",
-  "1D1",
-  "5D1",
-  "PRN",
-  "휴가",
-  "공가",
-  "반차",
-  "필수교육",
-];
+/** 수술실 월간·주간 번표 (마취·주임은 shiftCodes.js 역할별 목록) */
+const WORK_SCHEDULE_OPTIONS = NURSE_SHIFT_OPTIONS;
 const CUSTOM_SHIFT_SENTINEL = "__CUSTOM_SHIFT__";
-const WORK_SCHEDULE_OPTION_SET = new Set(WORK_SCHEDULE_OPTIONS.filter((x) => x));
+const WORK_SCHEDULE_OPTION_SET = shiftOptionSetForRole("NURSE");
 const WEEKLY_LEAVE_MARK_OPTIONS = ["휴가", "공가", "반차", "필수교육", "off"];
 
 function isCustomShiftCodeValue(value) {
@@ -3135,6 +3122,12 @@ function customShiftText(value) {
 function normalizeShiftCodeForSave(value) {
   if (isCustomShiftCodeValue(value)) return customShiftText(value).trim();
   return String(value ?? "").trim();
+}
+
+function resolveShiftCodeFromStored(rawShift, role) {
+  const raw = String(rawShift ?? "");
+  if (!raw) return "";
+  return shiftOptionSetForRole(role).has(raw) ? raw : toCustomShiftCode(raw);
 }
 
 function parseYmdToLocalDate(ymd) {
@@ -3476,6 +3469,7 @@ function WeeklyScheduleTab({
   persistWeeklyCellOverridesToServer,
   canEditWeekly,
   isAdmin,
+  viewerRole,
 }) {
   const [weekAnchor, setWeekAnchor] = useState(() => toLocalYMD(new Date()));
   const [draftOverrides, setDraftOverrides] = useState(() => ({ ...(weeklyCellOverrides || {}) }));
@@ -3492,7 +3486,13 @@ function WeeklyScheduleTab({
   const mon = mondayOfWeekContaining(weekAnchor);
   const days = Array.from({ length: 7 }, (_, i) => addDaysToYmd(mon, i));
   const dayLabels = ["월", "화", "수", "목", "금", "토", "일"];
-  const nurses = users.filter((u) => u.role === "NURSE").sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  const nurses = weeklyStaffForViewer(users, viewerRole);
+  const rosterNameCol =
+    viewerRole === "ANESTHESIA" || viewerRole === "ADMIN2"
+      ? "마취과"
+      : viewerRole === "CHIEF" || viewerRole === "ADMIN3"
+        ? "주임"
+        : "간호사";
 
   /** 주말·공휴일(명절 등 캐시된 휴일) 열 — 일반 근무가 없는 날짜 강조 */
   function isWeeklyRestDayColumn(ymd) {
@@ -3607,7 +3607,7 @@ function WeeklyScheduleTab({
         <table className="weekly-schedule-table">
           <thead>
             <tr>
-              <th className="weekly-th-name">간호사</th>
+              <th className="weekly-th-name">{rosterNameCol}</th>
               {days.map((d, i) => (
                 <th
                   key={d}
@@ -3648,7 +3648,9 @@ function WeeklyScheduleTab({
                               {mark}
                             </option>
                           ))}
-                          {WORK_SCHEDULE_OPTIONS.filter((x) => x && !WEEKLY_LEAVE_MARK_OPTIONS.includes(x) && x !== autoMain).map((opt) => (
+                          {shiftOptionsForRole(u.role)
+                            .filter((x) => x && !WEEKLY_LEAVE_MARK_OPTIONS.includes(x) && x !== autoMain)
+                            .map((opt) => (
                             <option key={`base-${opt}`} value={`__base__:${opt}`}>
                               {opt}
                             </option>
@@ -3711,18 +3713,24 @@ function AdminDayRequestCard({
         seeded.map((s, idx) => ({
           rowId: String(s?.id ?? `sub_row_${requestRow.id}_${idx}`),
           substituteUserId: String(s?.substituteUserId ?? ""),
-          shiftCode: (() => {
-            const rawShift = String(s?.shiftCode ?? "");
-            if (!rawShift) return "";
-            return WORK_SCHEDULE_OPTION_SET.has(rawShift) ? rawShift : toCustomShiftCode(rawShift);
-          })(),
+          shiftCode: resolveShiftCodeFromStored(s?.shiftCode, leaveRole),
         }))
       );
       return;
     }
     setSubRows([{ rowId: `sub_row_${requestRow.id}_0`, substituteUserId: "", shiftCode: "" }]);
-  }, [requestRow.id, substituteRecs]);
-  const nm = users.find((u) => u.id === requestRow.userId)?.name ?? requestRow.userId;
+  }, [requestRow.id, substituteRecs, leaveRole]);
+  const leaveUser = users.find((u) => u.id === requestRow.userId);
+  const leaveRole = leaveUser?.role ?? "NURSE";
+  const substitutePool = useMemo(
+    () =>
+      users
+        .filter((u) => u.role === leaveRole)
+        .sort((a, b) => a.name.localeCompare(b.name, "ko")),
+    [users, leaveRole]
+  );
+  const shiftOpts = shiftOptionsForRole(leaveRole);
+  const nm = leaveUser?.name ?? requestRow.userId;
   const approved = isWinnerStatus(requestRow.status);
   const calendarPanel = substituteLayout === "calendarPanel";
   function updateSubRow(rowId, key, value) {
@@ -3760,7 +3768,7 @@ function AdminDayRequestCard({
                 <span className="field-label">대체 인력 {idx + 1}</span>
                 <select value={row.substituteUserId} onChange={(e) => updateSubRow(row.rowId, "substituteUserId", e.target.value)}>
                   <option value="">(선택 없이 확정 가능)</option>
-                  {nurseUsers.map((u) => (
+                  {substitutePool.map((u) => (
                     <option key={u.id} value={u.id} disabled={u.id === requestRow.userId}>
                       {u.name}
                     </option>
@@ -3781,7 +3789,7 @@ function AdminDayRequestCard({
                   }}
                 >
                   <option value="">—</option>
-                  {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
+                  {shiftOpts.filter((x) => x).map((opt) => (
                     <option key={opt} value={opt}>
                       {opt}
                     </option>
@@ -3826,7 +3834,7 @@ function AdminDayRequestCard({
                 <span className="field-label">대체 인력 {idx + 1}</span>
                 <select value={row.substituteUserId} onChange={(e) => updateSubRow(row.rowId, "substituteUserId", e.target.value)}>
                   <option value="">—</option>
-                  {nurseUsers.map((u) => (
+                  {substitutePool.map((u) => (
                     <option key={u.id} value={u.id} disabled={u.id === requestRow.userId}>
                       {u.name}
                     </option>
@@ -3847,7 +3855,7 @@ function AdminDayRequestCard({
                   }}
                 >
                   <option value="">—</option>
-                  {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
+                  {shiftOpts.filter((x) => x).map((opt) => (
                     <option key={opt} value={opt}>
                       {opt}
                     </option>
@@ -4898,8 +4906,16 @@ function DashboardPage({
           weeklyCellOverrides={weeklyCellOverrides}
           setWeeklyCellOverrides={setWeeklyCellOverrides}
           persistWeeklyCellOverridesToServer={persistWeeklyCellOverridesToServer}
-          canEditWeekly={currentRole === "NURSE" || currentRole === "ADMIN" || currentRole === "ANESTHESIA"}
+          canEditWeekly={
+            currentRole === "NURSE" ||
+            currentRole === "ADMIN" ||
+            currentRole === "ANESTHESIA" ||
+            currentRole === "ADMIN2" ||
+            currentRole === "CHIEF" ||
+            currentRole === "ADMIN3"
+          }
           isAdmin={isAdmin}
+          viewerRole={currentRole}
         />
       ) : null}
       {isAdmin && dashTab === "monthly-generator" ? (
@@ -6290,10 +6306,14 @@ function CalendarPage({
     const sid = standaloneSubstituteRequestId(selectedYmd);
     const orphanRecs = getSubstituteRecordsForRequest(substituteAssignments, sid);
 
-    const shiftCell = (s) => {
-      const rawShift = String(s?.shiftCode ?? "");
-      if (!rawShift) return "";
-      return WORK_SCHEDULE_OPTION_SET.has(rawShift) ? rawShift : toCustomShiftCode(rawShift);
+    const defaultSubRole = isAnesthesiaLeaveAdmin ? "ANESTHESIA" : isChiefLeaveAdmin ? "CHIEF" : "NURSE";
+    const shiftCell = (s, requestId) => {
+      let role = defaultSubRole;
+      if (requestId && requestId !== sid) {
+        const req = targets.find((t) => t.id === requestId);
+        role = users.find((u) => u.id === req?.userId)?.role ?? defaultSubRole;
+      }
+      return resolveShiftCodeFromStored(s?.shiftCode, role);
     };
 
     if (targets.length === 0) {
@@ -6303,7 +6323,7 @@ function CalendarPage({
             rowId: `cal_standalone_${sid}_${idx}`,
             requestId: sid,
             substituteUserId: String(s?.substituteUserId ?? ""),
-            shiftCode: shiftCell(s),
+            shiftCode: shiftCell(s, sid),
           }))
         );
         return;
@@ -6324,7 +6344,7 @@ function CalendarPage({
           rowId: `cal_sub_${t.id}_${idx}`,
           requestId: t.id,
           substituteUserId: String(s?.substituteUserId ?? ""),
-          shiftCode: shiftCell(s),
+          shiftCode: shiftCell(s, t.id),
         });
       }
     }
@@ -6334,7 +6354,7 @@ function CalendarPage({
         rowId: `cal_standalone_${sid}_${idx}`,
         requestId: sid,
         substituteUserId: String(s?.substituteUserId ?? ""),
-        shiftCode: shiftCell(s),
+        shiftCode: shiftCell(s, sid),
       });
     }
     if (restored.length > 0) {
@@ -6351,7 +6371,7 @@ function CalendarPage({
         shiftCode: "",
       },
     ]);
-  }, [selectedYmd, calendarSubTargetRequests, substituteAssignments]);
+  }, [selectedYmd, calendarSubTargetRequests, substituteAssignments, users, isAnesthesiaLeaveAdmin, isChiefLeaveAdmin]);
 
   const selectedDayComments = useMemo(() => {
     if (!selectedYmd) return [];
@@ -7170,7 +7190,7 @@ function CalendarPage({
                                   }}
                                 >
                                   <option value="">대체 근무 번표</option>
-                                  {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
+                                  {NURSE_SHIFT_OPTIONS.filter((x) => x).map((opt) => (
                                     <option key={opt} value={opt}>
                                       {opt}
                                     </option>
@@ -7233,7 +7253,7 @@ function CalendarPage({
                                   }}
                                 >
                                   <option value="">대체 근무 번표</option>
-                                  {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
+                                  {ANESTHESIA_SHIFT_OPTIONS.filter((x) => x).map((opt) => (
                                     <option key={opt} value={opt}>
                                       {opt}
                                     </option>
@@ -7243,7 +7263,7 @@ function CalendarPage({
                                 {isCustomShiftCodeValue(row.shiftCode) ? (
                                   <input
                                     type="text"
-                                    placeholder="예: 3 9-5"
+                                    placeholder="예: D0"
                                     value={customShiftText(row.shiftCode)}
                                     onChange={(e) => updateCalendarSubRow(row.rowId, "shiftCode", toCustomShiftCode(e.target.value))}
                                   />
@@ -7296,7 +7316,7 @@ function CalendarPage({
                                   }}
                                 >
                                   <option value="">대체 근무 번표</option>
-                                  {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
+                                  {CHIEF_SHIFT_OPTIONS.filter((x) => x).map((opt) => (
                                     <option key={opt} value={opt}>
                                       {opt}
                                     </option>
@@ -7306,7 +7326,7 @@ function CalendarPage({
                                 {isCustomShiftCodeValue(row.shiftCode) ? (
                                   <input
                                     type="text"
-                                    placeholder="예: 3 9-5"
+                                    placeholder="예: D1"
                                     value={customShiftText(row.shiftCode)}
                                     onChange={(e) => updateCalendarSubRow(row.rowId, "shiftCode", toCustomShiftCode(e.target.value))}
                                   />
