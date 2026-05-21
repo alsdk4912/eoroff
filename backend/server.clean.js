@@ -1030,7 +1030,10 @@ app.post("/api/day-comments/:id/delete", async (req, res) => {
 app.post("/api/notices", async (req, res) => {
   try {
     const { actorUserId, title, content } = req.body ?? {};
-    const actor = await queryOne("SELECT id FROM users WHERE id = ? AND role IN ('ADMIN', 'NURSE')", actorUserId);
+    const actor = await queryOne(
+      "SELECT id FROM users WHERE id = ? AND role IN ('ADMIN', 'ADMIN2', 'NURSE', 'ANESTHESIA')",
+      actorUserId
+    );
     if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
     const t = String(title ?? "").trim();
     const c = String(content ?? "").trim();
@@ -1061,11 +1064,15 @@ app.post("/api/notices/:id/update", async (req, res) => {
     const noticeId = String(req.params.id ?? "").trim();
     if (!noticeId) return res.status(400).json({ error: "notice id가 필요합니다." });
     const { actorUserId, title, content } = req.body ?? {};
-    const actor = await queryOne("SELECT id, role FROM users WHERE id = ? AND role IN ('ADMIN', 'NURSE')", actorUserId);
+    const actor = await queryOne(
+      "SELECT id, role FROM users WHERE id = ? AND role IN ('ADMIN', 'ADMIN2', 'NURSE', 'ANESTHESIA')",
+      actorUserId
+    );
     if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
     const row = await queryOne("SELECT id, user_id FROM notices WHERE id = ?", noticeId);
     if (!row) return res.status(404).json({ error: "공지사항을 찾을 수 없습니다." });
-    const canManage = actor.role === "ADMIN" || String(row.user_id) === String(actorUserId);
+    const canManage =
+      actor.role === "ADMIN" || actor.role === "ADMIN2" || String(row.user_id) === String(actorUserId);
     if (!canManage) return res.status(403).json({ error: "작성자 또는 관리자만 수정할 수 있습니다." });
     const t = String(title ?? "").trim();
     const c = String(content ?? "").trim();
@@ -1086,11 +1093,15 @@ app.post("/api/notices/:id/delete", async (req, res) => {
     const noticeId = String(req.params.id ?? "").trim();
     if (!noticeId) return res.status(400).json({ error: "notice id가 필요합니다." });
     const { actorUserId } = req.body ?? {};
-    const actor = await queryOne("SELECT id, role FROM users WHERE id = ? AND role IN ('ADMIN', 'NURSE')", actorUserId);
+    const actor = await queryOne(
+      "SELECT id, role FROM users WHERE id = ? AND role IN ('ADMIN', 'ADMIN2', 'NURSE', 'ANESTHESIA')",
+      actorUserId
+    );
     if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
     const row = await queryOne("SELECT id, user_id FROM notices WHERE id = ?", noticeId);
     if (!row) return res.status(404).json({ error: "공지사항을 찾을 수 없습니다." });
-    const canManage = actor.role === "ADMIN" || String(row.user_id) === String(actorUserId);
+    const canManage =
+      actor.role === "ADMIN" || actor.role === "ADMIN2" || String(row.user_id) === String(actorUserId);
     if (!canManage) return res.status(403).json({ error: "작성자 또는 관리자만 삭제할 수 있습니다." });
     await execute("DELETE FROM notice_comments WHERE notice_id = ?", noticeId);
     await execute("DELETE FROM notices WHERE id = ?", noticeId);
@@ -1105,7 +1116,7 @@ app.post("/api/notice-comments", async (req, res) => {
   try {
     const { actorUserId, noticeId, content } = req.body ?? {};
     const actor = await queryOne(
-      "SELECT id FROM users WHERE id = ? AND role IN ('ADMIN', 'NURSE', 'ANESTHESIA')",
+      "SELECT id FROM users WHERE id = ? AND role IN ('ADMIN', 'ADMIN2', 'NURSE', 'ANESTHESIA')",
       actorUserId
     );
     if (!actor) return res.status(403).json({ error: "권한이 없습니다." });

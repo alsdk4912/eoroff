@@ -2438,7 +2438,7 @@ function App() {
               noticeComments={noticeComments}
               users={users}
               currentUserId={auth?.userId}
-              isAdmin={isAdmin}
+              isAdmin={isOrLeaveAdmin || isAnesthesiaLeaveAdmin}
               createNotice={createNotice}
               updateNotice={updateNotice}
               deleteNotice={deleteNotice}
@@ -4987,8 +4987,9 @@ function navLinkClass({ isActive }) {
 
 /** 하단 고정 탭 — 한 손 엄지로 주요 화면 전환 */
 function AppBottomNav({ isOrLeaveAdmin, isAnesthesiaLeaveAdmin, role }) {
-  const showLadder = role !== "ANESTHESIA" && role !== "ADMIN2";
   const showMy = role === "NURSE" || role === "ANESTHESIA";
+  const showNotices =
+    role === "NURSE" || role === "ANESTHESIA" || role === "ADMIN" || role === "ADMIN2";
 
   if (isOrLeaveAdmin) {
     return (
@@ -5044,7 +5045,7 @@ function AppBottomNav({ isOrLeaveAdmin, isAnesthesiaLeaveAdmin, role }) {
       <NavLink to="/dashboard" className={navLinkClass}>
         현황
       </NavLink>
-      {showLadder ? (
+      {showNotices ? (
         <NavLink to="/notices" className={navLinkClass}>
           공지사항
         </NavLink>
@@ -5199,6 +5200,7 @@ function NoticeBoardPage({
   );
   const canWriteNoticeComments =
     currentRole === "ADMIN" || currentRole === "ADMIN2" || currentRole === "NURSE" || currentRole === "ANESTHESIA";
+  const canWriteNotices = canWriteNoticeComments;
 
   const commentsForSelected = useMemo(() => {
     if (!selected?.id) return [];
@@ -5243,7 +5245,8 @@ function NoticeBoardPage({
   return (
     <section className="card notice-board-card">
       <h2 className="screen-title">공지사항</h2>
-      <p className="help page-lead">관리자와 간호사가 함께 공유하는 공지 게시판입니다.</p>
+      <p className="help page-lead">수술실·마취과·관리자가 함께 공유하는 공지 게시판입니다.</p>
+      {canWriteNotices ? (
       <div className="notice-board-toolbar">
         <button
           type="button"
@@ -5253,7 +5256,8 @@ function NoticeBoardPage({
           {composeOpen ? "등록 닫기" : "게시글 등록"}
         </button>
       </div>
-      {composeOpen ? (
+      ) : null}
+      {canWriteNotices && composeOpen ? (
         <form className="grid notice-compose-form" onSubmit={submitNotice}>
           <input type="text" maxLength={80} placeholder="제목 (최대 80자)" value={title} onChange={(e) => setTitle(e.target.value)} />
           <textarea rows={4} maxLength={2000} placeholder="내용 (최대 2000자)" value={content} onChange={(e) => setContent(e.target.value)} />
