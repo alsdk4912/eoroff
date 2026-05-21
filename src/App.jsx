@@ -3319,6 +3319,8 @@ function dutyNurseIdSet(ymd, holidayDuties) {
   const s = new Set();
   if (row?.nurse1UserId) s.add(String(row.nurse1UserId));
   if (row?.nurse2UserId) s.add(String(row.nurse2UserId));
+  const anes = row?.anesthesiaUserId ?? row?.anesthesia_user_id;
+  if (anes) s.add(String(anes));
   return s;
 }
 
