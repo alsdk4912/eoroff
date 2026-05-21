@@ -556,10 +556,12 @@ function App() {
 
   /** 로컬 캐시에 남은 2026 근무표 9·10월 오입력 보정 */
   useEffect(() => {
-    setWorkScheduleRows((prev) => {
-      if (!Array.isArray(prev)) return prev;
+    setWorkScheduleByYear((prev) => {
+      const by = normalizeWorkScheduleByYear(prev, WORK_SCHEDULE_TEMPLATES);
+      const rows2026 = by["2026"];
+      if (!Array.isArray(rows2026)) return prev;
       let fix = false;
-      const next = prev.map((row) => {
+      const nextRows = rows2026.map((row) => {
         const vals = Array.isArray(row.values) ? [...row.values] : [];
         let rowFix = false;
         const septRule = SEPT_2026_SCHEDULE_FIXES.get(row.name);
@@ -577,9 +579,10 @@ function App() {
         if (rowFix) fix = true;
         return rowFix ? { ...row, values: vals } : row;
       });
-      return fix ? next : prev;
+      if (!fix) return prev;
+      return { ...by, "2026": nextRows };
     });
-  }, [setWorkScheduleRows]);
+  }, [setWorkScheduleByYear]);
 
   const [leaveType, setLeaveType] = useState("GOLDKEY");
   const [leaveDate, setLeaveDate] = useState(() => toLocalYMD(new Date()));
