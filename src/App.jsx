@@ -89,7 +89,8 @@ const LS_ADMIN_DAY_MEMOS = "or.adminDayMemos.v1";
 const LS_DAY_COMMENTS = "or.dayComments.v1";
 const LS_WORK_SCHEDULE_2026 = "or.workSchedule2026.v2";
 const LS_WORK_SCHEDULE_2027 = "or.workSchedule2027.v1";
-const LS_WORK_SCHEDULE_BY_YEAR = "or.workScheduleByYear.v1";
+const LS_WORK_SCHEDULE_BY_YEAR = "or.workScheduleByYear.v2";
+const LS_WORK_SCHEDULE_BY_YEAR_LEGACY = "or.workScheduleByYear.v1";
 const LS_GENERATED_MONTHLY_SCHEDULES = "or.generatedMonthlySchedules.v1";
 /** 승인 시 지정하는 대체 근무(서버 동기화 + 로컬 캐시) */
 const LS_SUBSTITUTE_ASSIGNMENTS = "or.substituteAssignments.v1";
@@ -520,7 +521,12 @@ function App() {
   const [dayComments, setDayComments] = useLocalStorage(LS_DAY_COMMENTS, []);
   const [workScheduleByYear, setWorkScheduleByYear] = useLocalStorage(LS_WORK_SCHEDULE_BY_YEAR, () =>
     loadWorkScheduleByYearFromStorage(
-      { byYear: LS_WORK_SCHEDULE_BY_YEAR, y2026: LS_WORK_SCHEDULE_2026, y2027: LS_WORK_SCHEDULE_2027 },
+      {
+        byYear: LS_WORK_SCHEDULE_BY_YEAR,
+        byYearLegacy: LS_WORK_SCHEDULE_BY_YEAR_LEGACY,
+        y2026: LS_WORK_SCHEDULE_2026,
+        y2027: LS_WORK_SCHEDULE_2027,
+      },
       WORK_SCHEDULE_TEMPLATES
     )
   );

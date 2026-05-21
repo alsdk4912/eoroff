@@ -54,43 +54,74 @@ export function getWorkScheduleTemplateForYear(year, templates) {
   return rows2026;
 }
 
+/**
+ * 저장 칸이 비어 있으면 코드 시드로 채움(직접 입력·수정한 칸은 유지).
+ */
+export function rehydrateScheduleFromSeed(saved, seedTemplate) {
+  const template = Array.isArray(seedTemplate) ? seedTemplate : [];
+  const savedMap = new Map((Array.isArray(saved) ? saved : []).map((r) => [String(r?.name ?? ""), r]));
+  return template.map((t) => {
+    const hit = savedMap.get(t.name);
+    const seedVals = Array.isArray(t.values) ? t.values : [];
+    const savedVals = Array.isArray(hit?.values) ? hit.values : [];
+    const len = Math.max(seedVals.length, savedVals.length, SCHEDULE_MONTH_COUNT);
+    const values = Array.from({ length: len }, (_, i) => {
+      const s = String(savedVals[i] ?? "").trim();
+      const sd = String(seedVals[i] ?? "").trim();
+      return s || sd || "";
+    });
+    return { name: t.name, values };
+  });
+}
+
+function tryParseLocalStorageJson(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw == null) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 export function normalizeWorkScheduleByYear(byYear, templates) {
   const src = byYear && typeof byYear === "object" ? byYear : {};
   const out = {};
   for (const key of Object.keys(src)) {
     const y = Number(key);
     if (!Number.isFinite(y) || y < 2026) continue;
-    const template = getWorkScheduleTemplateForYear(y, templates);
-    out[String(y)] = mergeWorkScheduleRows(src[key], template);
+    if (y === 2026) {
+      out["2026"] = rehydrateScheduleFromSeed(src[key], templates.rows2026);
+    } else if (y === 2027) {
+      out["2027"] = rehydrateScheduleFromSeed(src[key], templates.rows2027);
+    } else {
+      out[String(y)] = mergeWorkScheduleRows(src[key], getWorkScheduleTemplateForYear(y, templates));
+    }
   }
-  if (!out["2026"]) out["2026"] = mergeWorkScheduleRows(null, templates.rows2026);
-  if (!out["2027"]) out["2027"] = mergeWorkScheduleRows(null, templates.rows2027);
+  if (!out["2026"]) out["2026"] = rehydrateScheduleFromSeed(null, templates.rows2026);
+  if (!out["2027"]) out["2027"] = rehydrateScheduleFromSeed(null, templates.rows2027);
   return out;
 }
 
 export function loadWorkScheduleByYearFromStorage(storageKeys, templates) {
-  try {
-    const raw = localStorage.getItem(storageKeys.byYear);
-    if (raw) {
-      return normalizeWorkScheduleByYear(JSON.parse(raw), templates);
-    }
-  } catch {
-    /* migrate below */
-  }
+  const legacy26 = tryParseLocalStorageJson(storageKeys.y2026);
+  const legacy27 = tryParseLocalStorageJson(storageKeys.y2027);
+  const fromByYear =
+    tryParseLocalStorageJson(storageKeys.byYear) ?? tryParseLocalStorageJson(storageKeys.byYearLegacy);
+
   const by = {};
-  try {
-    const raw26 = localStorage.getItem(storageKeys.y2026);
-    if (raw26) by["2026"] = JSON.parse(raw26);
-  } catch {
-    /* ignore */
+  by["2026"] = rehydrateScheduleFromSeed(legacy26 ?? fromByYear?.["2026"], templates.rows2026);
+  by["2027"] = rehydrateScheduleFromSeed(legacy27 ?? fromByYear?.["2027"], templates.rows2027);
+
+  if (fromByYear && typeof fromByYear === "object") {
+    for (const key of Object.keys(fromByYear)) {
+      if (key === "2026" || key === "2027") continue;
+      const y = Number(key);
+      if (!Number.isFinite(y) || y < 2028) continue;
+      by[String(y)] = mergeWorkScheduleRows(fromByYear[key], getWorkScheduleTemplateForYear(y, templates));
+    }
   }
-  try {
-    const raw27 = localStorage.getItem(storageKeys.y2027);
-    if (raw27) by["2027"] = JSON.parse(raw27);
-  } catch {
-    /* ignore */
-  }
-  return normalizeWorkScheduleByYear(by, templates);
+  return by;
 }
 
 /** 번표 묶음·연도 선택 목록 (2026부터 상한 없이 확장) */
