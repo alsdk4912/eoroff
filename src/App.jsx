@@ -70,6 +70,7 @@ import {
   filterAnesthesiaPublishedForOrView,
   filterChiefPublishedForOrView,
   filterRequestsForViewerRole,
+  filterRequestsForWeeklyRoster,
   isAnesthesiaLeaveAdminRole,
   isChiefLeaveAdminRole,
   isLeaveManagerRole,
@@ -1486,6 +1487,10 @@ function App() {
     () => filterRequestsForViewerRole(requestsRawVisible, users, viewerRole),
     [requestsRawVisible, users, viewerRole]
   );
+  const requestsForWeeklyRoster = useMemo(
+    () => filterRequestsForWeeklyRoster(requestsRawVisible, users),
+    [requestsRawVisible, users]
+  );
   const showDeptPublished = showDepartmentPublishedOverlay(viewerRole);
   const anesthesiaPublishedRequests = useMemo(() => {
     if (!showDeptPublished) return [];
@@ -2494,6 +2499,7 @@ function App() {
               dashboard={dashboard}
               goldkeys={goldkeys}
               requests={requestsVisibleInUi}
+              requestsForWeekly={requestsForWeeklyRoster}
               requestsForGoldkey={requestsRawVisible}
               cancellations={cancellations}
               ladderResults={ladderResults}
@@ -4445,6 +4451,7 @@ function DashboardPage({
   dashboard,
   goldkeys,
   requests,
+  requestsForWeekly,
   requestsForGoldkey,
   cancellations,
   ladderResults,
@@ -5018,7 +5025,7 @@ function DashboardPage({
       {dashTab === "weekly" ? (
         <WeeklyScheduleTab
           workScheduleByYear={workScheduleByYear}
-          requests={requests}
+          requests={requestsForWeekly ?? requests}
           substituteAssignments={substituteAssignments}
           users={users}
           holidays={holidays}

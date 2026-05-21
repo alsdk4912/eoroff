@@ -18,7 +18,15 @@ export function isOrNurseUserId(userId, users) {
   return userById(users, userId)?.role === "NURSE";
 }
 
-/** 역할별 캘린더·목록에 쓸 신청 */
+/** 주간 번표: 수술실·마취·주임 전원의 확정 휴가·대체 반영용 */
+export function filterRequestsForWeeklyRoster(requests, users) {
+  return (Array.isArray(requests) ? requests : []).filter((r) => {
+    const role = userById(users, r.userId)?.role;
+    return role === "NURSE" || role === "ANESTHESIA" || role === "CHIEF";
+  });
+}
+
+/** 역할별 캔린더·목록에 쓸 신청 */
 export function filterRequestsForViewerRole(requests, users, viewerRole) {
   const rows = Array.isArray(requests) ? requests : [];
   if (viewerRole === "ANESTHESIA" || viewerRole === "ADMIN2") {
