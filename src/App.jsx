@@ -36,6 +36,15 @@ import {
   shiftOptionSetForRole,
   shiftOptionsForRole,
   weeklyStaffForViewer,
+  ANESTHESIA_MONTHLY_NAMES,
+  CHIEF_MONTHLY_NAMES,
+  canEditMonthlyScheduleCell,
+  canSaveMonthlyWorkSchedule,
+  emptyScheduleMonthValues,
+  mergeMonthlySaveDraft,
+  mergeWorkScheduleRows,
+  monthlyRowSection,
+  separatorBeforeMonthlyRow,
 } from "./data/shiftCodes.js";
 import { consumeManualVersionReloadToast, restoreHashAfterReload, useAppUpdate } from "./useAppUpdate.js";
 import { buildAutoHolidayDutyPlan } from "./utils/holidayDutyPlan.clean.js";
@@ -498,6 +507,16 @@ function App() {
   const [dayComments, setDayComments] = useLocalStorage(LS_DAY_COMMENTS, []);
   const [workScheduleRows, setWorkScheduleRows] = useLocalStorage(LS_WORK_SCHEDULE_2026, WORK_SCHEDULE_2026_ROWS);
   const [workScheduleRows2027, setWorkScheduleRows2027] = useLocalStorage(LS_WORK_SCHEDULE_2027, WORK_SCHEDULE_2027_ROWS);
+  useEffect(() => {
+    setWorkScheduleRows((prev) => {
+      const merged = mergeWorkScheduleRows(prev, WORK_SCHEDULE_2026_ROWS);
+      return JSON.stringify(merged) === JSON.stringify(prev) ? prev : merged;
+    });
+    setWorkScheduleRows2027((prev) => {
+      const merged = mergeWorkScheduleRows(prev, WORK_SCHEDULE_2027_ROWS);
+      return JSON.stringify(merged) === JSON.stringify(prev) ? prev : merged;
+    });
+  }, [setWorkScheduleRows, setWorkScheduleRows2027]);
   const [generatedMonthlySchedules, setGeneratedMonthlySchedules] = useLocalStorage(LS_GENERATED_MONTHLY_SCHEDULES, {});
   const [substituteAssignments, setSubstituteAssignments] = useLocalStorage(LS_SUBSTITUTE_ASSIGNMENTS, []);
   /** 주간 번표 셀 수동 표시(기기 로컬) */
@@ -3064,6 +3083,8 @@ const WORK_SCHEDULE_2026_ROWS = [
   { name: "최유리", values: ["3D1", "1D1", "1D1", "수E", "안E", "5D1", "PRN", "6D1", "6D2", "3", "7D1", "7D2"] },
   { name: "최유경", values: ["1D1", "7D1", "7D1", "5D1", "안D0", "안D0", "안E", "수E", "5D1", "6D1", "수E", "PRN"] },
   { name: "정수영", values: ["", "", "6D1", "6D1", "6D1", "6D1", "1D1", "1D1", "1D1", "5D1", "5D1", "5D1"] },
+  ...ANESTHESIA_MONTHLY_NAMES.map((name) => ({ name, values: emptyScheduleMonthValues(12) })),
+  ...CHIEF_MONTHLY_NAMES.map((name) => ({ name, values: emptyScheduleMonthValues(12) })),
 ];
 
 /** 2026년 9월(인덱스 8) 로컬 캐시 오입력 → 정정값 */
@@ -3099,6 +3120,8 @@ const WORK_SCHEDULE_2027_ROWS = [
   { name: "최유리", values: ["안D0", "PRN"] },
   { name: "최유경", values: ["7D1", "수E"] },
   { name: "정수영", values: ["3D1", "3D1"] },
+  ...ANESTHESIA_MONTHLY_NAMES.map((name) => ({ name, values: emptyScheduleMonthValues(2) })),
+  ...CHIEF_MONTHLY_NAMES.map((name) => ({ name, values: emptyScheduleMonthValues(2) })),
 ];
 /** 수술실 월간·주간 번표 (마취·주임은 shiftCodes.js 역할별 목록) */
 const WORK_SCHEDULE_OPTIONS = NURSE_SHIFT_OPTIONS;
@@ -4401,9 +4424,9 @@ function DashboardPage({
   saveSubstituteForApprovedRequest,
 }) {
   const [dashTab, setDashTab] = useState("schedule");
-  const [draftRows, setDraftRows] = useState(Array.isArray(workScheduleRows) ? workScheduleRows : WORK_SCHEDULE_2026_ROWS);
-  const [draftRows2027, setDraftRows2027] = useState(
-    Array.isArray(workScheduleRows2027) ? workScheduleRows2027 : WORK_SCHEDULE_2027_ROWS
+  const [draftRows, setDraftRows] = useState(() => mergeWorkScheduleRows(workScheduleRows, WORK_SCHEDULE_2026_ROWS));
+  const [draftRows2027, setDraftRows2027] = useState(() =>
+    mergeWorkScheduleRows(workScheduleRows2027, WORK_SCHEDULE_2027_ROWS)
   );
   const [scheduleMsg, setScheduleMsg] = useState("");
   const [generatorStartYm, setGeneratorStartYm] = useState(() => {
@@ -4418,11 +4441,11 @@ function DashboardPage({
   const [scheduleYearFilter, setScheduleYearFilter] = useState("all");
 
   useEffect(() => {
-    setDraftRows(Array.isArray(workScheduleRows) ? workScheduleRows : WORK_SCHEDULE_2026_ROWS);
+    setDraftRows(mergeWorkScheduleRows(workScheduleRows, WORK_SCHEDULE_2026_ROWS));
   }, [workScheduleRows]);
 
   useEffect(() => {
-    setDraftRows2027(Array.isArray(workScheduleRows2027) ? workScheduleRows2027 : WORK_SCHEDULE_2027_ROWS);
+    setDraftRows2027(mergeWorkScheduleRows(workScheduleRows2027, WORK_SCHEDULE_2027_ROWS));
   }, [workScheduleRows2027]);
 
   const scheduleChanges = useMemo(() => {
@@ -4561,9 +4584,13 @@ function DashboardPage({
     const ok = window.confirm(`아래 근무표 변경을 저장할까요?\n\n${lines.join("\n")}`);
     if (!ok) return;
     if (schedulePlanKey === "base_2027") {
-      onSaveWorkScheduleRows2027?.(draftRows2027);
+      const next = mergeMonthlySaveDraft(workScheduleRows2027, draftRows2027, WORK_SCHEDULE_2027_ROWS, currentRole);
+      onSaveWorkScheduleRows2027?.(next);
+      setDraftRows2027(next);
     } else {
-      onSaveWorkScheduleRows(draftRows);
+      const next = mergeMonthlySaveDraft(workScheduleRows, draftRows, WORK_SCHEDULE_2026_ROWS, currentRole);
+      onSaveWorkScheduleRows(next);
+      setDraftRows(next);
     }
     setScheduleMsg("근무표가 저장되었습니다.");
     notifyDone("저장되었습니다.");
@@ -4813,82 +4840,117 @@ function DashboardPage({
               </tr>
             </thead>
             <tbody>
-              {(Array.isArray(activePlan.rows) ? activePlan.rows : []).map((row) => (
-                <tr
-                  key={row.name}
-                  className={
-                    row.name === "유진" || row.name === "오민아" || row.name === "최유경"
-                      ? "work-schedule-row--highlight"
-                      : ""
-                  }
-                >
-                  <td className="work-schedule-name-cell">{row.name}</td>
-                  {visibleMonths.map((m) => {
-                    const idx = m.index;
-                    const cellVal = row.values?.[idx] ?? "";
-                    const displayVal = isCustomShiftCodeValue(cellVal) ? customShiftText(cellVal) : String(cellVal);
-                    const faceLabel = String(displayVal).trim() ? displayVal : "—";
-                    const selectValue = isCustomShiftCodeValue(cellVal) ? CUSTOM_SHIFT_SENTINEL : cellVal;
-                    const extraOpts =
-                      cellVal && !WORK_SCHEDULE_OPTION_SET.has(cellVal) && !isCustomShiftCodeValue(cellVal) ? [cellVal] : [];
-                    return (
-                      <td key={`${row.name}-${m.ymd}`} className="work-schedule-month-cell">
-                        <label className="work-schedule-picker">
-                          <span className="work-schedule-picker-face" aria-hidden="true">
-                            {faceLabel}
-                          </span>
-                          {activePlan.type === "base" ? (
-                            <select
-                              className="work-schedule-select"
-                              value={selectValue}
-                              onChange={(e) => {
-                                const next = String(e.target.value ?? "");
-                                if (next === CUSTOM_SHIFT_SENTINEL) {
-                                  onDraftCellChange(row.name, idx, toCustomShiftCode(customShiftText(cellVal) || ""));
-                                  return;
-                                }
-                                onDraftCellChange(row.name, idx, next);
-                              }}
-                              aria-label={`${row.name} ${m.label} 근무`}
-                            >
-                              {WORK_SCHEDULE_OPTIONS.map((opt) => (
-                                <option key={`${row.name}-${m.ymd}-${opt || "empty"}`} value={opt}>
-                                  {opt || "-"}
-                                </option>
-                              ))}
-                              {extraOpts.map((opt) => (
-                                <option key={`${row.name}-${m.ymd}-extra-${opt}`} value={opt}>
-                                  {opt}
-                                </option>
-                              ))}
-                              <option value={CUSTOM_SHIFT_SENTINEL}>직접입력</option>
-                            </select>
+              {(Array.isArray(activePlan.rows) ? activePlan.rows : []).flatMap((row, rowIdx, rows) => {
+                const prevName = rowIdx > 0 ? rows[rowIdx - 1]?.name : null;
+                const sep = separatorBeforeMonthlyRow(row.name, prevName);
+                const sec = monthlyRowSection(row.name);
+                const rowOpts =
+                  sec === "anesthesia"
+                    ? ANESTHESIA_SHIFT_OPTIONS
+                    : sec === "chief"
+                      ? CHIEF_SHIFT_OPTIONS
+                      : NURSE_SHIFT_OPTIONS;
+                const rowOptSet = shiftOptionSetForRole(
+                  sec === "anesthesia" ? "ANESTHESIA" : sec === "chief" ? "CHIEF" : "NURSE"
+                );
+                const cellEditable =
+                  activePlan.type === "base" && canEditMonthlyScheduleCell(currentRole, row.name);
+                const out = [];
+                if (sep) {
+                  out.push(
+                    <tr key={`sep-${sep}-${row.name}`} className={`work-schedule-row-sep work-schedule-row-sep--${sep}`}>
+                      <td colSpan={visibleMonths.length + 1} aria-hidden="true" />
+                    </tr>
+                  );
+                }
+                out.push(
+                  <tr
+                    key={row.name}
+                    className={[
+                      row.name === "유진" || row.name === "오민아" || row.name === "최유경"
+                        ? "work-schedule-row--highlight"
+                        : "",
+                      sec === "anesthesia" ? "work-schedule-row--anesthesia" : "",
+                      sec === "chief" ? "work-schedule-row--chief" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                  >
+                    <td className="work-schedule-name-cell">{row.name}</td>
+                    {visibleMonths.map((m) => {
+                      const idx = m.index;
+                      const cellVal = row.values?.[idx] ?? "";
+                      const displayVal = isCustomShiftCodeValue(cellVal) ? customShiftText(cellVal) : String(cellVal);
+                      const faceLabel = String(displayVal).trim() ? displayVal : "—";
+                      const selectValue = isCustomShiftCodeValue(cellVal) ? CUSTOM_SHIFT_SENTINEL : cellVal;
+                      const extraOpts =
+                        cellVal && !rowOptSet.has(cellVal) && !isCustomShiftCodeValue(cellVal) ? [cellVal] : [];
+                      const customPlaceholder =
+                        sec === "anesthesia" ? "예: D0" : sec === "chief" ? "예: 9-5" : "예: 3D2/3D1";
+                      return (
+                        <td key={`${row.name}-${m.ymd}`} className="work-schedule-month-cell">
+                          <label className="work-schedule-picker">
+                            <span className="work-schedule-picker-face" aria-hidden="true">
+                              {faceLabel}
+                            </span>
+                            {cellEditable ? (
+                              <select
+                                className="work-schedule-select"
+                                value={selectValue}
+                                onChange={(e) => {
+                                  const next = String(e.target.value ?? "");
+                                  if (next === CUSTOM_SHIFT_SENTINEL) {
+                                    onDraftCellChange(row.name, idx, toCustomShiftCode(customShiftText(cellVal) || ""));
+                                    return;
+                                  }
+                                  onDraftCellChange(row.name, idx, next);
+                                }}
+                                aria-label={`${row.name} ${m.label} 근무`}
+                              >
+                                {rowOpts.map((opt) => (
+                                  <option key={`${row.name}-${m.ymd}-${opt || "empty"}`} value={opt}>
+                                    {opt || "-"}
+                                  </option>
+                                ))}
+                                {extraOpts.map((opt) => (
+                                  <option key={`${row.name}-${m.ymd}-extra-${opt}`} value={opt}>
+                                    {opt}
+                                  </option>
+                                ))}
+                                <option value={CUSTOM_SHIFT_SENTINEL}>직접입력</option>
+                              </select>
+                            ) : null}
+                          </label>
+                          {cellEditable && isCustomShiftCodeValue(cellVal) ? (
+                            <input
+                              type="text"
+                              className="work-schedule-custom-input"
+                              placeholder={customPlaceholder}
+                              value={customShiftText(cellVal)}
+                              onChange={(e) => onDraftCellChange(row.name, idx, toCustomShiftCode(e.target.value))}
+                            />
                           ) : null}
-                        </label>
-                        {activePlan.type === "base" && isCustomShiftCodeValue(cellVal) ? (
-                          <input
-                            type="text"
-                            className="work-schedule-custom-input"
-                            placeholder="예: 3D2/3D1"
-                            value={customShiftText(cellVal)}
-                            onChange={(e) => onDraftCellChange(row.name, idx, toCustomShiftCode(e.target.value))}
-                          />
-                        ) : null}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+                return out;
+              })}
             </tbody>
           </table>
         </div>
-        {activePlan.type === "base" ? (
+        {activePlan.type === "base" && canSaveMonthlyWorkSchedule(currentRole) ? (
           <div className="row work-schedule-save-row" style={{ marginTop: 10 }}>
             {scheduleMsg ? <span className="help work-schedule-save-msg">{scheduleMsg}</span> : null}
             <button type="button" onClick={saveWorkSchedule}>
               근무표 저장
             </button>
           </div>
+        ) : activePlan.type === "base" ? (
+          <p className="help" style={{ marginTop: 10 }}>
+            해당 구역은 관리자·마취과·주임 담당자만 번표를 수정할 수 있습니다.
+          </p>
         ) : (
           <p className="help" style={{ marginTop: 10 }}>생성 저장된 번표는 열람 전용입니다.</p>
         )}

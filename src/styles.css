@@ -3345,6 +3345,26 @@ button.ym-wheel-check:hover {
   border-bottom: 1px solid var(--separator);
 }
 
+/* 월간근무표: 수술실 / 마취과 / 주임 구역 구분 */
+.work-schedule-table tr.work-schedule-row-sep td {
+  padding: 0;
+  height: 0;
+  line-height: 0;
+  border: none;
+  border-top: 4px solid #0f172a;
+  background: #f1f5f9;
+}
+
+.work-schedule-table tbody tr.work-schedule-row--anesthesia td.work-schedule-name-cell {
+  font-weight: 600;
+  color: #0f766e;
+}
+
+.work-schedule-table tbody tr.work-schedule-row--chief td.work-schedule-name-cell {
+  font-weight: 600;
+  color: #6d28d9;
+}
+
 /* 관리자 현황: 월간 근무 셀을 한 줄(말줄임)으로 표시 */
 .work-schedule-card--admin .work-schedule-picker-face {
   white-space: nowrap;
