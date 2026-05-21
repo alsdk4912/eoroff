@@ -1,4 +1,6 @@
-/** 수술실·마취과 휴가 표시·관리 권한 */
+/** 수술실·마취과·주임 휴가 표시·관리 권한 */
+
+export const CHIEF_LEAVE_TYPE = "CHIEF_LEAVE";
 
 export function userById(users, userId) {
   return (Array.isArray(users) ? users : []).find((u) => String(u.id) === String(userId));
@@ -8,15 +10,22 @@ export function isAnesthesiaStaffUserId(userId, users) {
   return userById(users, userId)?.role === "ANESTHESIA";
 }
 
+export function isChiefStaffUserId(userId, users) {
+  return userById(users, userId)?.role === "CHIEF";
+}
+
 export function isOrNurseUserId(userId, users) {
   return userById(users, userId)?.role === "NURSE";
 }
 
-/** 역할별 캘린더·목록에 쓸 신청 (마취/관리자2 → 마취과만, 수술실·관리자 → 수술실만) */
+/** 역할별 캘린더·목록에 쓸 신청 */
 export function filterRequestsForViewerRole(requests, users, viewerRole) {
   const rows = Array.isArray(requests) ? requests : [];
   if (viewerRole === "ANESTHESIA" || viewerRole === "ADMIN2") {
     return rows.filter((r) => isAnesthesiaStaffUserId(r.userId, users));
+  }
+  if (viewerRole === "CHIEF" || viewerRole === "ADMIN3") {
+    return rows.filter((r) => isChiefStaffUserId(r.userId, users));
   }
   if (viewerRole === "NURSE" || viewerRole === "ADMIN") {
     return rows.filter((r) => isOrNurseUserId(r.userId, users));
@@ -24,15 +33,25 @@ export function filterRequestsForViewerRole(requests, users, viewerRole) {
   return rows;
 }
 
-/** 수술실 간호사 화면 하단: 마취과 확정 휴가만 */
-export function filterAnesthesiaPublishedForOrView(requests, users, isWinnerStatus) {
+function filterPublishedByRole(requests, users, isWinnerStatus, staffCheck) {
   return (Array.isArray(requests) ? requests : []).filter(
-    (r) => isAnesthesiaStaffUserId(r.userId, users) && isWinnerStatus(r.status)
+    (r) => staffCheck(r.userId, users) && isWinnerStatus(r.status)
   );
+}
+
+/** 수술실 화면 하단: 마취과 확정 휴가 */
+export function filterAnesthesiaPublishedForOrView(requests, users, isWinnerStatus) {
+  return filterPublishedByRole(requests, users, isWinnerStatus, isAnesthesiaStaffUserId);
+}
+
+/** 수술실 화면 하단: 주임 확정 휴가 */
+export function filterChiefPublishedForOrView(requests, users, isWinnerStatus) {
+  return filterPublishedByRole(requests, users, isWinnerStatus, isChiefStaffUserId);
 }
 
 export function canViewerApproveRequest(viewerRole, requestUserId, users) {
   if (isAnesthesiaStaffUserId(requestUserId, users)) return viewerRole === "ADMIN2";
+  if (isChiefStaffUserId(requestUserId, users)) return viewerRole === "ADMIN3";
   if (isOrNurseUserId(requestUserId, users)) return viewerRole === "ADMIN";
   return false;
 }
@@ -49,11 +68,33 @@ export function isAnesthesiaLeaveAdminRole(role) {
   return role === "ADMIN2";
 }
 
-export function isLeaveManagerRole(role) {
-  return isOrLeaveAdminRole(role) || isAnesthesiaLeaveAdminRole(role);
+export function isChiefLeaveAdminRole(role) {
+  return role === "ADMIN3";
 }
 
-/** 수술실 간호사·관리자가 마취과 확정분을 함께 볼지 */
-export function showAnesthesiaPublishedOverlay(viewerRole) {
+export function isLeaveManagerRole(role) {
+  return isOrLeaveAdminRole(role) || isAnesthesiaLeaveAdminRole(role) || isChiefLeaveAdminRole(role);
+}
+
+/** 수술실·관리자: 타 부서 확정 휴가 하단 표시 */
+export function showDepartmentPublishedOverlay(viewerRole) {
   return viewerRole === "NURSE" || viewerRole === "ADMIN";
+}
+
+/** @deprecated use showDepartmentPublishedOverlay */
+export function showAnesthesiaPublishedOverlay(viewerRole) {
+  return showDepartmentPublishedOverlay(viewerRole);
+}
+
+/** 현황: 월간·주간만 (골드키·사다리 등 제외) */
+export function isScheduleOnlyDashboardRole(role) {
+  return role === "ANESTHESIA" || role === "ADMIN2" || role === "CHIEF" || role === "ADMIN3";
+}
+
+export function canApplyLeaveRole(role) {
+  return role === "NURSE" || role === "ANESTHESIA" || role === "CHIEF";
+}
+
+export function showHolidayDutyEditorRole(role) {
+  return role === "NURSE" || role === "ADMIN" || role === "ANESTHESIA";
 }

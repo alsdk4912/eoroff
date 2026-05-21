@@ -383,6 +383,8 @@ export async function initDb() {
   await seedDefaultsIfEmpty();
   await ensureAnesthesiaUsers();
   await ensureAdmin2User();
+  await ensureChiefUsers();
+  await ensureAdmin3User();
   await ensureKnownEmployeeNos();
   await ensureOfficialHolidayCorrections();
   await ensureHolidayDutyAnchors2026();
@@ -654,6 +656,38 @@ async function ensureAdmin2User() {
     "관리자2",
     "A9002",
     "ADMIN2",
+    "1234"
+  );
+}
+
+/** 주임(김보람·방현석·최무영·이찬주·오세연) */
+async function ensureChiefUsers() {
+  const names = ["김보람", "방현석", "최무영", "이찬주", "오세연"];
+  for (let idx = 0; idx < names.length; idx++) {
+    const name = names[idx];
+    const row = await queryOne("SELECT id FROM users WHERE name = ? AND role = 'CHIEF'", name);
+    if (row?.id) continue;
+    await execute(
+      "INSERT INTO users (id, name, employee_no, role, password) VALUES (?, ?, ?, ?, ?)",
+      `u_chief_${idx + 1}`,
+      name,
+      resolveEmployeeNo(name, `C${String(idx + 1).padStart(4, "0")}`),
+      "CHIEF",
+      "1234"
+    );
+  }
+}
+
+/** 주임 휴가 확정·대체 지정 전용 관리자 */
+async function ensureAdmin3User() {
+  const row = await queryOne("SELECT id FROM users WHERE role = 'ADMIN3' LIMIT 1");
+  if (row?.id) return;
+  await execute(
+    "INSERT INTO users (id, name, employee_no, role, password) VALUES (?, ?, ?, ?, ?)",
+    "u_admin3_1",
+    "관리자3",
+    "A9003",
+    "ADMIN3",
     "1234"
   );
 }

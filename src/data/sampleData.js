@@ -24,6 +24,7 @@ const NURSE_NAMES = [
 
 const ADMIN_NAMES = ["관리자", "진기숙"];
 const ANESTHESIA_NAMES = ["김인자", "박현정", "이지현", "윤지민"];
+const CHIEF_NAMES = ["김보람", "방현석", "최무영", "이찬주", "오세연"];
 const EMPLOYEE_NO_BY_NAME = {
   양현아: "0534411",
   오민아: "0550117",
@@ -71,6 +72,18 @@ export const users = [
     name,
     role: "ANESTHESIA",
     employeeNo: EMPLOYEE_NO_BY_NAME[name] || `A${String(idx + 1).padStart(4, "0")}`,
+  })),
+  {
+    id: "u_admin3_1",
+    name: "관리자3",
+    role: "ADMIN3",
+    employeeNo: "A9003",
+  },
+  ...CHIEF_NAMES.map((name, idx) => ({
+    id: `u_chief_${idx + 1}`,
+    name,
+    role: "CHIEF",
+    employeeNo: EMPLOYEE_NO_BY_NAME[name] || `C${String(idx + 1).padStart(4, "0")}`,
   })),
 ];
 

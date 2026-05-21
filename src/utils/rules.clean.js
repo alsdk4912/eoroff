@@ -3,6 +3,7 @@ const LEAVE_TYPE_LABEL = {
   GENERAL_PRIORITY: "일반휴가-우선순위",
   GENERAL_NORMAL: "일반휴가-후순위",
   HALF_DAY: "반차",
+  CHIEF_LEAVE: "휴가",
 };
 
 const LEAVE_NATURE_LABEL = {
@@ -335,6 +336,16 @@ export function validateRequest({
 
     if (targetMonth < plus2) return "골드키는 현재월+2달부터 신청 가능합니다.";
     if ((remainingGoldkey ?? 0) <= 0) return "잔여 골드키가 없습니다.";
+    return "";
+  }
+
+  if (leaveType === "CHIEF_LEAVE") {
+    if (targetMonth !== currentMonth && targetMonth !== plus1) {
+      return "휴가는 현재달 또는 다음달만 신청 가능합니다.";
+    }
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    if (target < todayStart) return "과거 날짜는 신청할 수 없습니다.";
     return "";
   }
 

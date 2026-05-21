@@ -2397,6 +2397,26 @@ button.ym-wheel-check:hover {
   box-shadow: inset 0 -2px 0 0 #6b5b95;
 }
 
+.calendar-cell-events--chief {
+  margin-top: 0;
+}
+
+.calendar-day-chip--chief {
+  opacity: 0.95;
+  box-shadow: inset 0 -2px 0 0 #2d6a4f;
+}
+
+.calendar-applicant-list--chief .calendar-applicant-item--chief-readonly {
+  border-left: 3px solid #2d6a4f;
+  padding-left: 8px;
+}
+
+.selected-item.type-chief_leave,
+.leave-type-pill.selected-item.type-chief_leave {
+  background: #d8f3dc !important;
+  color: #1b4332 !important;
+}
+
 .calendar-applicant-divider {
   display: flex;
   align-items: center;

@@ -32,13 +32,19 @@ import { defaultGoldkeyQuotaForName } from "./data/goldkeyQuotas.js";
 import { consumeManualVersionReloadToast, restoreHashAfterReload, useAppUpdate } from "./useAppUpdate.js";
 import { buildAutoHolidayDutyPlan } from "./utils/holidayDutyPlan.clean.js";
 import {
+  canApplyLeaveRole,
   canViewerApproveRequest,
+  CHIEF_LEAVE_TYPE,
   filterAnesthesiaPublishedForOrView,
+  filterChiefPublishedForOrView,
   filterRequestsForViewerRole,
   isAnesthesiaLeaveAdminRole,
+  isChiefLeaveAdminRole,
   isLeaveManagerRole,
   isOrLeaveAdminRole,
-  showAnesthesiaPublishedOverlay,
+  isScheduleOnlyDashboardRole,
+  showDepartmentPublishedOverlay,
+  showHolidayDutyEditorRole,
 } from "./utils/leaveVisibility.js";
 
 /** 오프라인 저장소 버전 — 배포 시 키 올리면 예전 휴가·골드키 캐시 무시(빈 신청·기본 골드키로 로드) */
@@ -576,9 +582,10 @@ function App() {
   const viewerRole = currentUser?.role ?? "";
   const isOrLeaveAdmin = isOrLeaveAdminRole(viewerRole);
   const isAnesthesiaLeaveAdmin = isAnesthesiaLeaveAdminRole(viewerRole);
+  const isChiefLeaveAdmin = isChiefLeaveAdminRole(viewerRole);
   const isLeaveManager = isLeaveManagerRole(viewerRole);
   const isAdmin = isOrLeaveAdmin;
-  const canEditHolidayDuty = viewerRole === "NURSE" || isOrLeaveAdmin || viewerRole === "ANESTHESIA";
+  const canEditHolidayDuty = showHolidayDutyEditorRole(viewerRole);
   const myGoldkey = goldkeys.find((g) => g.userId === auth?.userId);
   const isLoggedIn = Boolean(auth?.userId);
   const prevIsLoggedInRef = useRef(false);
@@ -1420,10 +1427,15 @@ function App() {
     () => filterRequestsForViewerRole(requestsRawVisible, users, viewerRole),
     [requestsRawVisible, users, viewerRole]
   );
+  const showDeptPublished = showDepartmentPublishedOverlay(viewerRole);
   const anesthesiaPublishedRequests = useMemo(() => {
-    if (!showAnesthesiaPublishedOverlay(viewerRole)) return [];
+    if (!showDeptPublished) return [];
     return filterAnesthesiaPublishedForOrView(requestsRawVisible, users, isWinnerStatus);
-  }, [requestsRawVisible, users, viewerRole]);
+  }, [requestsRawVisible, users, showDeptPublished]);
+  const chiefPublishedRequests = useMemo(() => {
+    if (!showDeptPublished) return [];
+    return filterChiefPublishedForOrView(requestsRawVisible, users, isWinnerStatus);
+  }, [requestsRawVisible, users, showDeptPublished]);
   const myRequests = useMemo(
     () => requestsVisibleInUi.filter((r) => r.userId === auth?.userId),
     [requestsVisibleInUi, auth?.userId]
@@ -1446,8 +1458,16 @@ function App() {
   );
   const calendarData = useMemo(() => {
     const [year, month] = calendarMonth.split("-").map(Number);
-    return buildMonthMatrix(year, month, requestsVisibleInUi, anesthesiaPublishedRequests, users, holidays);
-  }, [calendarMonth, requestsVisibleInUi, anesthesiaPublishedRequests, users, holidays]);
+    return buildMonthMatrix(
+      year,
+      month,
+      requestsVisibleInUi,
+      anesthesiaPublishedRequests,
+      chiefPublishedRequests,
+      users,
+      holidays
+    );
+  }, [calendarMonth, requestsVisibleInUi, anesthesiaPublishedRequests, chiefPublishedRequests, users, holidays]);
 
   const calendarDayRequests = useMemo(() => {
     if (!calendarSelectedYmd) return [];
@@ -1458,12 +1478,20 @@ function App() {
   }, [requestsVisibleInUi, calendarSelectedYmd, users]);
 
   const calendarAnesthesiaDayRequests = useMemo(() => {
-    if (!calendarSelectedYmd || !showAnesthesiaPublishedOverlay(viewerRole)) return [];
+    if (!calendarSelectedYmd || !showDeptPublished) return [];
     const sorted = [...anesthesiaPublishedRequests]
       .filter((r) => r.leaveDate === calendarSelectedYmd)
       .sort((a, b) => compareSameLeaveDateRequests(a, b, users));
     return dedupeRequestsForCalendarChips(sorted);
-  }, [anesthesiaPublishedRequests, calendarSelectedYmd, users, viewerRole]);
+  }, [anesthesiaPublishedRequests, calendarSelectedYmd, users, showDeptPublished]);
+
+  const calendarChiefDayRequests = useMemo(() => {
+    if (!calendarSelectedYmd || !showDeptPublished) return [];
+    const sorted = [...chiefPublishedRequests]
+      .filter((r) => r.leaveDate === calendarSelectedYmd)
+      .sort((a, b) => compareSameLeaveDateRequests(a, b, users));
+    return dedupeRequestsForCalendarChips(sorted);
+  }, [chiefPublishedRequests, calendarSelectedYmd, users, showDeptPublished]);
 
   async function submitRequest(e) {
     e.preventDefault();
@@ -1495,15 +1523,16 @@ function App() {
       requests,
     });
     if (error) return setMessage(error);
-    if (viewerRole !== "NURSE" && viewerRole !== "ANESTHESIA") {
+    if (!canApplyLeaveRole(viewerRole)) {
       setMessage("휴가 신청 권한이 없습니다.");
       return;
     }
+    const leaveTypeForPayload = viewerRole === "CHIEF" ? CHIEF_LEAVE_TYPE : normalizedLeaveType;
     const payload = {
       id: `lr_${Date.now()}`,
       userId: auth.userId,
       leaveDate,
-      leaveType: normalizedLeaveType,
+      leaveType: leaveTypeForPayload,
       leaveNature: "PERSONAL",
       status: "APPLIED",
       requestedAt: new Date().toISOString(),
@@ -2309,11 +2338,15 @@ function App() {
                 ? " · 관리자"
                 : viewerRole === "ADMIN2"
                   ? " · 관리자2"
-                  : viewerRole === "NURSE"
-                    ? " · 간호사"
-                    : viewerRole === "ANESTHESIA"
-                      ? " · 마취"
-                      : ""}
+                  : viewerRole === "ADMIN3"
+                    ? " · 관리자3"
+                    : viewerRole === "NURSE"
+                      ? " · 간호사"
+                      : viewerRole === "ANESTHESIA"
+                        ? " · 마취"
+                        : viewerRole === "CHIEF"
+                          ? " · 주임"
+                          : ""}
             </p>
           </div>
           <div className="app-header-actions app-header-actions--inline">
@@ -2438,7 +2471,7 @@ function App() {
               noticeComments={noticeComments}
               users={users}
               currentUserId={auth?.userId}
-              isAdmin={isOrLeaveAdmin || isAnesthesiaLeaveAdmin}
+              isAdmin={isOrLeaveAdmin || isAnesthesiaLeaveAdmin || isChiefLeaveAdmin}
               createNotice={createNotice}
               updateNotice={updateNotice}
               deleteNotice={deleteNotice}
@@ -2472,6 +2505,7 @@ function App() {
               setSelectedYmd={setCalendarSelectedYmd}
               dayRequests={calendarDayRequests}
               anesthesiaDayRequests={calendarAnesthesiaDayRequests}
+              chiefDayRequests={calendarChiefDayRequests}
               viewerRole={viewerRole}
               users={users}
               leaveType={leaveType}
@@ -2485,6 +2519,7 @@ function App() {
               message={message}
               isOrLeaveAdmin={isOrLeaveAdmin}
               isAnesthesiaLeaveAdmin={isAnesthesiaLeaveAdmin}
+              isChiefLeaveAdmin={isChiefLeaveAdmin}
               isLeaveManager={isLeaveManager}
               canEditHolidayDuty={canEditHolidayDuty}
               currentUserId={auth?.userId}
@@ -2577,7 +2612,12 @@ function App() {
       </Routes>
       </main>
 
-      <AppBottomNav isOrLeaveAdmin={isOrLeaveAdmin} isAnesthesiaLeaveAdmin={isAnesthesiaLeaveAdmin} role={viewerRole} />
+      <AppBottomNav
+        isOrLeaveAdmin={isOrLeaveAdmin}
+        isAnesthesiaLeaveAdmin={isAnesthesiaLeaveAdmin}
+        isChiefLeaveAdmin={isChiefLeaveAdmin}
+        role={viewerRole}
+      />
     </div>
   );
 }
@@ -4559,7 +4599,7 @@ function DashboardPage({
 
   return (
     <>
-      {currentRole === "ANESTHESIA" || currentRole === "ADMIN2" ? (
+      {isScheduleOnlyDashboardRole(currentRole) ? (
         <div className="segmented-wrap segmented-wrap--multi" role="tablist" aria-label="현황 구분">
           <button
             type="button"
@@ -4579,15 +4619,17 @@ function DashboardPage({
           >
             주간 번표
           </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={dashTab === "summary"}
-            className={`segmented-btn${dashTab === "summary" ? " segmented-btn--active" : ""}`}
-            onClick={() => setDashTab("summary")}
-          >
-            골드키
-          </button>
+          {currentRole === "ANESTHESIA" || currentRole === "ADMIN2" ? (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={dashTab === "summary"}
+              className={`segmented-btn${dashTab === "summary" ? " segmented-btn--active" : ""}`}
+              onClick={() => setDashTab("summary")}
+            >
+              골드키
+            </button>
+          ) : null}
         </div>
       ) : (
         <div className="segmented-wrap segmented-wrap--multi" role="tablist" aria-label="현황 구분">
@@ -4640,7 +4682,7 @@ function DashboardPage({
           ) : null}
         </div>
       )}
-      {dashTab === "summary" ? (
+      {dashTab === "summary" && (currentRole === "NURSE" || currentRole === "ADMIN" || currentRole === "ANESTHESIA" || currentRole === "ADMIN2") ? (
         <section className="card">
           <h2 className="screen-title">골드키{currentRole === "ANESTHESIA" || currentRole === "ADMIN2" ? " (마취과)" : ""}</h2>
           <p className="help page-lead goldkey-policy-note">
@@ -4689,7 +4731,7 @@ function DashboardPage({
           </div>
         </section>
       ) : null}
-      {currentRole !== "ANESTHESIA" && currentRole !== "ADMIN2" && dashTab === "ladder-results" ? (
+      {!isScheduleOnlyDashboardRole(currentRole) && dashTab === "ladder-results" ? (
         <section className="card">
           <h2 className="screen-title">저장된 사다리 결과</h2>
           <div className="ladder-results-list">
@@ -4986,10 +5028,15 @@ function navLinkClass({ isActive }) {
 }
 
 /** 하단 고정 탭 — 한 손 엄지로 주요 화면 전환 */
-function AppBottomNav({ isOrLeaveAdmin, isAnesthesiaLeaveAdmin, role }) {
-  const showMy = role === "NURSE" || role === "ANESTHESIA";
+function AppBottomNav({ isOrLeaveAdmin, isAnesthesiaLeaveAdmin, isChiefLeaveAdmin, role }) {
+  const showMy = role === "NURSE" || role === "ANESTHESIA" || role === "CHIEF";
   const showNotices =
-    role === "NURSE" || role === "ANESTHESIA" || role === "ADMIN" || role === "ADMIN2";
+    role === "NURSE" ||
+    role === "ANESTHESIA" ||
+    role === "CHIEF" ||
+    role === "ADMIN" ||
+    role === "ADMIN2" ||
+    role === "ADMIN3";
 
   if (isOrLeaveAdmin) {
     return (
@@ -5013,12 +5060,17 @@ function AppBottomNav({ isOrLeaveAdmin, isAnesthesiaLeaveAdmin, role }) {
     );
   }
 
-  if (isAnesthesiaLeaveAdmin) {
+  if (isAnesthesiaLeaveAdmin || isChiefLeaveAdmin) {
     return (
       <nav className="app-bottom-nav" aria-label="주 메뉴">
         <NavLink to="/calendar" className={navLinkClass} end>
           캘린더
         </NavLink>
+        {role === "CHIEF" ? (
+          <NavLink to="/my" className={navLinkClass}>
+            내 신청
+          </NavLink>
+        ) : null}
         <NavLink to="/dashboard" className={navLinkClass}>
           현황
         </NavLink>
@@ -5199,7 +5251,12 @@ function NoticeBoardPage({
     [users, currentUserId]
   );
   const canWriteNoticeComments =
-    currentRole === "ADMIN" || currentRole === "ADMIN2" || currentRole === "NURSE" || currentRole === "ANESTHESIA";
+    currentRole === "ADMIN" ||
+    currentRole === "ADMIN2" ||
+    currentRole === "ADMIN3" ||
+    currentRole === "NURSE" ||
+    currentRole === "ANESTHESIA" ||
+    currentRole === "CHIEF";
   const canWriteNotices = canWriteNoticeComments;
 
   const commentsForSelected = useMemo(() => {
@@ -6069,6 +6126,7 @@ function CalendarPage({
   setSelectedYmd,
   dayRequests,
   anesthesiaDayRequests = [],
+  chiefDayRequests = [],
   viewerRole = "",
   users,
   leaveType,
@@ -6082,6 +6140,7 @@ function CalendarPage({
   message,
   isOrLeaveAdmin = false,
   isAnesthesiaLeaveAdmin = false,
+  isChiefLeaveAdmin = false,
   isLeaveManager = false,
   canEditHolidayDuty,
   currentUserId,
@@ -6116,6 +6175,10 @@ function CalendarPage({
   }, [selectedYmd, setLeaveDate]);
 
   useEffect(() => {
+    if (viewerRole === "CHIEF") setLeaveType(CHIEF_LEAVE_TYPE);
+  }, [viewerRole, setLeaveType]);
+
+  useEffect(() => {
     if (!selectedYmd) {
       setDetailModalOpen(false);
     }
@@ -6148,8 +6211,10 @@ function CalendarPage({
   const selectedCell = selectedYmd ? calendarData.find((c) => c.date === selectedYmd) : null;
   const nurseUsers = users.filter((u) => u.role === "NURSE").sort((a, b) => a.name.localeCompare(b.name, "ko"));
   const anesthesiaUsers = users.filter((u) => u.role === "ANESTHESIA").sort((a, b) => a.name.localeCompare(b.name, "ko"));
-  const showApplyTab = viewerRole === "NURSE" || viewerRole === "ANESTHESIA";
-  const showAnesthesiaOverlay = showAnesthesiaPublishedOverlay(viewerRole);
+  const chiefUsers = users.filter((u) => u.role === "CHIEF").sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  const showApplyTab = canApplyLeaveRole(viewerRole);
+  const showDeptPublished = showDepartmentPublishedOverlay(viewerRole);
+  const isChiefViewer = viewerRole === "CHIEF";
   function canManageRequest(r) {
     return canViewerApproveRequest(viewerRole, r?.userId, users);
   }
@@ -6676,9 +6741,12 @@ function CalendarPage({
               <div className={`calendar-date${cell.isOffDay ? " calendar-date--holiday" : ""}`}>{cell.day}</div>
               {cell.inMonth &&
               ((Array.isArray(cell.displayApplicants) && cell.displayApplicants.length > 0) ||
-                (showAnesthesiaOverlay &&
+                (showDeptPublished &&
                   Array.isArray(cell.anesthesiaDisplayApplicants) &&
-                  cell.anesthesiaDisplayApplicants.length > 0)) ? (
+                  cell.anesthesiaDisplayApplicants.length > 0) ||
+                (showDeptPublished &&
+                  Array.isArray(cell.chiefDisplayApplicants) &&
+                  cell.chiefDisplayApplicants.length > 0)) ? (
                 <div className="calendar-cell-events">
                   {cell.displayApplicants.slice(0, CALENDAR_DAY_CHIP_MAX).map((a) => {
                     const nameLen = [...String(a.name ?? "")].length;
@@ -6698,7 +6766,7 @@ function CalendarPage({
                       +{cell.displayApplicants.length - CALENDAR_DAY_CHIP_MAX}
                     </span>
                   ) : null}
-                  {showAnesthesiaOverlay && Array.isArray(cell.anesthesiaDisplayApplicants) && cell.anesthesiaDisplayApplicants.length > 0 ? (
+                  {showDeptPublished && Array.isArray(cell.anesthesiaDisplayApplicants) && cell.anesthesiaDisplayApplicants.length > 0 ? (
                     <>
                       <div className="calendar-cell-divider" aria-hidden />
                       <div className="calendar-cell-events calendar-cell-events--anesthesia">
@@ -6710,6 +6778,26 @@ function CalendarPage({
                               key={`anes_${a.id}`}
                               className={`calendar-day-chip calendar-day-chip--anesthesia ${buildLeaveChipClass(a.leaveType, a.status)}${name3}`}
                               title={`[마취] ${a.name} · ${typeFullLabel(a.leaveType)} · ${statusLabel(a.status)}`}
+                            >
+                              <span className="calendar-day-chip__text">{a.name}</span>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : null}
+                  {showDeptPublished && Array.isArray(cell.chiefDisplayApplicants) && cell.chiefDisplayApplicants.length > 0 ? (
+                    <>
+                      <div className="calendar-cell-divider" aria-hidden />
+                      <div className="calendar-cell-events calendar-cell-events--chief">
+                        {cell.chiefDisplayApplicants.slice(0, CALENDAR_DAY_CHIP_MAX).map((a) => {
+                          const nameLen = [...String(a.name ?? "")].length;
+                          const name3 = nameLen === 3 ? " calendar-day-chip--name3" : "";
+                          return (
+                            <span
+                              key={`chief_${a.id}`}
+                              className={`calendar-day-chip calendar-day-chip--chief ${buildLeaveChipClass(a.leaveType, a.status)}${name3}`}
+                              title={`[주임] ${a.name} · ${typeFullLabel(a.leaveType)} · ${statusLabel(a.status)}`}
                             >
                               <span className="calendar-day-chip__text">{a.name}</span>
                             </span>
@@ -6805,7 +6893,7 @@ function CalendarPage({
                   )}
                 </section>
               ) : null}
-              {selectedCell?.isOffDay ? (
+              {selectedCell?.isOffDay && !isChiefViewer ? (
                 <p className="help" style={{ marginTop: 10 }}>
                   이 날짜는 휴일(공휴일/주말)로 휴가 신청을 받지 않습니다.
                 </p>
@@ -6838,11 +6926,12 @@ function CalendarPage({
                   </div>
                   {detailTab === "list" || isLeaveManager ? (
                     <div className="calendar-detail-body" role="tabpanel">
-                      {dayRequests.length === 0 && (!showAnesthesiaOverlay || anesthesiaDayRequests.length === 0) ? (
+                      {dayRequests.length === 0 &&
+                      (!showDeptPublished || (anesthesiaDayRequests.length === 0 && chiefDayRequests.length === 0)) ? (
                         <p className="help">이 날짜에 등록된 신청이 없습니다.</p>
                       ) : (
                         <>
-                          {quickLadderTargets.length > 0 ? (
+                          {viewerRole === "NURSE" && quickLadderTargets.length > 0 ? (
                             <div className="calendar-ladder-quick-bar">
                               {quickLadderTargets.map((t) => (
                                 (() => {
@@ -6987,7 +7076,7 @@ function CalendarPage({
                               );
                             })}
                           </ul>
-                          {showAnesthesiaOverlay && anesthesiaDayRequests.length > 0 ? (
+                          {showDeptPublished && anesthesiaDayRequests.length > 0 ? (
                             <>
                               <div className="calendar-applicant-divider" role="separator">
                                 <span>마취과</span>
@@ -7004,6 +7093,33 @@ function CalendarPage({
                                     .join(", ");
                                   return (
                                     <li key={`anes_view_${r.id}`} className="calendar-applicant-item calendar-applicant-item--anesthesia-readonly">
+                                      <span className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status)}`}>
+                                        {nm} · {typeFullLabel(r.leaveType)} · {statusLabel(r.status)}
+                                        {subLine ? ` · 대체 ${subLine}` : ""}
+                                      </span>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            </>
+                          ) : null}
+                          {showDeptPublished && chiefDayRequests.length > 0 ? (
+                            <>
+                              <div className="calendar-applicant-divider" role="separator">
+                                <span>주임</span>
+                              </div>
+                              <ul className="calendar-applicant-list calendar-applicant-list--chief">
+                                {chiefDayRequests.map((r) => {
+                                  const nm = users.find((u) => u.id === r.userId)?.name ?? r.userId;
+                                  const subs = subsForRequest(r.id);
+                                  const subLine = subs
+                                    .map((s) => {
+                                      const sn = users.find((u) => u.id === s.substituteUserId)?.name ?? s.substituteUserId;
+                                      return `${sn}(${s.shiftCode})`;
+                                    })
+                                    .join(", ");
+                                  return (
+                                    <li key={`chief_view_${r.id}`} className="calendar-applicant-item calendar-applicant-item--chief-readonly">
                                       <span className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status)}`}>
                                         {nm} · {typeFullLabel(r.leaveType)} · {statusLabel(r.status)}
                                         {subLine ? ` · 대체 ${subLine}` : ""}
@@ -7146,18 +7262,87 @@ function CalendarPage({
                           </div>
                         </div>
                       ) : null}
+                      {isChiefLeaveAdmin ? (
+                        <div className="admin-calendar-substitute-section admin-calendar-substitute-section--chief">
+                          <h4 className="admin-calendar-substitute-title">대체 근무 지정 (주임)</h4>
+                          <p className="help admin-calendar-substitute-lead">확정된 주임 휴가에 대체 인력·번표를 지정합니다.</p>
+                          {calendarSubTargetRequests.length === 0 ? (
+                            <p className="help admin-calendar-substitute-lead">이 날짜에 확정·신청 중인 주임 휴가가 없습니다.</p>
+                          ) : null}
+                          <div className="admin-calendar-substitute-stack">
+                            {calendarSubRows.map((row, idx) => (
+                              <div key={row.rowId} className="admin-calendar-sub-bulk-row">
+                                <span className="admin-calendar-sub-bulk-label">대체 인력 {idx + 1}</span>
+                                <select
+                                  value={row.substituteUserId}
+                                  onChange={(e) => updateCalendarSubRow(row.rowId, "substituteUserId", e.target.value)}
+                                >
+                                  <option value="">대체자 선택</option>
+                                  {chiefUsers.map((u) => (
+                                    <option key={u.id} value={u.id}>
+                                      {u.name}
+                                    </option>
+                                  ))}
+                                </select>
+                                <select
+                                  value={isCustomShiftCodeValue(row.shiftCode) ? CUSTOM_SHIFT_SENTINEL : row.shiftCode}
+                                  onChange={(e) => {
+                                    const next = String(e.target.value ?? "");
+                                    if (next === CUSTOM_SHIFT_SENTINEL) {
+                                      updateCalendarSubRow(row.rowId, "shiftCode", toCustomShiftCode(customShiftText(row.shiftCode)));
+                                      return;
+                                    }
+                                    updateCalendarSubRow(row.rowId, "shiftCode", next);
+                                  }}
+                                >
+                                  <option value="">대체 근무 번표</option>
+                                  {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
+                                    <option key={opt} value={opt}>
+                                      {opt}
+                                    </option>
+                                  ))}
+                                  <option value={CUSTOM_SHIFT_SENTINEL}>직접입력</option>
+                                </select>
+                                {isCustomShiftCodeValue(row.shiftCode) ? (
+                                  <input
+                                    type="text"
+                                    placeholder="예: 3 9-5"
+                                    value={customShiftText(row.shiftCode)}
+                                    onChange={(e) => updateCalendarSubRow(row.rowId, "shiftCode", toCustomShiftCode(e.target.value))}
+                                  />
+                                ) : null}
+                                <button type="button" onClick={() => void applyCalendarSubRow(row)}>
+                                  저장
+                                </button>
+                                <button type="button" onClick={() => removeCalendarSubRow(row.rowId)}>
+                                  삭제
+                                </button>
+                              </div>
+                            ))}
+                            <button type="button" onClick={addCalendarSubRow}>
+                              대체 인력 추가
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   ) : (
                     <div className="calendar-detail-body calendar-detail-body--apply" role="tabpanel">
                       <p className="help">선택한 날짜: {selectedYmd} (아래에서 연·월·일을 바꿀 수 있습니다)</p>
                       <form className="grid calendar-apply-form" onSubmit={submitRequest}>
                         <label className="field-label">휴가 구분</label>
+                        {isChiefViewer ? (
+                          <p className="help" style={{ margin: 0 }}>
+                            휴가 (주임은 단일 유형으로 신청합니다)
+                          </p>
+                        ) : (
                         <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)} aria-label="휴가 구분">
-                          <option value="GOLDKEY">골드키</option>
+                          {viewerRole !== "ANESTHESIA" ? <option value="GOLDKEY">골드키</option> : null}
                           <option value="GENERAL_PRIORITY">일반휴가-우선순위</option>
                           <option value="GENERAL_NORMAL">일반휴가-후순위</option>
                           <option value="HALF_DAY">반차</option>
                         </select>
+                        )}
                         <div className="calendar-apply-ymd">
                           <span className="help">휴가일</span>
                           <YmdSplitInput value={leaveDate} onChange={setLeaveDate} />
@@ -7179,7 +7364,7 @@ function CalendarPage({
 
       {selectedYmd &&
       selectedCell?.inMonth &&
-      (isOrLeaveAdmin || isAnesthesiaLeaveAdmin || !selectedCell?.isOffDay) &&
+      (isOrLeaveAdmin || isAnesthesiaLeaveAdmin || isChiefLeaveAdmin || !selectedCell?.isOffDay) &&
       (!detailModalOpen || detailTab === "list") ? (
         <section className="admin-day-panel">
           <h3>{selectedYmd} 휴가자 (수술실)</h3>
@@ -7194,7 +7379,7 @@ function CalendarPage({
               ))
             )}
           </ul>
-          {showAnesthesiaOverlay && Array.isArray(selectedCell.anesthesiaApprovedApplicants) && selectedCell.anesthesiaApprovedApplicants.length > 0 ? (
+          {showDeptPublished && Array.isArray(selectedCell.anesthesiaApprovedApplicants) && selectedCell.anesthesiaApprovedApplicants.length > 0 ? (
             <>
               <div className="calendar-applicant-divider admin-day-panel__divider" role="separator">
                 <span>마취과</span>
@@ -7203,6 +7388,21 @@ function CalendarPage({
               <ul>
                 {selectedCell.anesthesiaApprovedApplicants.map((item) => (
                   <li key={`anes_ap_${item.id}`}>
+                    {item.name} ({typeFullLabel(item.leaveType)})
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+          {showDeptPublished && Array.isArray(selectedCell.chiefApprovedApplicants) && selectedCell.chiefApprovedApplicants.length > 0 ? (
+            <>
+              <div className="calendar-applicant-divider admin-day-panel__divider" role="separator">
+                <span>주임</span>
+              </div>
+              <h3 className="admin-day-panel__anes-title">{selectedYmd} 휴가자 (주임)</h3>
+              <ul>
+                {selectedCell.chiefApprovedApplicants.map((item) => (
+                  <li key={`chief_ap_${item.id}`}>
                     {item.name} ({typeFullLabel(item.leaveType)})
                   </li>
                 ))}
@@ -7281,7 +7481,8 @@ function CalendarPage({
               <ul className="day-comment-list">
                 {selectedDayComments.map((row) => {
                   const authorName = users.find((u) => u.id === row.userId)?.name ?? row.userId;
-                  const canManageComment = currentUserId === row.userId || isOrLeaveAdmin || isAnesthesiaLeaveAdmin;
+                  const canManageComment =
+                    currentUserId === row.userId || isOrLeaveAdmin || isAnesthesiaLeaveAdmin || isChiefLeaveAdmin;
                   const isEditing = editingCommentId === row.id;
                   return (
                     <li key={row.id} className="day-comment-item">
@@ -7703,7 +7904,7 @@ function dedupeRequestsForCalendarChips(sortedDayReqs) {
   return out;
 }
 
-function buildMonthMatrix(year, month, orRequests, anesthesiaOverlayRequests, users, holidaysCache) {
+function buildMonthMatrix(year, month, orRequests, anesthesiaOverlayRequests, chiefOverlayRequests, users, holidaysCache) {
   const first = new Date(year, month - 1, 1);
   const start = new Date(first);
   start.setDate(first.getDate() - first.getDay());
@@ -7749,6 +7950,18 @@ function buildMonthMatrix(year, month, orRequests, anesthesiaOverlayRequests, us
       status: r.status,
       name: users.find((u) => u.id === r.userId)?.name ?? r.userId,
     }));
+    const dayChiefReqs = (Array.isArray(chiefOverlayRequests) ? chiefOverlayRequests : []).filter(
+      (r) => r.leaveDate === iso && r.status !== "CANCELLED"
+    );
+    const sortedChief = [...dayChiefReqs].sort((a, b) => compareSameLeaveDateRequests(a, b, users));
+    const chiefDisplay = dedupeRequestsForCalendarChips(sortedChief);
+    const chiefDisplayApplicants = chiefDisplay.map((r) => ({
+      id: r.id,
+      userId: r.userId,
+      leaveType: r.leaveType,
+      status: r.status,
+      name: users.find((u) => u.id === r.userId)?.name ?? r.userId,
+    }));
     cells.push({
       date: iso,
       day: d.getDate(),
@@ -7761,6 +7974,7 @@ function buildMonthMatrix(year, month, orRequests, anesthesiaOverlayRequests, us
       hasGoldkeyRequest,
       displayApplicants,
       anesthesiaDisplayApplicants,
+      chiefDisplayApplicants,
       applicants: dayReqs
         .filter((r) => r.status !== "CANCELLED")
         .sort((a, b) => compareSameLeaveDateRequests(a, b, users))
@@ -7791,6 +8005,16 @@ function buildMonthMatrix(year, month, orRequests, anesthesiaOverlayRequests, us
           status: r.status,
           name: users.find((u) => u.id === r.userId)?.name ?? r.userId,
         })),
+      chiefApprovedApplicants: dayChiefReqs
+        .filter((r) => isWinnerStatus(r.status))
+        .sort((a, b) => compareSameLeaveDateRequests(a, b, users))
+        .map((r) => ({
+          id: r.id,
+          userId: r.userId,
+          leaveType: r.leaveType,
+          status: r.status,
+          name: users.find((u) => u.id === r.userId)?.name ?? r.userId,
+        })),
     });
   }
   return cells;
@@ -7798,6 +8022,7 @@ function buildMonthMatrix(year, month, orRequests, anesthesiaOverlayRequests, us
 
 function typeFullLabel(leaveType) {
   if (leaveType === "GOLDKEY") return "골드키";
+  if (leaveType === "CHIEF_LEAVE") return "휴가";
   if (leaveType === "GENERAL_PRIORITY") return "일반휴가-우선순위";
   if (leaveType === "HALF_DAY") return "반차";
   return "일반휴가-후순위";
