@@ -382,6 +382,7 @@ export async function initDb() {
 
   await seedDefaultsIfEmpty();
   await ensureAnesthesiaUsers();
+  await ensureAdmin2User();
   await ensureKnownEmployeeNos();
   await ensureOfficialHolidayCorrections();
   await ensureHolidayDutyAnchors2026();
@@ -641,6 +642,20 @@ async function ensureAnesthesiaUsers() {
       "1234"
     );
   }
+}
+
+/** 마취과 휴가 확정·대체 지정 전용 관리자 */
+async function ensureAdmin2User() {
+  const row = await queryOne("SELECT id FROM users WHERE role = 'ADMIN2' LIMIT 1");
+  if (row?.id) return;
+  await execute(
+    "INSERT INTO users (id, name, employee_no, role, password) VALUES (?, ?, ?, ?, ?)",
+    "u_admin2_1",
+    "관리자2",
+    "A9002",
+    "ADMIN2",
+    "1234"
+  );
 }
 
 async function ensureKnownEmployeeNos() {

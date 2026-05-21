@@ -31,6 +31,15 @@ import { api } from "./api/client";
 import { defaultGoldkeyQuotaForName } from "./data/goldkeyQuotas.js";
 import { consumeManualVersionReloadToast, restoreHashAfterReload, useAppUpdate } from "./useAppUpdate.js";
 import { buildAutoHolidayDutyPlan } from "./utils/holidayDutyPlan.clean.js";
+import {
+  canViewerApproveRequest,
+  filterAnesthesiaPublishedForOrView,
+  filterRequestsForViewerRole,
+  isAnesthesiaLeaveAdminRole,
+  isLeaveManagerRole,
+  isOrLeaveAdminRole,
+  showAnesthesiaPublishedOverlay,
+} from "./utils/leaveVisibility.js";
 
 /** 오프라인 저장소 버전 — 배포 시 키 올리면 예전 휴가·골드키 캐시 무시(빈 신청·기본 골드키로 로드) */
 const LS_REQUESTS = "or.requests.v5";
@@ -564,8 +573,12 @@ function App() {
   }, [location?.pathname, location?.search]);
 
   const currentUser = users.find((u) => u.id === auth?.userId);
-  const isAdmin = currentUser?.role === "ADMIN";
-  const canEditHolidayDuty = currentUser?.role === "NURSE" || currentUser?.role === "ADMIN" || currentUser?.role === "ANESTHESIA";
+  const viewerRole = currentUser?.role ?? "";
+  const isOrLeaveAdmin = isOrLeaveAdminRole(viewerRole);
+  const isAnesthesiaLeaveAdmin = isAnesthesiaLeaveAdminRole(viewerRole);
+  const isLeaveManager = isLeaveManagerRole(viewerRole);
+  const isAdmin = isOrLeaveAdmin;
+  const canEditHolidayDuty = viewerRole === "NURSE" || isOrLeaveAdmin || viewerRole === "ANESTHESIA";
   const myGoldkey = goldkeys.find((g) => g.userId === auth?.userId);
   const isLoggedIn = Boolean(auth?.userId);
   const prevIsLoggedInRef = useRef(false);
@@ -1399,10 +1412,18 @@ function App() {
     setAuth(null);
   }
 
-  const requestsVisibleInUi = useMemo(
+  const requestsRawVisible = useMemo(
     () => (Array.isArray(requests) ? requests : []).filter((r) => !shouldHideAprilRecruitHalfGoldkeyCancelledRow(r)),
     [requests]
   );
+  const requestsVisibleInUi = useMemo(
+    () => filterRequestsForViewerRole(requestsRawVisible, users, viewerRole),
+    [requestsRawVisible, users, viewerRole]
+  );
+  const anesthesiaPublishedRequests = useMemo(() => {
+    if (!showAnesthesiaPublishedOverlay(viewerRole)) return [];
+    return filterAnesthesiaPublishedForOrView(requestsRawVisible, users, isWinnerStatus);
+  }, [requestsRawVisible, users, viewerRole]);
   const myRequests = useMemo(
     () => requestsVisibleInUi.filter((r) => r.userId === auth?.userId),
     [requestsVisibleInUi, auth?.userId]
@@ -1425,8 +1446,8 @@ function App() {
   );
   const calendarData = useMemo(() => {
     const [year, month] = calendarMonth.split("-").map(Number);
-    return buildMonthMatrix(year, month, requestsVisibleInUi, users, holidays);
-  }, [calendarMonth, requestsVisibleInUi, users, holidays]);
+    return buildMonthMatrix(year, month, requestsVisibleInUi, anesthesiaPublishedRequests, users, holidays);
+  }, [calendarMonth, requestsVisibleInUi, anesthesiaPublishedRequests, users, holidays]);
 
   const calendarDayRequests = useMemo(() => {
     if (!calendarSelectedYmd) return [];
@@ -1435,6 +1456,14 @@ function App() {
       .sort((a, b) => compareSameLeaveDateRequests(a, b, users));
     return dedupeRequestsForCalendarChips(sorted);
   }, [requestsVisibleInUi, calendarSelectedYmd, users]);
+
+  const calendarAnesthesiaDayRequests = useMemo(() => {
+    if (!calendarSelectedYmd || !showAnesthesiaPublishedOverlay(viewerRole)) return [];
+    const sorted = [...anesthesiaPublishedRequests]
+      .filter((r) => r.leaveDate === calendarSelectedYmd)
+      .sort((a, b) => compareSameLeaveDateRequests(a, b, users));
+    return dedupeRequestsForCalendarChips(sorted);
+  }, [anesthesiaPublishedRequests, calendarSelectedYmd, users, viewerRole]);
 
   async function submitRequest(e) {
     e.preventDefault();
@@ -1466,8 +1495,12 @@ function App() {
       requests,
     });
     if (error) return setMessage(error);
-    if (currentUser?.role !== "NURSE") {
-      setMessage("마취과 간호사는 휴가 신청을 할 수 없습니다.");
+    if (viewerRole !== "NURSE" && viewerRole !== "ANESTHESIA") {
+      setMessage("휴가 신청 권한이 없습니다.");
+      return;
+    }
+    if (viewerRole === "ANESTHESIA" && leaveType === "GOLDKEY") {
+      setMessage("마취과 간호사는 골드키 휴가를 신청할 수 없습니다.");
       return;
     }
     const payload = {
@@ -1601,11 +1634,11 @@ function App() {
   }
 
   async function uncancelRequest(requestId) {
-    if (!isAdmin) {
-      window.alert?.("취소 복원은 관리자만 할 수 있습니다.");
+    const target = requests.find((r) => r.id === requestId);
+    if (!target || !canViewerApproveRequest(viewerRole, target.userId, users)) {
+      window.alert?.("취소 복원 권한이 없습니다.");
       return;
     }
-    const target = requests.find((r) => r.id === requestId);
     if (!target || target.status !== "CANCELLED") return;
     if (!window.confirm("정말 복원하시겠습니까?")) return;
     const prevSnapshot = requests;
@@ -1652,6 +1685,10 @@ function App() {
   async function selectRequest(requestId, substituteOpts = null) {
     const target = requests.find((r) => r.id === requestId);
     if (!target) return;
+    if (!canViewerApproveRequest(viewerRole, target.userId, users)) {
+      window.alert?.("이 휴가를 확정할 권한이 없습니다.");
+      return;
+    }
     const rawItems = Array.isArray(substituteOpts?.substituteItems)
       ? substituteOpts.substituteItems
       : [{ substituteUserId: substituteOpts?.substituteUserId ?? "", shiftCode: substituteOpts?.shiftCode ?? "" }];
@@ -1730,11 +1767,11 @@ function App() {
   }
 
   async function unselectRequest(requestId) {
-    if (!isAdmin) {
-      window.alert?.("휴가 확정 취소는 관리자만 할 수 있습니다.");
+    const target = requests.find((r) => r.id === requestId);
+    if (!target || !canViewerApproveRequest(viewerRole, target.userId, users)) {
+      window.alert?.("휴가 확정 취소 권한이 없습니다.");
       return;
     }
-    const target = requests.find((r) => r.id === requestId);
     if (!target || !isWinnerStatus(target.status)) return;
     if (!window.confirm("휴가 확정을 취소하고 신청 상태로 되돌리시겠습니까?")) return;
     const prevRequests = requests;
@@ -1900,6 +1937,10 @@ function App() {
 
   async function rejectRequest(requestId) {
     const target = requests.find((r) => r.id === requestId);
+    if (!target || !canViewerApproveRequest(viewerRole, target.userId, users)) {
+      window.alert?.("휴가 반려 권한이 없습니다.");
+      return;
+    }
     setSubstituteAssignments((prev) => (Array.isArray(prev) ? prev : []).filter((x) => x.requestId !== requestId));
     setRequests((prev) => prev.map((r) => (r.id === requestId ? { ...r, status: "REJECTED" } : r)));
     if (serverMode) {
@@ -2268,13 +2309,15 @@ function App() {
             <h1 className="app-header-title">EOROFF</h1>
             <p className="app-header-userline" aria-hidden={false}>
               {currentUser?.name}
-              {currentUser?.role === "ADMIN"
+              {viewerRole === "ADMIN"
                 ? " · 관리자"
-                : currentUser?.role === "NURSE"
-                  ? " · 간호사"
-                  : currentUser?.role === "ANESTHESIA"
-                    ? " · 마취"
-                    : ""}
+                : viewerRole === "ADMIN2"
+                  ? " · 관리자2"
+                  : viewerRole === "NURSE"
+                    ? " · 간호사"
+                    : viewerRole === "ANESTHESIA"
+                      ? " · 마취"
+                      : ""}
             </p>
           </div>
           <div className="app-header-actions app-header-actions--inline">
@@ -2350,7 +2393,7 @@ function App() {
               myRequests={myRequests}
               cancelRequest={cancelRequest}
               uncancelRequest={uncancelRequest}
-              canUncancel={isAdmin}
+              canUncancel={isLeaveManager}
               serverMode={serverMode}
               onUpdateLeaveNature={updateLeaveNatureForRequest}
             />
@@ -2431,6 +2474,8 @@ function App() {
               selectedYmd={calendarSelectedYmd}
               setSelectedYmd={setCalendarSelectedYmd}
               dayRequests={calendarDayRequests}
+              anesthesiaDayRequests={calendarAnesthesiaDayRequests}
+              viewerRole={viewerRole}
               users={users}
               leaveType={leaveType}
               setLeaveType={setLeaveType}
@@ -2441,7 +2486,9 @@ function App() {
               submitRequest={submitRequest}
               myGoldkey={myGoldkey}
               message={message}
-              isAdmin={isAdmin}
+              isOrLeaveAdmin={isOrLeaveAdmin}
+              isAnesthesiaLeaveAdmin={isAnesthesiaLeaveAdmin}
+              isLeaveManager={isLeaveManager}
               canEditHolidayDuty={canEditHolidayDuty}
               currentUserId={auth?.userId}
               saveNegotiationOrder={saveNegotiationOrder}
@@ -2533,7 +2580,7 @@ function App() {
       </Routes>
       </main>
 
-      <AppBottomNav isAdmin={isAdmin} role={currentUser?.role} />
+      <AppBottomNav isOrLeaveAdmin={isOrLeaveAdmin} isAnesthesiaLeaveAdmin={isAnesthesiaLeaveAdmin} role={viewerRole} />
     </div>
   );
 }
@@ -4307,7 +4354,7 @@ function DashboardPage({
   rejectRequest,
   saveSubstituteForApprovedRequest,
 }) {
-  const [dashTab, setDashTab] = useState(() => (currentRole === "ANESTHESIA" ? "schedule" : "summary"));
+  const [dashTab, setDashTab] = useState("schedule");
   const [draftRows, setDraftRows] = useState(Array.isArray(workScheduleRows) ? workScheduleRows : WORK_SCHEDULE_2026_ROWS);
   const [draftRows2027, setDraftRows2027] = useState(
     Array.isArray(workScheduleRows2027) ? workScheduleRows2027 : WORK_SCHEDULE_2027_ROWS
@@ -4514,7 +4561,7 @@ function DashboardPage({
 
   return (
     <>
-      {currentRole === "ANESTHESIA" ? (
+      {currentRole === "ANESTHESIA" || currentRole === "ADMIN2" ? (
         <div className="segmented-wrap segmented-wrap--multi" role="tablist" aria-label="현황 구분">
           <button
             type="button"
@@ -4540,15 +4587,6 @@ function DashboardPage({
           <button
             type="button"
             role="tab"
-            aria-selected={dashTab === "summary"}
-            className={`segmented-btn${dashTab === "summary" ? " segmented-btn--active" : ""}`}
-            onClick={() => setDashTab("summary")}
-          >
-            골드키
-          </button>
-          <button
-            type="button"
-            role="tab"
             aria-selected={dashTab === "schedule"}
             className={`segmented-btn${dashTab === "schedule" ? " segmented-btn--active" : ""}`}
             onClick={() => setDashTab("schedule")}
@@ -4563,6 +4601,15 @@ function DashboardPage({
             onClick={() => setDashTab("weekly")}
           >
             주간 번표
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={dashTab === "summary"}
+            className={`segmented-btn${dashTab === "summary" ? " segmented-btn--active" : ""}`}
+            onClick={() => setDashTab("summary")}
+          >
+            골드키
           </button>
           <button
             type="button"
@@ -4586,7 +4633,7 @@ function DashboardPage({
           ) : null}
         </div>
       )}
-      {currentRole !== "ANESTHESIA" && dashTab === "summary" ? (
+      {currentRole !== "ANESTHESIA" && currentRole !== "ADMIN2" && dashTab === "summary" ? (
         <section className="card">
           <h2 className="screen-title">골드키</h2>
           <p className="help page-lead goldkey-policy-note">
@@ -4628,7 +4675,7 @@ function DashboardPage({
           </div>
         </section>
       ) : null}
-      {currentRole !== "ANESTHESIA" && dashTab === "ladder-results" ? (
+      {currentRole !== "ANESTHESIA" && currentRole !== "ADMIN2" && dashTab === "ladder-results" ? (
         <section className="card">
           <h2 className="screen-title">저장된 사다리 결과</h2>
           <div className="ladder-results-list">
@@ -4925,11 +4972,11 @@ function navLinkClass({ isActive }) {
 }
 
 /** 하단 고정 탭 — 한 손 엄지로 주요 화면 전환 */
-function AppBottomNav({ isAdmin, role }) {
-  const showLadder = role !== "ANESTHESIA";
-  const showMy = role === "NURSE";
+function AppBottomNav({ isOrLeaveAdmin, isAnesthesiaLeaveAdmin, role }) {
+  const showLadder = role !== "ANESTHESIA" && role !== "ADMIN2";
+  const showMy = role === "NURSE" || role === "ANESTHESIA";
 
-  if (isAdmin) {
+  if (isOrLeaveAdmin) {
     return (
       <nav className="app-bottom-nav" aria-label="주 메뉴">
         <NavLink to="/calendar" className={navLinkClass} end>
@@ -4940,6 +4987,25 @@ function AppBottomNav({ isAdmin, role }) {
         </NavLink>
         <NavLink to="/admin" className={navLinkClass}>
           기록
+        </NavLink>
+        <NavLink to="/notices" className={navLinkClass}>
+          공지사항
+        </NavLink>
+        <NavLink to="/settings" className={navLinkClass}>
+          설정
+        </NavLink>
+      </nav>
+    );
+  }
+
+  if (isAnesthesiaLeaveAdmin) {
+    return (
+      <nav className="app-bottom-nav" aria-label="주 메뉴">
+        <NavLink to="/calendar" className={navLinkClass} end>
+          캘린더
+        </NavLink>
+        <NavLink to="/dashboard" className={navLinkClass}>
+          현황
         </NavLink>
         <NavLink to="/notices" className={navLinkClass}>
           공지사항
@@ -5118,7 +5184,7 @@ function NoticeBoardPage({
     [users, currentUserId]
   );
   const canWriteNoticeComments =
-    currentRole === "ADMIN" || currentRole === "NURSE" || currentRole === "ANESTHESIA";
+    currentRole === "ADMIN" || currentRole === "ADMIN2" || currentRole === "NURSE" || currentRole === "ANESTHESIA";
 
   const commentsForSelected = useMemo(() => {
     if (!selected?.id) return [];
@@ -5984,6 +6050,8 @@ function CalendarPage({
   selectedYmd,
   setSelectedYmd,
   dayRequests,
+  anesthesiaDayRequests = [],
+  viewerRole = "",
   users,
   leaveType,
   setLeaveType,
@@ -5994,7 +6062,9 @@ function CalendarPage({
   submitRequest,
   myGoldkey,
   message,
-  isAdmin,
+  isOrLeaveAdmin = false,
+  isAnesthesiaLeaveAdmin = false,
+  isLeaveManager = false,
   canEditHolidayDuty,
   currentUserId,
   saveNegotiationOrder,
@@ -6059,7 +6129,18 @@ function CalendarPage({
 
   const selectedCell = selectedYmd ? calendarData.find((c) => c.date === selectedYmd) : null;
   const nurseUsers = users.filter((u) => u.role === "NURSE").sort((a, b) => a.name.localeCompare(b.name, "ko"));
-  const anesthesiaUsers = users.filter((u) => u.role === "ANESTHESIA");
+  const anesthesiaUsers = users.filter((u) => u.role === "ANESTHESIA").sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  const showApplyTab = viewerRole === "NURSE" || viewerRole === "ANESTHESIA";
+  const showAnesthesiaOverlay = showAnesthesiaPublishedOverlay(viewerRole);
+  function canManageRequest(r) {
+    return canViewerApproveRequest(viewerRole, r?.userId, users);
+  }
+
+  function subsForRequest(requestId) {
+    return (Array.isArray(substituteAssignments) ? substituteAssignments : []).filter(
+      (s) => String(s.requestId) === String(requestId)
+    );
+  }
 
   const selectedHolidayDuty = selectedYmd ? holidayDuties?.[selectedYmd] : null;
   const [duty1UserId, setDuty1UserId] = useState(selectedHolidayDuty?.nurse1UserId ?? "");
@@ -6575,7 +6656,11 @@ function CalendarPage({
               }}
             >
               <div className={`calendar-date${cell.isOffDay ? " calendar-date--holiday" : ""}`}>{cell.day}</div>
-              {cell.inMonth && Array.isArray(cell.displayApplicants) && cell.displayApplicants.length > 0 ? (
+              {cell.inMonth &&
+              ((Array.isArray(cell.displayApplicants) && cell.displayApplicants.length > 0) ||
+                (showAnesthesiaOverlay &&
+                  Array.isArray(cell.anesthesiaDisplayApplicants) &&
+                  cell.anesthesiaDisplayApplicants.length > 0)) ? (
                 <div className="calendar-cell-events">
                   {cell.displayApplicants.slice(0, CALENDAR_DAY_CHIP_MAX).map((a) => {
                     const nameLen = [...String(a.name ?? "")].length;
@@ -6594,6 +6679,26 @@ function CalendarPage({
                     <span className="calendar-chip-more" title={`외 ${cell.displayApplicants.length - CALENDAR_DAY_CHIP_MAX}명`}>
                       +{cell.displayApplicants.length - CALENDAR_DAY_CHIP_MAX}
                     </span>
+                  ) : null}
+                  {showAnesthesiaOverlay && Array.isArray(cell.anesthesiaDisplayApplicants) && cell.anesthesiaDisplayApplicants.length > 0 ? (
+                    <>
+                      <div className="calendar-cell-divider" aria-hidden />
+                      <div className="calendar-cell-events calendar-cell-events--anesthesia">
+                        {cell.anesthesiaDisplayApplicants.slice(0, CALENDAR_DAY_CHIP_MAX).map((a) => {
+                          const nameLen = [...String(a.name ?? "")].length;
+                          const name3 = nameLen === 3 ? " calendar-day-chip--name3" : "";
+                          return (
+                            <span
+                              key={`anes_${a.id}`}
+                              className={`calendar-day-chip calendar-day-chip--anesthesia ${buildLeaveChipClass(a.leaveType, a.status)}${name3}`}
+                              title={`[마취] ${a.name} · ${typeFullLabel(a.leaveType)} · ${statusLabel(a.status)}`}
+                            >
+                              <span className="calendar-day-chip__text">{a.name}</span>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </>
                   ) : null}
                 </div>
               ) : null}
@@ -6698,7 +6803,7 @@ function CalendarPage({
                     >
                       신청 현황
                     </button>
-                    {!isAdmin ? (
+                    {showApplyTab ? (
                       <button
                         type="button"
                         role="tab"
@@ -6713,9 +6818,9 @@ function CalendarPage({
                       </button>
                     ) : null}
                   </div>
-                  {detailTab === "list" || isAdmin ? (
+                  {detailTab === "list" || isLeaveManager ? (
                     <div className="calendar-detail-body" role="tabpanel">
-                      {dayRequests.length === 0 ? (
+                      {dayRequests.length === 0 && (!showAnesthesiaOverlay || anesthesiaDayRequests.length === 0) ? (
                         <p className="help">이 날짜에 등록된 신청이 없습니다.</p>
                       ) : (
                         <>
@@ -6781,14 +6886,15 @@ function CalendarPage({
 
                               const adminTopText = `${prefix}${nm} · ${typeFullLabel(r.leaveType)}`;
                               const adminBottomText = `${leaveNatureLabel(r.leaveNature)} · ${statusLabel(r.status)}`;
-                              const lineText = isAdmin
+                              const manageRow = canManageRequest(r);
+                              const lineText = manageRow
                                 ? `${adminTopText} · ${adminBottomText}`
                                 : `${prefix}${nm} · ${typeFullLabel(r.leaveType)} · ${statusLabel(r.status)}`;
                               const pastLeaveNoCancel = isLeaveDateBeforeTodayKst(normalizeLeaveDateStr(r.leaveDate));
                               return (
                                 <li
                                   key={r.id}
-                                  className={`calendar-applicant-item calendar-applicant-item--row${isAdmin ? " calendar-applicant-item--admin" : ""}${r.status === "REJECTED" ? " calendar-applicant-item--rejected" : ""}`}
+                                  className={`calendar-applicant-item calendar-applicant-item--row${manageRow ? " calendar-applicant-item--admin" : ""}${r.status === "REJECTED" ? " calendar-applicant-item--rejected" : ""}`}
                                 >
                                   <div className="negotiation-order-cell">
                                     {(isNegotiate || isManualOnly) && r.status !== "CANCELLED" ? (
@@ -6820,7 +6926,7 @@ function CalendarPage({
                                     className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status)}`}
                                     title={lineText}
                                   >
-                                    {isAdmin ? (
+                                    {manageRow ? (
                                       <>
                                         <span className="admin-applicant-line admin-applicant-line--top">{adminTopText}</span>
                                         <span className="admin-applicant-line admin-applicant-line--bottom">{adminBottomText}</span>
@@ -6829,7 +6935,7 @@ function CalendarPage({
                                       lineText
                                     )}
                                   </span>
-                                  {isAdmin && r.status === "APPLIED" ? (
+                                  {manageRow && r.status === "APPLIED" ? (
                                     <div className="admin-calendar-applicant-actions">
                                       <button type="button" className="admin-calendar-btn admin-calendar-btn--approve" onClick={() => void selectRequest(r.id, {})}>
                                         확정
@@ -6839,14 +6945,14 @@ function CalendarPage({
                                       </button>
                                     </div>
                                   ) : null}
-                                  {isAdmin && isWinnerStatus(r.status) ? (
+                                  {manageRow && isWinnerStatus(r.status) ? (
                                     <div className="admin-calendar-applicant-actions">
                                       <button type="button" className="admin-calendar-btn admin-calendar-btn--reject" onClick={() => void unselectRequest(r.id)}>
                                         휴가확정취소
                                       </button>
                                     </div>
                                   ) : null}
-                                  {!isAdmin && r.status === "APPLIED" && r.userId === currentUserId ? (
+                                  {!manageRow && r.status === "APPLIED" && r.userId === currentUserId ? (
                                     <div className="admin-calendar-applicant-actions">
                                       <button
                                         type="button"
@@ -6863,11 +6969,38 @@ function CalendarPage({
                               );
                             })}
                           </ul>
+                          {showAnesthesiaOverlay && anesthesiaDayRequests.length > 0 ? (
+                            <>
+                              <div className="calendar-applicant-divider" role="separator">
+                                <span>마취과</span>
+                              </div>
+                              <ul className="calendar-applicant-list calendar-applicant-list--anesthesia">
+                                {anesthesiaDayRequests.map((r) => {
+                                  const nm = users.find((u) => u.id === r.userId)?.name ?? r.userId;
+                                  const subs = subsForRequest(r.id);
+                                  const subLine = subs
+                                    .map((s) => {
+                                      const sn = users.find((u) => u.id === s.substituteUserId)?.name ?? s.substituteUserId;
+                                      return `${sn}(${s.shiftCode})`;
+                                    })
+                                    .join(", ");
+                                  return (
+                                    <li key={`anes_view_${r.id}`} className="calendar-applicant-item calendar-applicant-item--anesthesia-readonly">
+                                      <span className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status)}`}>
+                                        {nm} · {typeFullLabel(r.leaveType)} · {statusLabel(r.status)}
+                                        {subLine ? ` · 대체 ${subLine}` : ""}
+                                      </span>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            </>
+                          ) : null}
                         </>
                       )}
-                      {isAdmin ? (
+                      {isOrLeaveAdmin ? (
                         <div className="admin-calendar-substitute-section">
-                          <h4 className="admin-calendar-substitute-title">대체 근무 지정</h4>
+                          <h4 className="admin-calendar-substitute-title">대체 근무 지정 (수술실)</h4>
                           <p className="help admin-calendar-substitute-lead">
                             휴가자 선택 없이 대체 인력/번표만 입력 후 저장합니다.
                           </p>
@@ -6932,6 +7065,69 @@ function CalendarPage({
                           </div>
                         </div>
                       ) : null}
+                      {isAnesthesiaLeaveAdmin ? (
+                        <div className="admin-calendar-substitute-section admin-calendar-substitute-section--anesthesia">
+                          <h4 className="admin-calendar-substitute-title">대체 근무 지정 (마취과)</h4>
+                          <p className="help admin-calendar-substitute-lead">확정된 마취과 휴가에 대체 인력·번표를 지정합니다.</p>
+                          {calendarSubTargetRequests.length === 0 ? (
+                            <p className="help admin-calendar-substitute-lead">이 날짜에 확정·신청 중인 마취과 휴가가 없습니다.</p>
+                          ) : null}
+                          <div className="admin-calendar-substitute-stack">
+                            {calendarSubRows.map((row, idx) => (
+                              <div key={row.rowId} className="admin-calendar-sub-bulk-row">
+                                <span className="admin-calendar-sub-bulk-label">대체 인력 {idx + 1}</span>
+                                <select
+                                  value={row.substituteUserId}
+                                  onChange={(e) => updateCalendarSubRow(row.rowId, "substituteUserId", e.target.value)}
+                                >
+                                  <option value="">대체자 선택</option>
+                                  {anesthesiaUsers.map((u) => (
+                                    <option key={u.id} value={u.id}>
+                                      {u.name}
+                                    </option>
+                                  ))}
+                                </select>
+                                <select
+                                  value={isCustomShiftCodeValue(row.shiftCode) ? CUSTOM_SHIFT_SENTINEL : row.shiftCode}
+                                  onChange={(e) => {
+                                    const next = String(e.target.value ?? "");
+                                    if (next === CUSTOM_SHIFT_SENTINEL) {
+                                      updateCalendarSubRow(row.rowId, "shiftCode", toCustomShiftCode(customShiftText(row.shiftCode)));
+                                      return;
+                                    }
+                                    updateCalendarSubRow(row.rowId, "shiftCode", next);
+                                  }}
+                                >
+                                  <option value="">대체 근무 번표</option>
+                                  {WORK_SCHEDULE_OPTIONS.filter((x) => x).map((opt) => (
+                                    <option key={opt} value={opt}>
+                                      {opt}
+                                    </option>
+                                  ))}
+                                  <option value={CUSTOM_SHIFT_SENTINEL}>직접입력</option>
+                                </select>
+                                {isCustomShiftCodeValue(row.shiftCode) ? (
+                                  <input
+                                    type="text"
+                                    placeholder="예: 3 9-5"
+                                    value={customShiftText(row.shiftCode)}
+                                    onChange={(e) => updateCalendarSubRow(row.rowId, "shiftCode", toCustomShiftCode(e.target.value))}
+                                  />
+                                ) : null}
+                                <button type="button" onClick={() => void applyCalendarSubRow(row)}>
+                                  저장
+                                </button>
+                                <button type="button" onClick={() => removeCalendarSubRow(row.rowId)}>
+                                  삭제
+                                </button>
+                              </div>
+                            ))}
+                            <button type="button" onClick={addCalendarSubRow}>
+                              대체 인력 추가
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   ) : (
                     <div className="calendar-detail-body calendar-detail-body--apply" role="tabpanel">
@@ -6939,7 +7135,7 @@ function CalendarPage({
                       <form className="grid calendar-apply-form" onSubmit={submitRequest}>
                         <label className="field-label">휴가 구분</label>
                         <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)} aria-label="휴가 구분">
-                          <option value="GOLDKEY">골드키</option>
+                          {viewerRole !== "ANESTHESIA" ? <option value="GOLDKEY">골드키</option> : null}
                           <option value="GENERAL_PRIORITY">일반휴가-우선순위</option>
                           <option value="GENERAL_NORMAL">일반휴가-후순위</option>
                           <option value="HALF_DAY">반차</option>
@@ -6951,7 +7147,9 @@ function CalendarPage({
                         <input type="text" placeholder="신청 메모" value={memo} onChange={(e) => setMemo(e.target.value)} />
                         <button type="submit">신청</button>
                       </form>
-                      <p className="help">내 골드키 잔여: {myGoldkey?.remainingCount ?? 0} / {myGoldkey?.quotaTotal ?? 0}</p>
+                      {viewerRole !== "ANESTHESIA" ? (
+                        <p className="help">내 골드키 잔여: {myGoldkey?.remainingCount ?? 0} / {myGoldkey?.quotaTotal ?? 0}</p>
+                      ) : null}
                       {message ? <p className="msg">{message}</p> : null}
                     </div>
                   )}
@@ -6961,9 +7159,12 @@ function CalendarPage({
         )}
       </div>
 
-      {selectedYmd && selectedCell?.inMonth && (isAdmin || !selectedCell?.isOffDay) && (!detailModalOpen || detailTab === "list") ? (
+      {selectedYmd &&
+      selectedCell?.inMonth &&
+      (isOrLeaveAdmin || isAnesthesiaLeaveAdmin || !selectedCell?.isOffDay) &&
+      (!detailModalOpen || detailTab === "list") ? (
         <section className="admin-day-panel">
-          <h3>{selectedYmd} 휴가자</h3>
+          <h3>{selectedYmd} 휴가자 (수술실)</h3>
           <ul>
             {selectedCell.approvedApplicants.length === 0 ? (
               <li className="help admin-day-empty">없음</li>
@@ -6975,6 +7176,21 @@ function CalendarPage({
               ))
             )}
           </ul>
+          {showAnesthesiaOverlay && Array.isArray(selectedCell.anesthesiaApprovedApplicants) && selectedCell.anesthesiaApprovedApplicants.length > 0 ? (
+            <>
+              <div className="calendar-applicant-divider admin-day-panel__divider" role="separator">
+                <span>마취과</span>
+              </div>
+              <h3 className="admin-day-panel__anes-title">{selectedYmd} 휴가자 (마취과)</h3>
+              <ul>
+                {selectedCell.anesthesiaApprovedApplicants.map((item) => (
+                  <li key={`anes_ap_${item.id}`}>
+                    {item.name} ({typeFullLabel(item.leaveType)})
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
           <div className="admin-day-substitute-grid-wrap">
             <h4>{selectedYmd} 대체자</h4>
             <div className="admin-day-substitute-grid">
@@ -7019,7 +7235,7 @@ function CalendarPage({
           </div>
           <div style={{ marginTop: 10 }} data-calendar-scroll-target="duty-memo">
             <h4>듀티 메모</h4>
-            {isAdmin ? (
+            {isOrLeaveAdmin ? (
               <>
                 <textarea
                   className="duty-memo-text"
@@ -7047,7 +7263,7 @@ function CalendarPage({
               <ul className="day-comment-list">
                 {selectedDayComments.map((row) => {
                   const authorName = users.find((u) => u.id === row.userId)?.name ?? row.userId;
-                  const canManageComment = currentUserId === row.userId || isAdmin;
+                  const canManageComment = currentUserId === row.userId || isOrLeaveAdmin || isAnesthesiaLeaveAdmin;
                   const isEditing = editingCommentId === row.id;
                   return (
                     <li key={row.id} className="day-comment-item">
@@ -7469,7 +7685,7 @@ function dedupeRequestsForCalendarChips(sortedDayReqs) {
   return out;
 }
 
-function buildMonthMatrix(year, month, allRequests, users, holidaysCache) {
+function buildMonthMatrix(year, month, orRequests, anesthesiaOverlayRequests, users, holidaysCache) {
   const first = new Date(year, month - 1, 1);
   const start = new Date(first);
   start.setDate(first.getDate() - first.getDay());
@@ -7491,12 +7707,24 @@ function buildMonthMatrix(year, month, allRequests, users, holidaysCache) {
     const isHoliday = holidayByDate.has(iso);
     const isOffDay = isHoliday || isWeekend;
     const holidayName = holidayByDate.get(iso) ?? "";
-    const dayReqs = allRequests.filter((r) => r.leaveDate === iso);
+    const dayReqs = (Array.isArray(orRequests) ? orRequests : []).filter((r) => r.leaveDate === iso);
+    const dayAnesReqs = (Array.isArray(anesthesiaOverlayRequests) ? anesthesiaOverlayRequests : []).filter(
+      (r) => r.leaveDate === iso && r.status !== "CANCELLED"
+    );
     const activeDayReqs = dayReqs.filter((r) => r.status !== "CANCELLED");
     const hasGoldkeyRequest = activeDayReqs.some((r) => r.leaveType === "GOLDKEY");
     const sortedDayReqs = [...dayReqs].sort((a, b) => compareSameLeaveDateRequests(a, b, users));
     const forDisplay = dedupeRequestsForCalendarChips(sortedDayReqs);
     const displayApplicants = forDisplay.map((r) => ({
+      id: r.id,
+      userId: r.userId,
+      leaveType: r.leaveType,
+      status: r.status,
+      name: users.find((u) => u.id === r.userId)?.name ?? r.userId,
+    }));
+    const sortedAnes = [...dayAnesReqs].sort((a, b) => compareSameLeaveDateRequests(a, b, users));
+    const anesDisplay = dedupeRequestsForCalendarChips(sortedAnes);
+    const anesthesiaDisplayApplicants = anesDisplay.map((r) => ({
       id: r.id,
       userId: r.userId,
       leaveType: r.leaveType,
@@ -7514,6 +7742,7 @@ function buildMonthMatrix(year, month, allRequests, users, holidaysCache) {
       requestCount: activeDayReqs.length,
       hasGoldkeyRequest,
       displayApplicants,
+      anesthesiaDisplayApplicants,
       applicants: dayReqs
         .filter((r) => r.status !== "CANCELLED")
         .sort((a, b) => compareSameLeaveDateRequests(a, b, users))
@@ -7525,6 +7754,16 @@ function buildMonthMatrix(year, month, allRequests, users, holidaysCache) {
           name: users.find((u) => u.id === r.userId)?.name ?? r.userId,
         })),
       approvedApplicants: dayReqs
+        .filter((r) => isWinnerStatus(r.status))
+        .sort((a, b) => compareSameLeaveDateRequests(a, b, users))
+        .map((r) => ({
+          id: r.id,
+          userId: r.userId,
+          leaveType: r.leaveType,
+          status: r.status,
+          name: users.find((u) => u.id === r.userId)?.name ?? r.userId,
+        })),
+      anesthesiaApprovedApplicants: dayAnesReqs
         .filter((r) => isWinnerStatus(r.status))
         .sort((a, b) => compareSameLeaveDateRequests(a, b, users))
         .map((r) => ({

@@ -244,6 +244,47 @@ async function requireAdminUser(actorUserId) {
   return await queryOne("SELECT id FROM users WHERE id = ? AND role = 'ADMIN'", uid);
 }
 
+async function requireAdmin2User(actorUserId) {
+  const uid = String(actorUserId ?? "").trim();
+  if (!uid) return null;
+  return await queryOne("SELECT id FROM users WHERE id = ? AND role = 'ADMIN2'", uid);
+}
+
+async function userRoleById(userId) {
+  const row = await queryOne("SELECT role FROM users WHERE id = ?", String(userId ?? "").trim());
+  return String(row?.role ?? "").trim();
+}
+
+/** 수술실 휴가 → ADMIN, 마취과 휴가 → ADMIN2 */
+async function assertActorCanManageLeaveRequest(actorUserId, leaveUserId) {
+  const actorRole = await userRoleById(actorUserId);
+  const leaveRole = await userRoleById(leaveUserId);
+  if (!actorRole || !leaveRole) {
+    const err = new Error("권한이 없습니다.");
+    err.statusCode = 403;
+    throw err;
+  }
+  if (leaveRole === "ANESTHESIA") {
+    if (actorRole !== "ADMIN2") {
+      const err = new Error("마취과 휴가는 관리자2만 확정·반려할 수 있습니다.");
+      err.statusCode = 403;
+      throw err;
+    }
+    return;
+  }
+  if (leaveRole === "NURSE") {
+    if (actorRole !== "ADMIN") {
+      const err = new Error("수술실 휴가는 관리자만 확정·반려할 수 있습니다.");
+      err.statusCode = 403;
+      throw err;
+    }
+    return;
+  }
+  const err = new Error("권한이 없습니다.");
+  err.statusCode = 403;
+  throw err;
+}
+
 function newAdminAuditId() {
   return `aop_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -1269,10 +1310,7 @@ app.post("/api/substitute-assignments/:requestId/upsert", async (req, res) => {
     const items = Array.isArray(req.body?.items) ? req.body.items : [];
     if (!requestId) return res.status(400).json({ error: "requestId가 필요합니다." });
     if (!actorUserId) return res.status(400).json({ error: "actorUserId가 필요합니다." });
-    const actor = await queryOne(
-      "SELECT id FROM users WHERE id = ? AND role IN ('ADMIN', 'NURSE', 'ANESTHESIA')",
-      actorUserId
-    );
+    const actor = await queryOne("SELECT id, role FROM users WHERE id = ?", actorUserId);
     if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
 
     const standaloneM = /^standalone_sub:(\d{4}-\d{2}-\d{2})$/.exec(requestId);
@@ -1292,6 +1330,22 @@ app.post("/api/substitute-assignments/:requestId/upsert", async (req, res) => {
       }
       leaveDateFromRequest = String(reqRow.leave_date);
       leaveUserIdForSub = String(reqRow.user_id);
+      const leaveRole = await userRoleById(leaveUserIdForSub);
+      if (leaveRole === "ANESTHESIA") {
+        if (actor.role !== "ADMIN2") {
+          return res.status(403).json({ error: "마취과 대체 근무는 관리자2만 지정할 수 있습니다." });
+        }
+      } else if (!standaloneM && leaveRole === "NURSE") {
+        if (actor.role !== "ADMIN") {
+          return res.status(403).json({ error: "수술실 대체 근무는 관리자만 지정할 수 있습니다." });
+        }
+      } else if (!standaloneM) {
+        return res.status(403).json({ error: "권한이 없습니다." });
+      }
+    } else if (standaloneM) {
+      if (actor.role !== "ADMIN") {
+        return res.status(403).json({ error: "수술실 대체 근무는 관리자만 지정할 수 있습니다." });
+      }
     }
 
     const normalized = [];
@@ -1319,9 +1373,13 @@ app.post("/api/substitute-assignments/:requestId/upsert", async (req, res) => {
     if (normalized.length > 0) {
       const subIds = [...new Set(normalized.map((it) => it.substituteUserId))];
       const ph = subIds.map(() => "?").join(", ");
-      const validSubs = await queryAll(`SELECT id FROM users WHERE role = 'NURSE' AND id IN (${ph})`, ...subIds);
+      const subRole =
+        leaveUserIdForSub && (await userRoleById(leaveUserIdForSub)) === "ANESTHESIA" ? "ANESTHESIA" : "NURSE";
+      const validSubs = await queryAll(`SELECT id FROM users WHERE role = ? AND id IN (${ph})`, subRole, ...subIds);
       if (validSubs.length !== subIds.length) {
-        return res.status(400).json({ error: "대체 인력은 간호사 계정만 지정할 수 있습니다." });
+        return res.status(400).json({
+          error: subRole === "ANESTHESIA" ? "대체 인력은 마취과 간호사만 지정할 수 있습니다." : "대체 인력은 수술실 간호사만 지정할 수 있습니다.",
+        });
       }
     }
 
@@ -1450,8 +1508,11 @@ app.post("/api/requests", async (req, res) => {
 
     const user = await queryOne("SELECT id, role FROM users WHERE id = ?", userId);
     if (!user) return res.status(400).json({ error: "사용자 정보가 올바르지 않습니다." });
-    if (user.role !== "NURSE") {
-      return res.status(403).json({ error: "마취과 간호사는 휴가 신청을 할 수 없습니다." });
+    if (user.role !== "NURSE" && user.role !== "ANESTHESIA") {
+      return res.status(403).json({ error: "휴가 신청 권한이 없습니다." });
+    }
+    if (user.role === "ANESTHESIA" && leaveType === "GOLDKEY") {
+      return res.status(403).json({ error: "마취과 간호사는 골드키 휴가를 신청할 수 없습니다." });
     }
     if (!ALLOWED_LEAVE_TYPES.has(leaveType)) {
       return res.status(400).json({ error: "지원하지 않는 휴가 구분입니다." });
@@ -1838,7 +1899,7 @@ app.post("/api/requests/:id/uncancel", async (req, res) => {
     const actorUserId = String(req.body?.actorUserId ?? "").trim();
     if (!actorUserId) return res.status(400).json({ error: "actorUserId가 필요합니다." });
     const actor = await queryOne("SELECT id, role FROM users WHERE id = ?", actorUserId);
-    if (!actor || actor.role !== "ADMIN") {
+    if (!actor || (actor.role !== "ADMIN" && actor.role !== "ADMIN2")) {
       return res.status(403).json({ error: "관리자만 복원할 수 있습니다." });
     }
 
@@ -1850,12 +1911,17 @@ app.post("/api/requests/:id/uncancel", async (req, res) => {
     }
 
     const row = await queryOne(
-      `SELECT id, leave_type, leave_date, requested_at, status FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`,
+      `SELECT id, user_id, leave_type, leave_date, requested_at, status FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`,
       requestId
     );
     if (!row) return res.status(404).json({ error: "요청을 찾을 수 없습니다." });
     if (String(row.status) !== "CANCELLED") {
       return res.status(400).json({ error: "취소 상태인 신청만 복원할 수 있습니다." });
+    }
+    try {
+      await assertActorCanManageLeaveRequest(actorUserId, row.user_id);
+    } catch (authErr) {
+      return res.status(authErr.statusCode || 403).json({ error: String(authErr?.message || authErr) });
     }
 
     const nowIso = new Date().toISOString();
@@ -1912,6 +1978,16 @@ app.post("/api/requests/:id/select", async (req, res) => {
     const selectionId = String(req.body?.selectionId ?? "").trim();
     const selectedAt = String(req.body?.selectedAt ?? "").trim();
     if (!selectionId || !selectedAt) return res.status(400).json({ error: "selectionId, selectedAt가 필요합니다." });
+
+    const leaveOwner = await queryOne(
+      `SELECT user_id FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`,
+      requestId
+    );
+    try {
+      await assertActorCanManageLeaveRequest(selectedBy, leaveOwner?.user_id);
+    } catch (authErr) {
+      return res.status(authErr.statusCode || 403).json({ error: String(authErr?.message || authErr) });
+    }
 
     await runTransaction(async (tx) => {
       const cur = await tx.queryOne(
@@ -1978,6 +2054,16 @@ app.post("/api/requests/:id/unselect", async (req, res) => {
     const actorUserId = String(req.body?.actorUserId ?? "").trim();
     if (!actorUserId) return res.status(400).json({ error: "actorUserId가 필요합니다." });
 
+    const leaveOwnerUn = await queryOne(
+      `SELECT user_id FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`,
+      requestId
+    );
+    try {
+      await assertActorCanManageLeaveRequest(actorUserId, leaveOwnerUn?.user_id);
+    } catch (authErr) {
+      return res.status(authErr.statusCode || 403).json({ error: String(authErr?.message || authErr) });
+    }
+
     await runTransaction(async (tx) => {
       const cur = await tx.queryOne(
         `SELECT status FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`,
@@ -2033,6 +2119,16 @@ app.post("/api/requests/:id/reject", async (req, res) => {
     const actorUserId = String(req.body?.actorUserId ?? "").trim();
     if (!actorUserId) return res.status(400).json({ error: "actorUserId가 필요합니다." });
     const reason = String(req.body?.reason ?? req.body?.rejectReason ?? "").trim();
+
+    const leaveOwnerRej = await queryOne(
+      `SELECT user_id FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`,
+      requestId
+    );
+    try {
+      await assertActorCanManageLeaveRequest(actorUserId, leaveOwnerRej?.user_id);
+    } catch (authErr) {
+      return res.status(authErr.statusCode || 403).json({ error: String(authErr?.message || authErr) });
+    }
 
     await runTransaction(async (tx) => {
       const cur = await tx.queryOne(

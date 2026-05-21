@@ -2379,6 +2379,56 @@ button.ym-wheel-check:hover {
   letter-spacing: -0.02em;
 }
 
+.calendar-cell-divider {
+  width: 100%;
+  height: 0;
+  border: none;
+  border-top: 1px solid var(--border, #c8cdd3);
+  margin: 3px 0 2px;
+  flex-shrink: 0;
+}
+
+.calendar-cell-events--anesthesia {
+  margin-top: 0;
+}
+
+.calendar-day-chip--anesthesia {
+  opacity: 0.95;
+  box-shadow: inset 0 -2px 0 0 #6b5b95;
+}
+
+.calendar-applicant-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 8px;
+  color: var(--muted, #5c6570);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.calendar-applicant-divider::before,
+.calendar-applicant-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border, #c8cdd3);
+}
+
+.calendar-applicant-list--anesthesia .calendar-applicant-item--anesthesia-readonly {
+  border-left: 3px solid #6b5b95;
+  padding-left: 8px;
+}
+
+.admin-day-panel__divider {
+  margin-top: 12px;
+}
+
+.admin-day-panel__anes-title {
+  margin: 8px 0 6px;
+  font-size: 0.95rem;
+}
+
 /* 관리자 승인(또는 레거시 확정): 유형색 유지 + 왼쪽 포인트 블루 띠(휴가 유형 색과 충돌 적음) */
 .calendar-day-chip.selected-item.request-approved {
   box-shadow: inset 3px 0 0 0 var(--approved-stripe) !important;
