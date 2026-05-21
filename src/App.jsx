@@ -36,6 +36,7 @@ import {
   shiftOptionSetForRole,
   shiftOptionsForRole,
   weeklyStaffForViewer,
+  weeklyRosterAllSections,
   ANESTHESIA_MONTHLY_NAMES,
   CHIEF_MONTHLY_NAMES,
   canEditMonthlyScheduleCell,
@@ -3531,13 +3532,7 @@ function WeeklyScheduleTab({
   const mon = mondayOfWeekContaining(weekAnchor);
   const days = Array.from({ length: 7 }, (_, i) => addDaysToYmd(mon, i));
   const dayLabels = ["월", "화", "수", "목", "금", "토", "일"];
-  const nurses = weeklyStaffForViewer(users, viewerRole);
-  const rosterNameCol =
-    viewerRole === "ANESTHESIA" || viewerRole === "ADMIN2"
-      ? "마취과"
-      : viewerRole === "CHIEF" || viewerRole === "ADMIN3"
-        ? "주임"
-        : "간호사";
+  const rosterRows = weeklyRosterAllSections(users);
 
   /** 주말·공휴일(명절 등 캐시된 휴일) 열 — 일반 근무가 없는 날짜 강조 */
   function isWeeklyRestDayColumn(ymd) {
@@ -3589,7 +3584,7 @@ function WeeklyScheduleTab({
 
   function exportOfficialWeeklyDocument(overrideMapForExport) {
     const ov = overrideMapForExport ?? draftOverrides;
-    const nurseRows = nurses.map((u) => ({
+    const nurseRows = rosterRows.map((u) => ({
       name: u.name,
       cells: days.map((d) => displayCellWithOverrideMap(u, d, ov)),
     }));
@@ -3651,7 +3646,7 @@ function WeeklyScheduleTab({
         <table className="weekly-schedule-table">
           <thead>
             <tr>
-              <th className="weekly-th-name">{rosterNameCol}</th>
+              <th className="weekly-th-name">이름</th>
               {days.map((d, i) => (
                 <th
                   key={d}
@@ -3664,50 +3659,75 @@ function WeeklyScheduleTab({
             </tr>
           </thead>
           <tbody>
-            {nurses.map((u) => (
-              <tr key={u.id}>
-                <td className="weekly-name">{u.name}</td>
-                {days.map((d) => {
-                  const cell = displayCell(u, d);
-                  const key = weeklyCellKey(u.id, d);
-                  const selVal = weeklyOverrideSelectValue(draftOverrides[key]);
-                  const auto = computedCell(u, d);
-                  const autoMain = String(auto?.main ?? "").trim();
-                  const autoLabel = weeklyCellDisplayLine(auto);
-                  return (
-                    <td
-                      key={d}
-                      className={`weekly-cell weekly-cell--${cell.kind}${isWeeklyRestDayColumn(d) ? " weekly-cell--restcol" : ""}`}
-                    >
-                      {canEditWeekly ? (
-                        <select
-                          className="weekly-cell-select"
-                          value={selVal}
-                          onChange={(e) => onCellOverrideChange(u.id, d, e.target.value)}
-                          aria-label={`${u.name} ${d} 표시`}
-                        >
-                          <option value="__auto__">{autoLabel || "자동"}</option>
-                          {WEEKLY_LEAVE_MARK_OPTIONS.filter((mark) => mark !== autoMain).map((mark) => (
-                            <option key={`leave-${mark}`} value={`__leave__:${mark}`}>
-                              {mark}
-                            </option>
-                          ))}
-                          {shiftOptionsForRole(u.role)
-                            .filter((x) => x && !WEEKLY_LEAVE_MARK_OPTIONS.includes(x) && x !== autoMain)
-                            .map((opt) => (
-                            <option key={`base-${opt}`} value={`__base__:${opt}`}>
-                              {opt}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <div className="weekly-cell-main weekly-cell-main--one">{weeklyCellDisplayLine(cell)}</div>
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+            {rosterRows.flatMap((u, rowIdx, rows) => {
+              const prevName = rowIdx > 0 ? rows[rowIdx - 1]?.name : null;
+              const sep = separatorBeforeMonthlyRow(u.name, prevName);
+              const sec = monthlyRowSection(u.name);
+              const cellEditable =
+                canEditWeekly && canEditMonthlyScheduleCell(viewerRole, u.name);
+              const out = [];
+              if (sep) {
+                out.push(
+                  <tr key={`weekly-sep-${sep}-${u.id}`} className={`work-schedule-row-sep work-schedule-row-sep--${sep}`}>
+                    <td colSpan={days.length + 1} aria-hidden="true" />
+                  </tr>
+                );
+              }
+              out.push(
+                <tr
+                  key={u.id}
+                  className={[
+                    u.name === "유진" || u.name === "오민아" || u.name === "최유경" ? "work-schedule-row--highlight" : "",
+                    sec === "anesthesia" ? "work-schedule-row--anesthesia" : "",
+                    sec === "chief" ? "work-schedule-row--chief" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
+                  <td className="weekly-name">{u.name}</td>
+                  {days.map((d) => {
+                    const cell = displayCell(u, d);
+                    const key = weeklyCellKey(u.id, d);
+                    const selVal = weeklyOverrideSelectValue(draftOverrides[key]);
+                    const auto = computedCell(u, d);
+                    const autoMain = String(auto?.main ?? "").trim();
+                    const autoLabel = weeklyCellDisplayLine(auto);
+                    return (
+                      <td
+                        key={d}
+                        className={`weekly-cell weekly-cell--${cell.kind}${isWeeklyRestDayColumn(d) ? " weekly-cell--restcol" : ""}`}
+                      >
+                        {cellEditable ? (
+                          <select
+                            className="weekly-cell-select"
+                            value={selVal}
+                            onChange={(e) => onCellOverrideChange(u.id, d, e.target.value)}
+                            aria-label={`${u.name} ${d} 표시`}
+                          >
+                            <option value="__auto__">{autoLabel || "자동"}</option>
+                            {WEEKLY_LEAVE_MARK_OPTIONS.filter((mark) => mark !== autoMain).map((mark) => (
+                              <option key={`leave-${mark}`} value={`__leave__:${mark}`}>
+                                {mark}
+                              </option>
+                            ))}
+                            {shiftOptionsForRole(u.role)
+                              .filter((x) => x && !WEEKLY_LEAVE_MARK_OPTIONS.includes(x) && x !== autoMain)
+                              .map((opt) => (
+                                <option key={`base-${opt}`} value={`__base__:${opt}`}>
+                                  {opt}
+                                </option>
+                              ))}
+                          </select>
+                        ) : (
+                          <div className="weekly-cell-main weekly-cell-main--one">{weeklyCellDisplayLine(cell)}</div>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+              return out;
+            })}
           </tbody>
         </table>
       </div>

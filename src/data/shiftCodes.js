@@ -110,7 +110,7 @@ export function mergeMonthlySaveDraft(saved, draft, templateRows, viewerRole) {
   });
 }
 
-/** 주간 번표에 표시할 인원(보는 사람 역할 기준) */
+/** 주간 번표에 표시할 인원(보는 사람 역할 기준) — 구역별만 볼 때 */
 export function weeklyStaffForViewer(users, viewerRole) {
   const list = Array.isArray(users) ? users : [];
   const role = String(viewerRole ?? "").trim();
@@ -121,4 +121,21 @@ export function weeklyStaffForViewer(users, viewerRole) {
     return list.filter((u) => u.role === "CHIEF").sort((a, b) => a.name.localeCompare(b.name, "ko"));
   }
   return list.filter((u) => u.role === "NURSE").sort((a, b) => a.name.localeCompare(b.name, "ko"));
+}
+
+/** 주간 번표: 수술실 → 마취과 → 주임 (월간근무표와 동일 순서) */
+export function weeklyRosterAllSections(users) {
+  const list = Array.isArray(users) ? users : [];
+  const byName = (a, b) => a.name.localeCompare(b.name, "ko");
+  const pickInOrder = (names, role) =>
+    names
+      .map((n) => list.find((u) => u.role === role && u.name === n))
+      .filter(Boolean)
+      .concat(
+        list.filter((u) => u.role === role && !names.includes(u.name)).sort(byName)
+      );
+  const or = list.filter((u) => u.role === "NURSE").sort(byName);
+  const anesthesia = pickInOrder(ANESTHESIA_MONTHLY_NAMES, "ANESTHESIA");
+  const chief = pickInOrder(CHIEF_MONTHLY_NAMES, "CHIEF");
+  return [...or, ...anesthesia, ...chief];
 }
