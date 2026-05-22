@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -69,17 +69,16 @@ import {
   canApplyLeaveRole,
   canViewerApproveRequest,
   CHIEF_LEAVE_TYPE,
-  filterAnesthesiaPublishedForOrView,
-  filterChiefPublishedForOrView,
   filterRequestsForCalendarGrid,
   filterRequestsForViewerRole,
   filterRequestsForWeeklyRoster,
+  splitRequestsByStaffRole,
+  STAFF_LEAVE_ROLES_ORDER,
   isAnesthesiaLeaveAdminRole,
   isChiefLeaveAdminRole,
   isLeaveManagerRole,
   isOrLeaveAdminRole,
   isScheduleOnlyDashboardRole,
-  showDepartmentPublishedOverlay,
   showHolidayDutyEditorRole,
 } from "./utils/leaveVisibility.js";
 
@@ -1499,15 +1498,6 @@ function App() {
     () => filterRequestsForWeeklyRoster(requestsRawVisible, users),
     [requestsRawVisible, users]
   );
-  const showDeptPublished = showDepartmentPublishedOverlay(viewerRole);
-  const anesthesiaPublishedRequests = useMemo(() => {
-    if (!showDeptPublished) return [];
-    return filterAnesthesiaPublishedForOrView(requestsRawVisible, users, isWinnerStatus);
-  }, [requestsRawVisible, users, showDeptPublished]);
-  const chiefPublishedRequests = useMemo(() => {
-    if (!showDeptPublished) return [];
-    return filterChiefPublishedForOrView(requestsRawVisible, users, isWinnerStatus);
-  }, [requestsRawVisible, users, showDeptPublished]);
   const myRequests = useMemo(
     () => requestsVisibleInUi.filter((r) => r.userId === auth?.userId),
     [requestsVisibleInUi, auth?.userId]
@@ -1530,16 +1520,8 @@ function App() {
   );
   const calendarData = useMemo(() => {
     const [year, month] = calendarMonth.split("-").map(Number);
-    return buildMonthMatrix(
-      year,
-      month,
-      requestsForCalendarGrid,
-      anesthesiaPublishedRequests,
-      chiefPublishedRequests,
-      users,
-      holidays
-    );
-  }, [calendarMonth, requestsForCalendarGrid, anesthesiaPublishedRequests, chiefPublishedRequests, users, holidays]);
+    return buildMonthMatrix(year, month, requestsForCalendarGrid, users, holidays);
+  }, [calendarMonth, requestsForCalendarGrid, users, holidays]);
 
   const calendarDayRequests = useMemo(() => {
     if (!calendarSelectedYmd) return [];
@@ -1547,22 +1529,6 @@ function App() {
       .filter((r) => r.leaveDate === calendarSelectedYmd)
       .sort((a, b) => compareSameLeaveDateRequests(a, b, users));
   }, [requestsVisibleInUi, calendarSelectedYmd, users]);
-
-  const calendarAnesthesiaDayRequests = useMemo(() => {
-    if (!calendarSelectedYmd || !showDeptPublished) return [];
-    const sorted = [...anesthesiaPublishedRequests]
-      .filter((r) => r.leaveDate === calendarSelectedYmd)
-      .sort((a, b) => compareSameLeaveDateRequests(a, b, users));
-    return dedupeRequestsForCalendarChips(sorted);
-  }, [anesthesiaPublishedRequests, calendarSelectedYmd, users, showDeptPublished]);
-
-  const calendarChiefDayRequests = useMemo(() => {
-    if (!calendarSelectedYmd || !showDeptPublished) return [];
-    const sorted = [...chiefPublishedRequests]
-      .filter((r) => r.leaveDate === calendarSelectedYmd)
-      .sort((a, b) => compareSameLeaveDateRequests(a, b, users));
-    return dedupeRequestsForCalendarChips(sorted);
-  }, [chiefPublishedRequests, calendarSelectedYmd, users, showDeptPublished]);
 
   async function submitRequest(e) {
     e.preventDefault();
@@ -2583,8 +2549,6 @@ function App() {
               selectedYmd={calendarSelectedYmd}
               setSelectedYmd={setCalendarSelectedYmd}
               dayRequests={calendarDayRequests}
-              anesthesiaDayRequests={calendarAnesthesiaDayRequests}
-              chiefDayRequests={calendarChiefDayRequests}
               viewerRole={viewerRole}
               users={users}
               leaveType={leaveType}
@@ -6271,6 +6235,28 @@ function NegotiationOrderInput({ request, onCommit, disabled }) {
   );
 }
 
+function renderCalendarDayChip(applicant, keyPrefix, chipClassExtra, titlePrefix) {
+  const nameLen = [...String(applicant.name ?? "")].length;
+  const name3 = nameLen === 3 ? " calendar-day-chip--name3" : "";
+  return (
+    <span
+      key={`${keyPrefix}${applicant.id}`}
+      className={`calendar-day-chip ${chipClassExtra} ${buildLeaveChipClass(applicant.leaveType, applicant.status)}${name3}`.trim()}
+      title={`${titlePrefix}${applicant.name} · ${typeFullLabel(applicant.leaveType)} · ${statusLabel(applicant.status)}`}
+    >
+      <span className="calendar-day-chip__text">{applicant.name}</span>
+    </span>
+  );
+}
+
+function calendarCellHasConfirmedChips(cell) {
+  return (
+    (Array.isArray(cell?.displayApplicants) && cell.displayApplicants.length > 0) ||
+    (Array.isArray(cell?.anesthesiaDisplayApplicants) && cell.anesthesiaDisplayApplicants.length > 0) ||
+    (Array.isArray(cell?.chiefDisplayApplicants) && cell.chiefDisplayApplicants.length > 0)
+  );
+}
+
 function CalendarPage({
   calendarMonth,
   setCalendarMonth,
@@ -6278,8 +6264,6 @@ function CalendarPage({
   selectedYmd,
   setSelectedYmd,
   dayRequests,
-  anesthesiaDayRequests = [],
-  chiefDayRequests = [],
   viewerRole = "",
   users,
   leaveType,
@@ -6369,8 +6353,15 @@ function CalendarPage({
   const anesthesiaUsers = users.filter((u) => u.role === "ANESTHESIA").sort((a, b) => a.name.localeCompare(b.name, "ko"));
   const chiefUsers = users.filter((u) => u.role === "CHIEF").sort((a, b) => a.name.localeCompare(b.name, "ko"));
   const showApplyTab = canApplyLeaveRole(viewerRole);
-  const showDeptPublished = showDepartmentPublishedOverlay(viewerRole);
   const isChiefViewer = viewerRole === "CHIEF";
+  const dayRequestsByRole = useMemo(() => {
+    const buckets = splitRequestsByStaffRole(dayRequests, users);
+    for (const role of STAFF_LEAVE_ROLES_ORDER) {
+      buckets[role].sort((a, b) => compareSameLeaveDateRequests(a, b, users));
+    }
+    return buckets;
+  }, [dayRequests, users]);
+  const hasAnyDayRequest = STAFF_LEAVE_ROLES_ORDER.some((role) => dayRequestsByRole[role].length > 0);
   function canManageRequest(r) {
     return canViewerApproveRequest(viewerRole, r?.userId, users);
   }
@@ -6899,73 +6890,63 @@ function CalendarPage({
               }}
             >
               <div className={`calendar-date${cell.isOffDay ? " calendar-date--holiday" : ""}`}>{cell.day}</div>
-              {cell.inMonth &&
-              ((Array.isArray(cell.displayApplicants) && cell.displayApplicants.length > 0) ||
-                (showDeptPublished &&
-                  Array.isArray(cell.anesthesiaDisplayApplicants) &&
-                  cell.anesthesiaDisplayApplicants.length > 0) ||
-                (showDeptPublished &&
-                  Array.isArray(cell.chiefDisplayApplicants) &&
-                  cell.chiefDisplayApplicants.length > 0)) ? (
+              {cell.inMonth && calendarCellHasConfirmedChips(cell) ? (
                 <div className="calendar-cell-events">
-                  {cell.displayApplicants.slice(0, CALENDAR_DAY_CHIP_MAX).map((a) => {
-                    const nameLen = [...String(a.name ?? "")].length;
-                    const name3 = nameLen === 3 ? " calendar-day-chip--name3" : "";
-                    return (
-                      <span
-                        key={a.id}
-                        className={`calendar-day-chip ${buildLeaveChipClass(a.leaveType, a.status)}${name3}`}
-                        title={`${a.name} · ${typeFullLabel(a.leaveType)} · ${statusLabel(a.status)}`}
-                      >
-                        <span className="calendar-day-chip__text">{a.name}</span>
-                      </span>
-                    );
-                  })}
-                  {cell.displayApplicants.length > CALENDAR_DAY_CHIP_MAX ? (
-                    <span className="calendar-chip-more" title={`외 ${cell.displayApplicants.length - CALENDAR_DAY_CHIP_MAX}명`}>
-                      +{cell.displayApplicants.length - CALENDAR_DAY_CHIP_MAX}
-                    </span>
-                  ) : null}
-                  {showDeptPublished && Array.isArray(cell.anesthesiaDisplayApplicants) && cell.anesthesiaDisplayApplicants.length > 0 ? (
-                    <>
-                      <div className="calendar-cell-divider" aria-hidden />
-                      <div className="calendar-cell-events calendar-cell-events--anesthesia">
-                        {cell.anesthesiaDisplayApplicants.slice(0, CALENDAR_DAY_CHIP_MAX).map((a) => {
-                          const nameLen = [...String(a.name ?? "")].length;
-                          const name3 = nameLen === 3 ? " calendar-day-chip--name3" : "";
-                          return (
-                            <span
-                              key={`anes_${a.id}`}
-                              className={`calendar-day-chip calendar-day-chip--anesthesia ${buildLeaveChipClass(a.leaveType, a.status)}${name3}`}
-                              title={`[마취] ${a.name} · ${typeFullLabel(a.leaveType)} · ${statusLabel(a.status)}`}
-                            >
-                              <span className="calendar-day-chip__text">{a.name}</span>
-                            </span>
-                          );
-                        })}
-                      </div>
-                    </>
-                  ) : null}
-                  {showDeptPublished && Array.isArray(cell.chiefDisplayApplicants) && cell.chiefDisplayApplicants.length > 0 ? (
-                    <>
-                      <div className="calendar-cell-divider" aria-hidden />
-                      <div className="calendar-cell-events calendar-cell-events--chief">
-                        {cell.chiefDisplayApplicants.slice(0, CALENDAR_DAY_CHIP_MAX).map((a) => {
-                          const nameLen = [...String(a.name ?? "")].length;
-                          const name3 = nameLen === 3 ? " calendar-day-chip--name3" : "";
-                          return (
-                            <span
-                              key={`chief_${a.id}`}
-                              className={`calendar-day-chip calendar-day-chip--chief ${buildLeaveChipClass(a.leaveType, a.status)}${name3}`}
-                              title={`[주임] ${a.name} · ${typeFullLabel(a.leaveType)} · ${statusLabel(a.status)}`}
-                            >
-                              <span className="calendar-day-chip__text">{a.name}</span>
-                            </span>
-                          );
-                        })}
-                      </div>
-                    </>
-                  ) : null}
+                  {(() => {
+                    const or = cell.displayApplicants ?? [];
+                    const anes = cell.anesthesiaDisplayApplicants ?? [];
+                    const chief = cell.chiefDisplayApplicants ?? [];
+                    const sections = [
+                      { list: or, keyPrefix: "", chipClass: "", titlePrefix: "", more: or.length > CALENDAR_DAY_CHIP_MAX },
+                      {
+                        list: anes,
+                        keyPrefix: "anes_",
+                        chipClass: "calendar-day-chip--anesthesia",
+                        titlePrefix: "[마취] ",
+                        wrapClass: "calendar-cell-events--anesthesia",
+                        dividerBefore: or.length > 0,
+                        more: anes.length > CALENDAR_DAY_CHIP_MAX,
+                      },
+                      {
+                        list: chief,
+                        keyPrefix: "chief_",
+                        chipClass: "calendar-day-chip--chief",
+                        titlePrefix: "[주임] ",
+                        wrapClass: "calendar-cell-events--chief",
+                        dividerBefore: or.length > 0 || anes.length > 0,
+                        more: chief.length > CALENDAR_DAY_CHIP_MAX,
+                      },
+                    ];
+                    return sections.flatMap((sec, secIdx) => {
+                      if (!sec.list.length) return [];
+                      const nodes = [];
+                      if (sec.dividerBefore) nodes.push(<div key={`div_${secIdx}`} className="calendar-cell-divider" aria-hidden />);
+                      const chips = sec.list.slice(0, CALENDAR_DAY_CHIP_MAX).map((a) =>
+                        renderCalendarDayChip(a, sec.keyPrefix, sec.chipClass, sec.titlePrefix)
+                      );
+                      if (sec.wrapClass) {
+                        nodes.push(
+                          <div key={`wrap_${secIdx}`} className={`calendar-cell-events ${sec.wrapClass}`}>
+                            {chips}
+                          </div>
+                        );
+                      } else {
+                        nodes.push(...chips);
+                      }
+                      if (sec.more) {
+                        nodes.push(
+                          <span
+                            key={`more_${secIdx}`}
+                            className="calendar-chip-more"
+                            title={`외 ${sec.list.length - CALENDAR_DAY_CHIP_MAX}명`}
+                          >
+                            +{sec.list.length - CALENDAR_DAY_CHIP_MAX}
+                          </span>
+                        );
+                      }
+                      return nodes;
+                    });
+                  })()}
                 </div>
               ) : null}
             </div>
@@ -7086,8 +7067,7 @@ function CalendarPage({
                   </div>
                   {detailTab === "list" || isLeaveManager ? (
                     <div className="calendar-detail-body" role="tabpanel">
-                      {dayRequests.length === 0 &&
-                      (!showDeptPublished || (anesthesiaDayRequests.length === 0 && chiefDayRequests.length === 0)) ? (
+                      {!hasAnyDayRequest ? (
                         <p className="help">이 날짜에 등록된 신청이 없습니다.</p>
                       ) : (
                         <>
@@ -7133,8 +7113,30 @@ function CalendarPage({
                               ))}
                             </div>
                           ) : null}
-                          <ul className="calendar-applicant-list">
-                            {dayRequests.map((r) => {
+                          {STAFF_LEAVE_ROLES_ORDER.map((staffRole, roleIdx) => {
+                            const roleList = dayRequestsByRole[staffRole];
+                            if (!roleList.length) return null;
+                            const priorCount = STAFF_LEAVE_ROLES_ORDER.slice(0, roleIdx).reduce(
+                              (n, r) => n + dayRequestsByRole[r].length,
+                              0
+                            );
+                            const dividerLabel =
+                              staffRole === "ANESTHESIA" ? "마취과" : staffRole === "CHIEF" ? "주임" : null;
+                            const listClass =
+                              staffRole === "ANESTHESIA"
+                                ? "calendar-applicant-list calendar-applicant-list--anesthesia"
+                                : staffRole === "CHIEF"
+                                  ? "calendar-applicant-list calendar-applicant-list--chief"
+                                  : "calendar-applicant-list";
+                            return (
+                              <Fragment key={`day_role_${staffRole}`}>
+                                {priorCount > 0 && dividerLabel ? (
+                                  <div className="calendar-applicant-divider" role="separator">
+                                    <span>{dividerLabel}</span>
+                                  </div>
+                                ) : null}
+                                <ul className={listClass}>
+                                  {roleList.map((r) => {
                               const nm = users.find((u) => u.id === r.userId)?.name ?? r.userId;
                               const meta = negotiationMetaByRequestId.get(r.id) ?? { mode: "single" };
                               const ord = r.negotiationOrder ?? r.negotiation_order;
@@ -7234,62 +7236,11 @@ function CalendarPage({
                                   ) : null}
                                 </li>
                               );
-                            })}
-                          </ul>
-                          {showDeptPublished && anesthesiaDayRequests.length > 0 ? (
-                            <>
-                              <div className="calendar-applicant-divider" role="separator">
-                                <span>마취과</span>
-                              </div>
-                              <ul className="calendar-applicant-list calendar-applicant-list--anesthesia">
-                                {anesthesiaDayRequests.map((r) => {
-                                  const nm = users.find((u) => u.id === r.userId)?.name ?? r.userId;
-                                  const subs = subsForRequest(r.id);
-                                  const subLine = subs
-                                    .map((s) => {
-                                      const sn = users.find((u) => u.id === s.substituteUserId)?.name ?? s.substituteUserId;
-                                      return `${sn}(${s.shiftCode})`;
-                                    })
-                                    .join(", ");
-                                  return (
-                                    <li key={`anes_view_${r.id}`} className="calendar-applicant-item calendar-applicant-item--anesthesia-readonly">
-                                      <span className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status)}`}>
-                                        {nm} · {typeFullLabel(r.leaveType)} · {statusLabel(r.status)}
-                                        {subLine ? ` · 대체 ${subLine}` : ""}
-                                      </span>
-                                    </li>
-                                  );
-                                })}
-                              </ul>
-                            </>
-                          ) : null}
-                          {showDeptPublished && chiefDayRequests.length > 0 ? (
-                            <>
-                              <div className="calendar-applicant-divider" role="separator">
-                                <span>주임</span>
-                              </div>
-                              <ul className="calendar-applicant-list calendar-applicant-list--chief">
-                                {chiefDayRequests.map((r) => {
-                                  const nm = users.find((u) => u.id === r.userId)?.name ?? r.userId;
-                                  const subs = subsForRequest(r.id);
-                                  const subLine = subs
-                                    .map((s) => {
-                                      const sn = users.find((u) => u.id === s.substituteUserId)?.name ?? s.substituteUserId;
-                                      return `${sn}(${s.shiftCode})`;
-                                    })
-                                    .join(", ");
-                                  return (
-                                    <li key={`chief_view_${r.id}`} className="calendar-applicant-item calendar-applicant-item--chief-readonly">
-                                      <span className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status)}`}>
-                                        {nm} · {typeFullLabel(r.leaveType)} · {statusLabel(r.status)}
-                                        {subLine ? ` · 대체 ${subLine}` : ""}
-                                      </span>
-                                    </li>
-                                  );
-                                })}
-                              </ul>
-                            </>
-                          ) : null}
+                                  })}
+                                </ul>
+                              </Fragment>
+                            );
+                          })}
                         </>
                       )}
                       {isOrLeaveAdmin ? (
@@ -7540,7 +7491,7 @@ function CalendarPage({
               ))
             )}
           </ul>
-          {showDeptPublished && Array.isArray(selectedCell.anesthesiaApprovedApplicants) && selectedCell.anesthesiaApprovedApplicants.length > 0 ? (
+          {Array.isArray(selectedCell.anesthesiaApprovedApplicants) && selectedCell.anesthesiaApprovedApplicants.length > 0 ? (
             <>
               <div className="calendar-applicant-divider admin-day-panel__divider" role="separator">
                 <span>마취과</span>
@@ -7555,7 +7506,7 @@ function CalendarPage({
               </ul>
             </>
           ) : null}
-          {showDeptPublished && Array.isArray(selectedCell.chiefApprovedApplicants) && selectedCell.chiefApprovedApplicants.length > 0 ? (
+          {Array.isArray(selectedCell.chiefApprovedApplicants) && selectedCell.chiefApprovedApplicants.length > 0 ? (
             <>
               <div className="calendar-applicant-divider admin-day-panel__divider" role="separator">
                 <span>주임</span>
@@ -8065,7 +8016,18 @@ function dedupeRequestsForCalendarChips(sortedDayReqs) {
   return out;
 }
 
-function buildMonthMatrix(year, month, orRequests, anesthesiaOverlayRequests, chiefOverlayRequests, users, holidaysCache) {
+function mapRequestsToCalendarApplicants(roleReqs, users) {
+  const sorted = [...roleReqs].sort((a, b) => compareSameLeaveDateRequests(a, b, users));
+  return dedupeRequestsForCalendarChips(sorted).map((r) => ({
+    id: r.id,
+    userId: r.userId,
+    leaveType: r.leaveType,
+    status: r.status,
+    name: users.find((u) => u.id === r.userId)?.name ?? r.userId,
+  }));
+}
+
+function buildMonthMatrix(year, month, confirmedRequests, users, holidaysCache) {
   const first = new Date(year, month - 1, 1);
   const start = new Date(first);
   start.setDate(first.getDate() - first.getDay());
@@ -8087,44 +8049,16 @@ function buildMonthMatrix(year, month, orRequests, anesthesiaOverlayRequests, ch
     const isHoliday = holidayByDate.has(iso);
     const isOffDay = isHoliday || isWeekend;
     const holidayName = holidayByDate.get(iso) ?? "";
-    const dayReqs = (Array.isArray(orRequests) ? orRequests : []).filter(
-      (r) => r.leaveDate === iso && isWinnerStatus(r.status)
-    );
-    const dayAnesReqs = (Array.isArray(anesthesiaOverlayRequests) ? anesthesiaOverlayRequests : []).filter(
-      (r) => r.leaveDate === iso && isWinnerStatus(r.status)
-    );
-    const activeDayReqs = dayReqs;
+    const dayAll = (Array.isArray(confirmedRequests) ? confirmedRequests : []).filter((r) => r.leaveDate === iso);
+    const byRole = splitRequestsByStaffRole(dayAll, users);
+    const nurseReqs = byRole.NURSE;
+    const anesReqs = byRole.ANESTHESIA;
+    const chiefReqs = byRole.CHIEF;
+    const activeDayReqs = dayAll;
     const hasGoldkeyRequest = activeDayReqs.some((r) => r.leaveType === "GOLDKEY");
-    const sortedDayReqs = [...dayReqs].sort((a, b) => compareSameLeaveDateRequests(a, b, users));
-    const forDisplay = dedupeRequestsForCalendarChips(sortedDayReqs);
-    const displayApplicants = forDisplay.map((r) => ({
-      id: r.id,
-      userId: r.userId,
-      leaveType: r.leaveType,
-      status: r.status,
-      name: users.find((u) => u.id === r.userId)?.name ?? r.userId,
-    }));
-    const sortedAnes = [...dayAnesReqs].sort((a, b) => compareSameLeaveDateRequests(a, b, users));
-    const anesDisplay = dedupeRequestsForCalendarChips(sortedAnes);
-    const anesthesiaDisplayApplicants = anesDisplay.map((r) => ({
-      id: r.id,
-      userId: r.userId,
-      leaveType: r.leaveType,
-      status: r.status,
-      name: users.find((u) => u.id === r.userId)?.name ?? r.userId,
-    }));
-    const dayChiefReqs = (Array.isArray(chiefOverlayRequests) ? chiefOverlayRequests : []).filter(
-      (r) => r.leaveDate === iso && isWinnerStatus(r.status)
-    );
-    const sortedChief = [...dayChiefReqs].sort((a, b) => compareSameLeaveDateRequests(a, b, users));
-    const chiefDisplay = dedupeRequestsForCalendarChips(sortedChief);
-    const chiefDisplayApplicants = chiefDisplay.map((r) => ({
-      id: r.id,
-      userId: r.userId,
-      leaveType: r.leaveType,
-      status: r.status,
-      name: users.find((u) => u.id === r.userId)?.name ?? r.userId,
-    }));
+    const displayApplicants = mapRequestsToCalendarApplicants(nurseReqs, users);
+    const anesthesiaDisplayApplicants = mapRequestsToCalendarApplicants(anesReqs, users);
+    const chiefDisplayApplicants = mapRequestsToCalendarApplicants(chiefReqs, users);
     cells.push({
       date: iso,
       day: d.getDate(),
@@ -8138,45 +8072,10 @@ function buildMonthMatrix(year, month, orRequests, anesthesiaOverlayRequests, ch
       displayApplicants,
       anesthesiaDisplayApplicants,
       chiefDisplayApplicants,
-      applicants: dayReqs
-        .sort((a, b) => compareSameLeaveDateRequests(a, b, users))
-        .map((r) => ({
-          id: r.id,
-          userId: r.userId,
-          leaveType: r.leaveType,
-          status: r.status,
-          name: users.find((u) => u.id === r.userId)?.name ?? r.userId,
-        })),
-      approvedApplicants: dayReqs
-        .filter((r) => isWinnerStatus(r.status))
-        .sort((a, b) => compareSameLeaveDateRequests(a, b, users))
-        .map((r) => ({
-          id: r.id,
-          userId: r.userId,
-          leaveType: r.leaveType,
-          status: r.status,
-          name: users.find((u) => u.id === r.userId)?.name ?? r.userId,
-        })),
-      anesthesiaApprovedApplicants: dayAnesReqs
-        .filter((r) => isWinnerStatus(r.status))
-        .sort((a, b) => compareSameLeaveDateRequests(a, b, users))
-        .map((r) => ({
-          id: r.id,
-          userId: r.userId,
-          leaveType: r.leaveType,
-          status: r.status,
-          name: users.find((u) => u.id === r.userId)?.name ?? r.userId,
-        })),
-      chiefApprovedApplicants: dayChiefReqs
-        .filter((r) => isWinnerStatus(r.status))
-        .sort((a, b) => compareSameLeaveDateRequests(a, b, users))
-        .map((r) => ({
-          id: r.id,
-          userId: r.userId,
-          leaveType: r.leaveType,
-          status: r.status,
-          name: users.find((u) => u.id === r.userId)?.name ?? r.userId,
-        })),
+      applicants: mapRequestsToCalendarApplicants(dayAll, users),
+      approvedApplicants: displayApplicants,
+      anesthesiaApprovedApplicants: anesthesiaDisplayApplicants,
+      chiefApprovedApplicants: chiefDisplayApplicants,
     });
   }
   return cells;

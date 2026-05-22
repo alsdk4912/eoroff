@@ -44,6 +44,18 @@ function viewerOwnDepartmentRoles(viewerRole) {
   return null;
 }
 
+/** 캘린더·상세 표시 순: 수술실 → 마취과 → 주임 */
+export const STAFF_LEAVE_ROLES_ORDER = ["NURSE", "ANESTHESIA", "CHIEF"];
+
+export function splitRequestsByStaffRole(requests, users) {
+  const buckets = { NURSE: [], ANESTHESIA: [], CHIEF: [] };
+  for (const r of Array.isArray(requests) ? requests : []) {
+    const role = userById(users, r.userId)?.role;
+    if (role && buckets[role]) buckets[role].push(r);
+  }
+  return buckets;
+}
+
 /** 월간 달력 칩·요약: 확정(SELECTED/APPROVED)만 표시 */
 export function filterRequestsForCalendarGrid(requests) {
   return (Array.isArray(requests) ? requests : []).filter((r) => isConfirmedLeaveStatus(r.status));
