@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import webpush from "web-push";
 import cron from "node-cron";
+import { applyAnesthesiaGoldkeyLeaves } from "./anesthesiaGoldkeySeed.js";
 import {
   execute,
   initDb,
@@ -1244,6 +1245,31 @@ app.post("/api/admin/reset-leave-data", async (req, res) => {
  * Render 등에 DATA_RESET_SECRET(8자 이상) 설정 후:
  * curl -sS -X POST "$API/api/admin/reset-leave-data-by-secret" -H "Authorization: Bearer $DATA_RESET_SECRET"
  */
+/** 관리자2: 마취과 골드키 확정 일정 일괄 반영 (캘린더·used_count 동기화) */
+app.post("/api/admin/apply-anesthesia-goldkeys", async (req, res) => {
+  try {
+    const adminUserId = String(req.body?.adminUserId ?? "").trim();
+    const admin = await requireAdmin2User(adminUserId);
+    if (!admin) return res.status(403).json({ error: "관리자2만 실행할 수 있습니다." });
+    const result = await applyAnesthesiaGoldkeyLeaves();
+    await reconcileGoldkeyUsageByPolicy(new Date().toISOString());
+    await insertAdminOpsAudit({
+      action: "APPLY_ANESTHESIA_GOLDKEYS",
+      actorUserId: adminUserId,
+      reason: String(req.body?.reason ?? "").trim() || "마취과 골드키 일정 반영",
+      metadata: {
+        updated: result.report.updated.length,
+        inserted: result.report.inserted.length,
+        goldkeys: result.goldkeys,
+      },
+    });
+    return res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error("POST /api/admin/apply-anesthesia-goldkeys", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
 app.post("/api/admin/reset-leave-data-by-secret", async (req, res) => {
   if (!ENABLE_SECRET_RESET) {
     return res.status(403).json({ error: "비밀키 리셋 경로가 비활성화되어 있습니다." });

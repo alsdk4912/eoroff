@@ -11,6 +11,11 @@ try {
   await initDb();
   const remote = isUsingRemoteDb();
   console.log(`[db:apply-anesthesia-goldkeys] DB: ${remote ? "Turso(remote)" : "local sqlite"}`);
+  if (process.env.CI === "true" && !remote) {
+    throw new Error(
+      "CI에서는 TURSO_DATABASE_URL·TURSO_AUTH_TOKEN이 필요합니다. GitHub Secrets에 추가 후 다시 실행하세요."
+    );
+  }
   const result = await applyAnesthesiaGoldkeyLeaves();
   console.log("[db:apply-anesthesia-goldkeys] updated:", result.report.updated.length);
   console.log("[db:apply-anesthesia-goldkeys] inserted:", result.report.inserted.length);
