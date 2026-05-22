@@ -26,19 +26,38 @@ export function filterRequestsForWeeklyRoster(requests, users) {
   });
 }
 
-/** 역할별 캔린더·목록에 쓸 신청 */
+export function isStaffLeaveRole(role) {
+  return role === "NURSE" || role === "ANESTHESIA" || role === "CHIEF";
+}
+
+/** v2 서버 APPROVED·레거시 SELECTED */
+export function isConfirmedLeaveStatus(status) {
+  const st = String(status ?? "").trim();
+  return st === "SELECTED" || st === "APPROVED";
+}
+
+/** 로그인 역할이 담당하는 휴가 신청·확정 부서 (관리자는 수술실·마취·주임에 대응) */
+function viewerOwnDepartmentRoles(viewerRole) {
+  if (viewerRole === "ANESTHESIA" || viewerRole === "ADMIN2") return new Set(["ANESTHESIA"]);
+  if (viewerRole === "CHIEF" || viewerRole === "ADMIN3") return new Set(["CHIEF"]);
+  if (viewerRole === "NURSE" || viewerRole === "ADMIN") return new Set(["NURSE"]);
+  return null;
+}
+
+/**
+ * 캘린더·목록: 본인 부서는 전 상태, 타 부서는 확정(SELECTED/APPROVED)만 전 직원 열람
+ */
 export function filterRequestsForViewerRole(requests, users, viewerRole) {
   const rows = Array.isArray(requests) ? requests : [];
-  if (viewerRole === "ANESTHESIA" || viewerRole === "ADMIN2") {
-    return rows.filter((r) => isAnesthesiaStaffUserId(r.userId, users));
-  }
-  if (viewerRole === "CHIEF" || viewerRole === "ADMIN3") {
-    return rows.filter((r) => isChiefStaffUserId(r.userId, users));
-  }
-  if (viewerRole === "NURSE" || viewerRole === "ADMIN") {
-    return rows.filter((r) => isOrNurseUserId(r.userId, users));
-  }
-  return rows;
+  const ownDepts = viewerOwnDepartmentRoles(viewerRole);
+
+  return rows.filter((r) => {
+    const subjectRole = userById(users, r.userId)?.role;
+    if (!isStaffLeaveRole(subjectRole)) return false;
+    if (isConfirmedLeaveStatus(r.status)) return true;
+    if (!ownDepts) return false;
+    return ownDepts.has(subjectRole);
+  });
 }
 
 function filterPublishedByRole(requests, users, isWinnerStatus, staffCheck) {
@@ -84,9 +103,9 @@ export function isLeaveManagerRole(role) {
   return isOrLeaveAdminRole(role) || isAnesthesiaLeaveAdminRole(role) || isChiefLeaveAdminRole(role);
 }
 
-/** 수술실·관리자: 타 부서 확정 휴가 하단 표시 */
-export function showDepartmentPublishedOverlay(viewerRole) {
-  return viewerRole === "NURSE" || viewerRole === "ADMIN";
+/** @deprecated 확정 휴가는 filterRequestsForViewerRole에 통합 — 중복 칩 방지 */
+export function showDepartmentPublishedOverlay(_viewerRole) {
+  return false;
 }
 
 /** @deprecated use showDepartmentPublishedOverlay */
