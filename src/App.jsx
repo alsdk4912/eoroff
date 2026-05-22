@@ -24,6 +24,8 @@ import {
   leaveTypeLabel,
   statusLabel,
   validateRequest,
+  leaveTypesForApplicantRole,
+  isLeaveTypeAllowedForRole,
   isGeneralNormalLadderTimeLocked,
   generalNormalLadderLockedMessage,
 } from "./utils/rules";
@@ -1574,8 +1576,15 @@ function App() {
 
     const priorityMonthStart = new Date(nowForValidation.getFullYear(), nowForValidation.getMonth(), 1, 0, 0, 0, 0);
     const priorityMonth2At0900 = new Date(nowForValidation.getFullYear(), nowForValidation.getMonth(), 2, 9, 0, 0, 0);
-    const normalizedLeaveType =
-      leaveType === "GENERAL_PRIORITY" && nowForValidation > priorityMonth2At0900 ? "GENERAL_NORMAL" : leaveType;
+    const useOrLeaveTypeSplit = viewerRole === "NURSE" || viewerRole === "ADMIN";
+    const normalizedLeaveType = useOrLeaveTypeSplit
+      ? leaveType === "GENERAL_PRIORITY" && nowForValidation > priorityMonth2At0900
+        ? "GENERAL_NORMAL"
+        : leaveType
+      : leaveType;
+    if (!isLeaveTypeAllowedForRole(viewerRole, normalizedLeaveType)) {
+      return setMessage("선택한 휴가 구분을 사용할 수 없습니다.");
+    }
 
     const error = validateRequest({
       leaveType: normalizedLeaveType,
@@ -2476,6 +2485,7 @@ function App() {
               submitRequest={submitRequest}
               myGoldkey={myGoldkey}
               message={message}
+              viewerRole={viewerRole}
             />
           }
         />
@@ -2754,6 +2764,7 @@ function RequestPage({
   submitRequest,
   myGoldkey,
   message,
+  viewerRole,
 }) {
   return (
     <section className="card">
@@ -2762,10 +2773,11 @@ function RequestPage({
       <form className="grid" onSubmit={submitRequest}>
         <label className="field-label">휴가 구분</label>
         <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)} aria-label="휴가 구분">
-          <option value="GOLDKEY">골드키</option>
-          <option value="GENERAL_PRIORITY">일반휴가-우선순위</option>
-          <option value="GENERAL_NORMAL">일반휴가-후순위</option>
-          <option value="HALF_DAY">반차</option>
+          {leaveTypesForApplicantRole(viewerRole).map((t) => (
+            <option key={t} value={t}>
+              {leaveTypeLabel(t)}
+            </option>
+          ))}
         </select>
         <label className="ymd-label">휴가일 (연·월·일)</label>
         <YmdSplitInput value={leaveDate} onChange={setLeaveDate} />
@@ -6312,7 +6324,10 @@ function CalendarPage({
 
   useEffect(() => {
     if (viewerRole === "CHIEF") setLeaveType(CHIEF_LEAVE_TYPE);
-  }, [viewerRole, setLeaveType]);
+    else if (viewerRole === "ANESTHESIA" && !isLeaveTypeAllowedForRole(viewerRole, leaveType)) {
+      setLeaveType("GENERAL");
+    }
+  }, [viewerRole, setLeaveType, leaveType]);
 
   useEffect(() => {
     if (!selectedYmd) {
@@ -6535,7 +6550,7 @@ function CalendarPage({
       const leaveMonth = Number(String(list[0]?.leaveDate ?? "").slice(5, 7));
       const goldkeyAnchorMs = list[0]?.leaveType === "GOLDKEY" ? goldkeyAnchorRequestedAtMs(list) : NaN;
       for (const r of list) {
-        if (r.leaveType === "GENERAL_PRIORITY") {
+        if (r.leaveType === "GENERAL_PRIORITY" || r.leaveType === "GENERAL") {
           map.set(r.id, { mode: "negotiate" });
           continue;
         }
@@ -7477,10 +7492,11 @@ function CalendarPage({
                           </p>
                         ) : (
                         <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)} aria-label="휴가 구분">
-                          {viewerRole !== "ANESTHESIA" ? <option value="GOLDKEY">골드키</option> : null}
-                          <option value="GENERAL_PRIORITY">일반휴가-우선순위</option>
-                          <option value="GENERAL_NORMAL">일반휴가-후순위</option>
-                          <option value="HALF_DAY">반차</option>
+                          {leaveTypesForApplicantRole(viewerRole).map((t) => (
+                            <option key={t} value={t}>
+                              {leaveTypeLabel(t)}
+                            </option>
+                          ))}
                         </select>
                         )}
                         <div className="calendar-apply-ymd">
@@ -8163,6 +8179,7 @@ function buildMonthMatrix(year, month, orRequests, anesthesiaOverlayRequests, ch
 function typeFullLabel(leaveType) {
   if (leaveType === "GOLDKEY") return "골드키";
   if (leaveType === "CHIEF_LEAVE") return "휴가";
+  if (leaveType === "GENERAL") return "일반휴가";
   if (leaveType === "GENERAL_PRIORITY") return "일반휴가-우선순위";
   if (leaveType === "HALF_DAY") return "반차";
   return "일반휴가-후순위";

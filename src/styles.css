@@ -2070,6 +2070,7 @@ tbody tr:last-child td {
   border-color: #f59e0b;
 }
 
+.type-general,
 .type-general_priority {
   background: #eff6ff;
   color: #1e3a8a;
@@ -3525,7 +3526,9 @@ button.ym-wheel-check:hover {
   border-color: #ef4444 !important;
 }
 
+.selected-item.type-general,
 .selected-item.type-general_priority,
+.leave-type-pill.selected-item.type-general,
 .leave-type-pill.selected-item.type-general_priority {
   background: #fef08a !important;
   color: #854d0e !important;

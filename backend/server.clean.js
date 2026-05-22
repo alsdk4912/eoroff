@@ -1518,7 +1518,14 @@ app.post("/api/ladder-results", async (req, res) => {
   }
 });
 
-const ALLOWED_LEAVE_TYPES = new Set(["GOLDKEY", "GENERAL_PRIORITY", "GENERAL_NORMAL", "HALF_DAY", "CHIEF_LEAVE"]);
+const ALLOWED_LEAVE_TYPES = new Set(["GOLDKEY", "GENERAL", "GENERAL_PRIORITY", "GENERAL_NORMAL", "HALF_DAY", "CHIEF_LEAVE"]);
+
+function leaveTypesForUserRole(role) {
+  const r = String(role ?? "").trim();
+  if (r === "ANESTHESIA") return new Set(["GOLDKEY", "GENERAL", "HALF_DAY"]);
+  if (r === "CHIEF") return new Set(["CHIEF_LEAVE"]);
+  return new Set(["GOLDKEY", "GENERAL_PRIORITY", "GENERAL_NORMAL", "HALF_DAY"]);
+}
 const ALLOWED_LEAVE_NATURE = new Set(["PERSONAL", "PAID_TRAINING", "REQUIRED_TRAINING"]);
 
 app.post("/api/requests", async (req, res) => {
@@ -1551,6 +1558,9 @@ app.post("/api/requests", async (req, res) => {
     }
     if (!ALLOWED_LEAVE_TYPES.has(leaveType)) {
       return res.status(400).json({ error: "지원하지 않는 휴가 구분입니다." });
+    }
+    if (!leaveTypesForUserRole(user.role).has(leaveType)) {
+      return res.status(400).json({ error: "해당 역할에서 사용할 수 없는 휴가 구분입니다." });
     }
     /** 신청 시 일정 표시(leave_nature)는 항상 개인휴가. 확정 후 내신청에서 공가/필수교육 지정. */
     const leaveNature = "PERSONAL";

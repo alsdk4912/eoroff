@@ -1,10 +1,23 @@
 const LEAVE_TYPE_LABEL = {
   GOLDKEY: "골드키",
+  GENERAL: "일반휴가",
   GENERAL_PRIORITY: "일반휴가-우선순위",
   GENERAL_NORMAL: "일반휴가-후순위",
   HALF_DAY: "반차",
   CHIEF_LEAVE: "휴가",
 };
+
+/** 신청 화면에 노출할 휴가 구분(역할별) */
+export function leaveTypesForApplicantRole(role) {
+  const r = String(role ?? "").trim();
+  if (r === "ANESTHESIA") return ["GOLDKEY", "GENERAL", "HALF_DAY"];
+  if (r === "CHIEF") return ["CHIEF_LEAVE"];
+  return ["GOLDKEY", "GENERAL_PRIORITY", "GENERAL_NORMAL", "HALF_DAY"];
+}
+
+export function isLeaveTypeAllowedForRole(role, leaveType) {
+  return leaveTypesForApplicantRole(role).includes(String(leaveType ?? "").trim());
+}
 
 const LEAVE_NATURE_LABEL = {
   PERSONAL: "개인휴가",
@@ -81,7 +94,7 @@ export function isLeaveDateBeforeTodayKst(leaveDateYmd) {
 
 export function leaveTypeOrder(type) {
   if (type === "GOLDKEY") return 1;
-  if (type === "GENERAL_PRIORITY") return 2;
+  if (type === "GENERAL" || type === "GENERAL_PRIORITY") return 2;
   if (type === "GENERAL_NORMAL") return 3;
   if (type === "HALF_DAY") return 4;
   return 99;
@@ -346,6 +359,17 @@ export function validateRequest({
     const todayStart = new Date(now);
     todayStart.setHours(0, 0, 0, 0);
     if (target < todayStart) return "과거 날짜는 신청할 수 없습니다.";
+    return "";
+  }
+
+  /** 마취과 일반휴가: 수술실 우선·후순위를 합친 개념(당월·익월, 잔여일자부터) */
+  if (leaveType === "GENERAL") {
+    if (targetMonth !== currentMonth && targetMonth !== plus1) {
+      return "일반휴가는 현재달(잔여일자) 또는 다음달만 신청 가능합니다.";
+    }
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    if (target < todayStart) return "해당월 잔여일자부터 신청 가능합니다.";
     return "";
   }
 
