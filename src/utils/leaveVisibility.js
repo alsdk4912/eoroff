@@ -44,6 +44,11 @@ function viewerOwnDepartmentRoles(viewerRole) {
   return null;
 }
 
+/** 월간 달력 칩·요약: 확정(SELECTED/APPROVED)만 표시 */
+export function filterRequestsForCalendarGrid(requests) {
+  return (Array.isArray(requests) ? requests : []).filter((r) => isConfirmedLeaveStatus(r.status));
+}
+
 /**
  * 캘린더·목록: 본인 부서는 전 상태, 타 부서는 확정(SELECTED/APPROVED)만 전 직원 열람
  */

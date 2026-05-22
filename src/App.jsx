@@ -71,6 +71,7 @@ import {
   CHIEF_LEAVE_TYPE,
   filterAnesthesiaPublishedForOrView,
   filterChiefPublishedForOrView,
+  filterRequestsForCalendarGrid,
   filterRequestsForViewerRole,
   filterRequestsForWeeklyRoster,
   isAnesthesiaLeaveAdminRole,
@@ -1489,6 +1490,11 @@ function App() {
     () => filterRequestsForViewerRole(requestsRawVisible, users, viewerRole),
     [requestsRawVisible, users, viewerRole]
   );
+  /** 월 달력 칩: 확정만(취소·반려·미확정 신청은 날짜 클릭 상세에서만) */
+  const requestsForCalendarGrid = useMemo(
+    () => filterRequestsForCalendarGrid(requestsVisibleInUi),
+    [requestsVisibleInUi]
+  );
   const requestsForWeeklyRoster = useMemo(
     () => filterRequestsForWeeklyRoster(requestsRawVisible, users),
     [requestsRawVisible, users]
@@ -1527,20 +1533,19 @@ function App() {
     return buildMonthMatrix(
       year,
       month,
-      requestsVisibleInUi,
+      requestsForCalendarGrid,
       anesthesiaPublishedRequests,
       chiefPublishedRequests,
       users,
       holidays
     );
-  }, [calendarMonth, requestsVisibleInUi, anesthesiaPublishedRequests, chiefPublishedRequests, users, holidays]);
+  }, [calendarMonth, requestsForCalendarGrid, anesthesiaPublishedRequests, chiefPublishedRequests, users, holidays]);
 
   const calendarDayRequests = useMemo(() => {
     if (!calendarSelectedYmd) return [];
-    const sorted = [...requestsVisibleInUi]
+    return [...requestsVisibleInUi]
       .filter((r) => r.leaveDate === calendarSelectedYmd)
       .sort((a, b) => compareSameLeaveDateRequests(a, b, users));
-    return dedupeRequestsForCalendarChips(sorted);
   }, [requestsVisibleInUi, calendarSelectedYmd, users]);
 
   const calendarAnesthesiaDayRequests = useMemo(() => {
@@ -8082,11 +8087,13 @@ function buildMonthMatrix(year, month, orRequests, anesthesiaOverlayRequests, ch
     const isHoliday = holidayByDate.has(iso);
     const isOffDay = isHoliday || isWeekend;
     const holidayName = holidayByDate.get(iso) ?? "";
-    const dayReqs = (Array.isArray(orRequests) ? orRequests : []).filter((r) => r.leaveDate === iso);
-    const dayAnesReqs = (Array.isArray(anesthesiaOverlayRequests) ? anesthesiaOverlayRequests : []).filter(
-      (r) => r.leaveDate === iso && r.status !== "CANCELLED"
+    const dayReqs = (Array.isArray(orRequests) ? orRequests : []).filter(
+      (r) => r.leaveDate === iso && isWinnerStatus(r.status)
     );
-    const activeDayReqs = dayReqs.filter((r) => r.status !== "CANCELLED");
+    const dayAnesReqs = (Array.isArray(anesthesiaOverlayRequests) ? anesthesiaOverlayRequests : []).filter(
+      (r) => r.leaveDate === iso && isWinnerStatus(r.status)
+    );
+    const activeDayReqs = dayReqs;
     const hasGoldkeyRequest = activeDayReqs.some((r) => r.leaveType === "GOLDKEY");
     const sortedDayReqs = [...dayReqs].sort((a, b) => compareSameLeaveDateRequests(a, b, users));
     const forDisplay = dedupeRequestsForCalendarChips(sortedDayReqs);
@@ -8107,7 +8114,7 @@ function buildMonthMatrix(year, month, orRequests, anesthesiaOverlayRequests, ch
       name: users.find((u) => u.id === r.userId)?.name ?? r.userId,
     }));
     const dayChiefReqs = (Array.isArray(chiefOverlayRequests) ? chiefOverlayRequests : []).filter(
-      (r) => r.leaveDate === iso && r.status !== "CANCELLED"
+      (r) => r.leaveDate === iso && isWinnerStatus(r.status)
     );
     const sortedChief = [...dayChiefReqs].sort((a, b) => compareSameLeaveDateRequests(a, b, users));
     const chiefDisplay = dedupeRequestsForCalendarChips(sortedChief);
@@ -8132,7 +8139,6 @@ function buildMonthMatrix(year, month, orRequests, anesthesiaOverlayRequests, ch
       anesthesiaDisplayApplicants,
       chiefDisplayApplicants,
       applicants: dayReqs
-        .filter((r) => r.status !== "CANCELLED")
         .sort((a, b) => compareSameLeaveDateRequests(a, b, users))
         .map((r) => ({
           id: r.id,
