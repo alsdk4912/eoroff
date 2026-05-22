@@ -14,6 +14,7 @@
     "preview": "vite preview",
     "start": "node backend/server.clean.js",
     "db:reset-leave": "node scripts/reset-leave-data.mjs",
+    "db:apply-anesthesia-goldkeys": "node scripts/apply-anesthesia-goldkeys.mjs",
     "render:install": "npm install --omit=dev"
   },
   "dependencies": {

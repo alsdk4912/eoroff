@@ -1,0 +1,21 @@
+# Turso에 마취과 골드키 확정 일정 반영 (수동 실행)
+# Secrets: TURSO_DATABASE_URL, TURSO_AUTH_TOKEN
+name: Apply anesthesia goldkeys
+
+on:
+  workflow_dispatch:
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - name: Apply anesthesia goldkey leaves
+        run: npm run db:apply-anesthesia-goldkeys
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
