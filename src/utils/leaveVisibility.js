@@ -56,39 +56,57 @@ export function splitRequestsByStaffRole(requests, users) {
   return buckets;
 }
 
+/** 소속 부서·해당일 기준 월간 칩에 넣을 신청 행 */
+function ownDeptRowsVisibleOnCalendarGrid(dayRows) {
+  if (!Array.isArray(dayRows) || dayRows.length === 0) return [];
+
+  const confirmed = dayRows.filter((r) => isConfirmedLeaveStatus(r.status));
+  if (confirmed.length > 0) return confirmed;
+
+  const hasApplied = dayRows.some((r) => String(r.status ?? "").trim() === "APPLIED");
+  if (!hasApplied) return [];
+
+  return dayRows.filter((r) => {
+    const st = String(r.status ?? "").trim();
+    return st === "APPLIED" || st === "CANCELLED" || st === "REJECTED";
+  });
+}
+
 /**
  * 월간 달력 칩:
- * - 타 부서: 확정만
- * - 소속 부서: 해당 날짜에 확정이 1건이라도 있으면 확정만, 없으면 신청·취소·반려 등 전부
+ * - 타 부서: 확정(휴가자)만
+ * - 소속 부서·해당일 확정 있음: 확정만
+ * - 소속 부서·미확정·신청(APPLIED) 있음: 신청·취소·반려 표시
+ * - 소속 부서·확정·신청 모두 없음(취소만 등): 표시 안 함
  */
 export function filterRequestsForCalendarGrid(requests, users, viewerRole) {
   const rows = Array.isArray(requests) ? requests : [];
   const ownDepts = viewerOwnDepartmentRoles(viewerRole);
 
-  const confirmedDayByRole = new Set();
-  for (const r of rows) {
-    if (!isConfirmedLeaveStatus(r.status)) continue;
-    const role = userById(users, r.userId)?.role;
-    if (!isStaffLeaveRole(role)) continue;
-    confirmedDayByRole.add(`${String(r.leaveDate ?? "").slice(0, 10)}|${role}`);
+  const ownDeptVisibleIds = new Set();
+  if (ownDepts) {
+    const byDayRole = new Map();
+    for (const r of rows) {
+      const subjectRole = userById(users, r.userId)?.role;
+      if (!ownDepts.has(subjectRole)) continue;
+      const key = `${String(r.leaveDate ?? "").slice(0, 10)}|${subjectRole}`;
+      if (!byDayRole.has(key)) byDayRole.set(key, []);
+      byDayRole.get(key).push(r);
+    }
+    for (const dayRows of byDayRole.values()) {
+      for (const r of ownDeptRowsVisibleOnCalendarGrid(dayRows)) {
+        ownDeptVisibleIds.add(String(r.id ?? ""));
+      }
+    }
   }
 
   return rows.filter((r) => {
     const subjectRole = userById(users, r.userId)?.role;
     if (!isStaffLeaveRole(subjectRole)) return false;
-
-    const ld = String(r.leaveDate ?? "").slice(0, 10);
-    const isOwnDept = Boolean(ownDepts?.has(subjectRole));
-
-    if (!isOwnDept) {
+    if (!ownDepts?.has(subjectRole)) {
       return isConfirmedLeaveStatus(r.status);
     }
-
-    if (confirmedDayByRole.has(`${ld}|${subjectRole}`)) {
-      return isConfirmedLeaveStatus(r.status);
-    }
-
-    return true;
+    return ownDeptVisibleIds.has(String(r.id ?? ""));
   });
 }
 
