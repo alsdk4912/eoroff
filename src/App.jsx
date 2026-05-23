@@ -1489,10 +1489,10 @@ function App() {
     () => filterRequestsForViewerRole(requestsRawVisible, users, viewerRole),
     [requestsRawVisible, users, viewerRole]
   );
-  /** 월 달력 칩: 확정만(취소·반려·미확정 신청은 날짜 클릭 상세에서만) */
+  /** 월 달력 칩: 소속 부서·해당일 미확정이면 신청·취소 포함, 타 부서·확정 후에는 확정만 */
   const requestsForCalendarGrid = useMemo(
-    () => filterRequestsForCalendarGrid(requestsVisibleInUi),
-    [requestsVisibleInUi]
+    () => filterRequestsForCalendarGrid(requestsVisibleInUi, users, viewerRole),
+    [requestsVisibleInUi, users, viewerRole]
   );
   const requestsForWeeklyRoster = useMemo(
     () => filterRequestsForWeeklyRoster(requestsRawVisible, users),

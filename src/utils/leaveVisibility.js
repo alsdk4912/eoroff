@@ -56,9 +56,40 @@ export function splitRequestsByStaffRole(requests, users) {
   return buckets;
 }
 
-/** 월간 달력 칩·요약: 확정(SELECTED/APPROVED)만 표시 */
-export function filterRequestsForCalendarGrid(requests) {
-  return (Array.isArray(requests) ? requests : []).filter((r) => isConfirmedLeaveStatus(r.status));
+/**
+ * 월간 달력 칩:
+ * - 타 부서: 확정만
+ * - 소속 부서: 해당 날짜에 확정이 1건이라도 있으면 확정만, 없으면 신청·취소·반려 등 전부
+ */
+export function filterRequestsForCalendarGrid(requests, users, viewerRole) {
+  const rows = Array.isArray(requests) ? requests : [];
+  const ownDepts = viewerOwnDepartmentRoles(viewerRole);
+
+  const confirmedDayByRole = new Set();
+  for (const r of rows) {
+    if (!isConfirmedLeaveStatus(r.status)) continue;
+    const role = userById(users, r.userId)?.role;
+    if (!isStaffLeaveRole(role)) continue;
+    confirmedDayByRole.add(`${String(r.leaveDate ?? "").slice(0, 10)}|${role}`);
+  }
+
+  return rows.filter((r) => {
+    const subjectRole = userById(users, r.userId)?.role;
+    if (!isStaffLeaveRole(subjectRole)) return false;
+
+    const ld = String(r.leaveDate ?? "").slice(0, 10);
+    const isOwnDept = Boolean(ownDepts?.has(subjectRole));
+
+    if (!isOwnDept) {
+      return isConfirmedLeaveStatus(r.status);
+    }
+
+    if (confirmedDayByRole.has(`${ld}|${subjectRole}`)) {
+      return isConfirmedLeaveStatus(r.status);
+    }
+
+    return true;
+  });
 }
 
 /**
