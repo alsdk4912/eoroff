@@ -3148,7 +3148,15 @@ const WORK_SCHEDULE_TEMPLATES = { rows2026: WORK_SCHEDULE_2026_ROWS, rows2027: W
 const WORK_SCHEDULE_OPTIONS = NURSE_SHIFT_OPTIONS;
 const CUSTOM_SHIFT_SENTINEL = "__CUSTOM_SHIFT__";
 const WORK_SCHEDULE_OPTION_SET = shiftOptionSetForRole("NURSE");
-const WEEKLY_LEAVE_MARK_OPTIONS = ["휴가", "공가", "반차", "필수교육", "off"];
+const WEEKLY_REQUIRED_TRAINING_MARK = "교육";
+const LEGACY_WEEKLY_REQUIRED_TRAINING_MARK = "필수교육";
+const WEEKLY_LEAVE_MARK_OPTIONS = ["휴가", "공가", "반차", WEEKLY_REQUIRED_TRAINING_MARK, "off"];
+
+function normalizeWeeklyLeaveMark(mark) {
+  const m = String(mark ?? "").trim();
+  if (m === LEGACY_WEEKLY_REQUIRED_TRAINING_MARK) return WEEKLY_REQUIRED_TRAINING_MARK;
+  return m;
+}
 
 function isCustomShiftCodeValue(value) {
   return String(value ?? "").startsWith(`${CUSTOM_SHIFT_SENTINEL}:`);
@@ -3275,7 +3283,7 @@ function effectiveScheduleCell(userId, nurseName, ymd, workScheduleByYear, reque
     const nat = String(approvedLeave.leaveNature ?? "");
     const lt = String(approvedLeave.leaveType ?? "");
     if (nat === "PAID_TRAINING") return { kind: "leave", main: "공가", sub: typeFullLabel(approvedLeave.leaveType) };
-    if (nat === "REQUIRED_TRAINING") return { kind: "leave", main: "필수교육", sub: typeFullLabel(approvedLeave.leaveType) };
+    if (nat === "REQUIRED_TRAINING") return { kind: "leave", main: WEEKLY_REQUIRED_TRAINING_MARK, sub: typeFullLabel(approvedLeave.leaveType) };
     if (lt === "HALF_DAY") return { kind: "leave", main: "반차", sub: "" };
     return { kind: "leave", main: "휴가", sub: typeFullLabel(approvedLeave.leaveType) };
   }
@@ -3333,7 +3341,7 @@ function effectiveWeeklyCell(
     const leaveNature = String(approvedLeave.leaveNature ?? "");
     const leaveType = String(approvedLeave.leaveType ?? "");
     if (leaveNature === "PAID_TRAINING") return { kind: "leave", main: "공가", sub: "" };
-    if (leaveNature === "REQUIRED_TRAINING") return { kind: "leave", main: "필수교육", sub: "" };
+    if (leaveNature === "REQUIRED_TRAINING") return { kind: "leave", main: WEEKLY_REQUIRED_TRAINING_MARK, sub: "" };
     if (leaveType === "HALF_DAY") return { kind: "leave", main: "반차", sub: "" };
     return { kind: "leave", main: "휴가", sub: "" };
   }
@@ -3356,7 +3364,7 @@ function parseWeeklyOverrideSelectValue(val) {
   if (!val || val === "__auto__") return null;
   if (val === "__leave__") return { mode: "manual", kind: "leave", main: "휴가", sub: "" };
   if (val.startsWith("__leave__:")) {
-    const mark = val.slice(10) || "휴가";
+    const mark = normalizeWeeklyLeaveMark(val.slice(10) || "휴가");
     return { mode: "manual", kind: "leave", main: mark, sub: "" };
   }
   if (val.startsWith("__sub__:")) {
@@ -3372,7 +3380,7 @@ function parseWeeklyOverrideSelectValue(val) {
 
 function weeklyOverrideSelectValue(ov) {
   if (!ov || ov.mode !== "manual") return "__auto__";
-  if (ov.kind === "leave") return `__leave__:${String(ov.main || "휴가")}`;
+  if (ov.kind === "leave") return `__leave__:${normalizeWeeklyLeaveMark(ov.main || "휴가")}`;
   if (ov.kind === "sub") return `__sub__:${ov.main}`;
   if (ov.kind === "base") return `__base__:${ov.main}`;
   return "__auto__";
@@ -3397,7 +3405,7 @@ function mapWeeklyOverrideRowsToClient(rows) {
     o[`${uid}|${ymd}`] = {
       mode: r.mode || "manual",
       kind: r.kind,
-      main: r.main,
+      main: r.kind === "leave" ? normalizeWeeklyLeaveMark(r.main) : r.main,
       sub: r.sub ?? "",
     };
   }
@@ -3408,7 +3416,7 @@ function mapWeeklyOverrideRowsToClient(rows) {
 function weeklyCellDisplayLine(cell) {
   if (!cell) return "—";
   const m = String(cell.main ?? "").trim() || "—";
-  return m;
+  return normalizeWeeklyLeaveMark(m);
 }
 
 function escapeHtmlForWeeklyExport(s) {
@@ -3681,7 +3689,7 @@ function WeeklyScheduleTab({
                     const key = weeklyCellKey(u.id, d);
                     const selVal = weeklyOverrideSelectValue(draftOverrides[key]);
                     const auto = computedCell(u, d);
-                    const autoMain = String(auto?.main ?? "").trim();
+                    const autoMain = normalizeWeeklyLeaveMark(auto?.main ?? "");
                     const autoLabel = weeklyCellDisplayLine(auto);
                     return (
                       <td
@@ -3702,7 +3710,13 @@ function WeeklyScheduleTab({
                               </option>
                             ))}
                             {shiftOptionsForRole(u.role)
-                              .filter((x) => x && !WEEKLY_LEAVE_MARK_OPTIONS.includes(x) && x !== autoMain)
+                              .filter(
+                                (x) =>
+                                  x &&
+                                  !WEEKLY_LEAVE_MARK_OPTIONS.includes(x) &&
+                                  x !== LEGACY_WEEKLY_REQUIRED_TRAINING_MARK &&
+                                  x !== autoMain
+                              )
                               .map((opt) => (
                                 <option key={`base-${opt}`} value={`__base__:${opt}`}>
                                   {opt}

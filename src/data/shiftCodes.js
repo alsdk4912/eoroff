@@ -22,7 +22,7 @@ export const NURSE_SHIFT_OPTIONS = [
   "휴가",
   "공가",
   "반차",
-  "필수교육",
+  "교육",
 ];
 
 /** 마취과 간호사 */
