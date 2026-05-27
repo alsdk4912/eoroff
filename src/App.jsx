@@ -6429,7 +6429,10 @@ function CalendarPage({
   const calendarSubTargetRequests = useMemo(() => {
     if (!selectedYmd) return [];
     const rows = (Array.isArray(dayRequests) ? dayRequests : []).filter(
-      (r) => String(r.leaveDate ?? "").slice(0, 10) === selectedYmd && r.status !== "CANCELLED"
+      (r) =>
+        String(r.leaveDate ?? "").slice(0, 10) === selectedYmd &&
+        r.status !== "CANCELLED" &&
+        canManageRequest(r)
     );
     if (rows.length === 0) return [];
     const byId = new Map(rows.map((r) => [r.id, r]));
