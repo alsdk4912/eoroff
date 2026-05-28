@@ -384,7 +384,7 @@ export async function initDb() {
   await ensureAnesthesiaUsers();
   await ensureAdmin2User();
   await ensureChiefUsers();
-  await ensureAdmin3User();
+  await removeLegacyAdmin3Users();
   await ensureKnownEmployeeNos();
   await ensureOfficialHolidayCorrections();
   await ensureHolidayDutyAnchors2026();
@@ -678,18 +678,9 @@ async function ensureChiefUsers() {
   }
 }
 
-/** 주임 휴가 확정·대체 지정 전용 관리자 */
-async function ensureAdmin3User() {
-  const row = await queryOne("SELECT id FROM users WHERE role = 'ADMIN3' LIMIT 1");
-  if (row?.id) return;
-  await execute(
-    "INSERT INTO users (id, name, employee_no, role, password) VALUES (?, ?, ?, ?, ?)",
-    "u_admin3_1",
-    "관리자3",
-    "A9003",
-    "ADMIN3",
-    "1234"
-  );
+/** 레거시 관리자3 계정 제거 (주임 5명 직접 확정/대체 지정) */
+async function removeLegacyAdmin3Users() {
+  await execute("DELETE FROM users WHERE role = 'ADMIN3'");
 }
 
 async function ensureKnownEmployeeNos() {

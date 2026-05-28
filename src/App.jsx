@@ -2382,9 +2382,7 @@ function App() {
                 ? " · 관리자"
                 : viewerRole === "ADMIN2"
                   ? " · 관리자2"
-                  : viewerRole === "ADMIN3"
-                    ? " · 관리자3"
-                    : viewerRole === "NURSE"
+                  : viewerRole === "NURSE"
                       ? " · 간호사"
                       : viewerRole === "ANESTHESIA"
                         ? " · 마취"
@@ -5166,8 +5164,7 @@ function AppBottomNav({ isOrLeaveAdmin, isAnesthesiaLeaveAdmin, isChiefLeaveAdmi
     role === "ANESTHESIA" ||
     role === "CHIEF" ||
     role === "ADMIN" ||
-    role === "ADMIN2" ||
-    role === "ADMIN3";
+    role === "ADMIN2";
 
   if (isOrLeaveAdmin) {
     return (
@@ -5384,7 +5381,6 @@ function NoticeBoardPage({
   const canWriteNoticeComments =
     currentRole === "ADMIN" ||
     currentRole === "ADMIN2" ||
-    currentRole === "ADMIN3" ||
     currentRole === "NURSE" ||
     currentRole === "ANESTHESIA" ||
     currentRole === "CHIEF";

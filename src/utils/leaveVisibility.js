@@ -41,7 +41,7 @@ export function isConfirmedLeaveStatus(status) {
 /** 로그인 역할이 담당하는 휴가 신청·확정 부서 (관리자는 수술실·마취·주임에 대응) */
 function viewerOwnDepartmentRoles(viewerRole) {
   if (viewerRole === "ANESTHESIA" || viewerRole === "ADMIN2") return new Set(["ANESTHESIA"]);
-  if (viewerRole === "CHIEF" || viewerRole === "ADMIN3") return new Set(["CHIEF"]);
+  if (viewerRole === "CHIEF") return new Set(["CHIEF"]);
   if (viewerRole === "NURSE" || viewerRole === "ADMIN") return new Set(["NURSE"]);
   return null;
 }
@@ -150,7 +150,7 @@ export function filterChiefPublishedForOrView(requests, users, isWinnerStatus) {
 
 export function canViewerApproveRequest(viewerRole, requestUserId, users) {
   if (isAnesthesiaStaffUserId(requestUserId, users)) return viewerRole === "ADMIN2";
-  if (isChiefStaffUserId(requestUserId, users)) return viewerRole === "ADMIN3";
+  if (isChiefStaffUserId(requestUserId, users)) return viewerRole === "CHIEF";
   if (isOrNurseUserId(requestUserId, users)) return viewerRole === "ADMIN";
   return false;
 }
@@ -168,7 +168,7 @@ export function isAnesthesiaLeaveAdminRole(role) {
 }
 
 export function isChiefLeaveAdminRole(role) {
-  return role === "ADMIN3";
+  return role === "CHIEF";
 }
 
 export function isLeaveManagerRole(role) {
@@ -187,7 +187,7 @@ export function showAnesthesiaPublishedOverlay(viewerRole) {
 
 /** 현황: 월간·주간만 (골드키·사다리 등 제외) */
 export function isScheduleOnlyDashboardRole(role) {
-  return role === "ANESTHESIA" || role === "ADMIN2" || role === "CHIEF" || role === "ADMIN3";
+  return role === "ANESTHESIA" || role === "ADMIN2" || role === "CHIEF";
 }
 
 export function canApplyLeaveRole(role) {

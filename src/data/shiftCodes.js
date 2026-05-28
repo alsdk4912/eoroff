@@ -90,13 +90,13 @@ export function canEditMonthlyScheduleCell(viewerRole, rowName) {
   const sec = monthlyRowSection(rowName);
   if (role === "ADMIN") return true;
   if (sec === "anesthesia") return role === "ANESTHESIA" || role === "ADMIN2";
-  if (sec === "chief") return role === "CHIEF" || role === "ADMIN3";
+  if (sec === "chief") return role === "CHIEF";
   return role === "ADMIN";
 }
 
 export function canSaveMonthlyWorkSchedule(viewerRole) {
   const role = String(viewerRole ?? "").trim();
-  return ["ADMIN", "ANESTHESIA", "ADMIN2", "CHIEF", "ADMIN3"].includes(role);
+  return ["ADMIN", "ANESTHESIA", "ADMIN2", "CHIEF"].includes(role);
 }
 
 /** 주간 번표 셀 선택박스 편집 (역할·본인 행 기준) */
@@ -108,14 +108,14 @@ export function canEditWeeklyScheduleCell(viewerRole, staffUser, viewerUserId) {
   if (vr === "ADMIN") return true;
   if (sid && vid && sid === vid) return true;
   if (tr === "ANESTHESIA") return vr === "ANESTHESIA" || vr === "ADMIN2";
-  if (tr === "CHIEF") return vr === "CHIEF" || vr === "ADMIN3";
+  if (tr === "CHIEF") return vr === "CHIEF";
   if (tr === "NURSE") return vr === "NURSE" || vr === "ADMIN";
   return false;
 }
 
 export function canUseWeeklyScheduleEditor(viewerRole) {
   const role = String(viewerRole ?? "").trim();
-  return ["ADMIN", "NURSE", "ANESTHESIA", "ADMIN2", "CHIEF", "ADMIN3"].includes(role);
+  return ["ADMIN", "NURSE", "ANESTHESIA", "ADMIN2", "CHIEF"].includes(role);
 }
 
 /** 역할별 저장 시 다른 섹션 행은 기존 값 유지 */
@@ -136,7 +136,7 @@ export function weeklyStaffForViewer(users, viewerRole) {
   if (role === "ANESTHESIA" || role === "ADMIN2") {
     return list.filter((u) => u.role === "ANESTHESIA").sort((a, b) => a.name.localeCompare(b.name, "ko"));
   }
-  if (role === "CHIEF" || role === "ADMIN3") {
+  if (role === "CHIEF") {
     return list.filter((u) => u.role === "CHIEF").sort((a, b) => a.name.localeCompare(b.name, "ko"));
   }
   return list.filter((u) => u.role === "NURSE").sort((a, b) => a.name.localeCompare(b.name, "ko"));

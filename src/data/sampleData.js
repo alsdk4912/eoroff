@@ -73,12 +73,6 @@ export const users = [
     role: "ANESTHESIA",
     employeeNo: EMPLOYEE_NO_BY_NAME[name] || `A${String(idx + 1).padStart(4, "0")}`,
   })),
-  {
-    id: "u_admin3_1",
-    name: "관리자3",
-    role: "ADMIN3",
-    employeeNo: "A9003",
-  },
   ...CHIEF_NAMES.map((name, idx) => ({
     id: `u_chief_${idx + 1}`,
     name,
