@@ -7546,8 +7546,13 @@ function CalendarPage({
               {(() => {
                 const sid = standaloneSubstituteRequestId(selectedYmd);
                 const orphanSubs = getSubstituteRecordsForRequest(substituteAssignments, sid);
+                const approvedAll = [
+                  ...(Array.isArray(selectedCell.approvedApplicants) ? selectedCell.approvedApplicants : []),
+                  ...(Array.isArray(selectedCell.anesthesiaApprovedApplicants) ? selectedCell.anesthesiaApprovedApplicants : []),
+                  ...(Array.isArray(selectedCell.chiefApprovedApplicants) ? selectedCell.chiefApprovedApplicants : []),
+                ];
                 const cells = [];
-                for (const item of selectedCell.approvedApplicants) {
+                for (const item of approvedAll) {
                   const subs = getSubstituteRecordsForRequest(substituteAssignments, item.id);
                   if (!subs.length) {
                     cells.push(
