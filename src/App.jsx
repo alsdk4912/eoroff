@@ -3175,8 +3175,14 @@ function normalizeShiftCodeForSave(value) {
 }
 
 function resolveShiftCodeFromStored(rawShift, role) {
-  const raw = String(rawShift ?? "");
+  let raw = String(rawShift ?? "").trim();
   if (!raw) return "";
+  if (String(role ?? "").trim() === "ANESTHESIA") {
+    // 레거시 저장값(D0/R1/R3) 호환: 새 표기(opd/r1/r3)로 자동 매핑
+    if (raw === "D0") raw = "opd";
+    else if (raw === "R1") raw = "r1";
+    else if (raw === "R3") raw = "r3";
+  }
   return shiftOptionSetForRole(role).has(raw) ? raw : toCustomShiftCode(raw);
 }
 
@@ -7367,7 +7373,7 @@ function CalendarPage({
                                 {isCustomShiftCodeValue(row.shiftCode) ? (
                                   <input
                                     type="text"
-                                    placeholder="예: D0"
+                                    placeholder="예: opd"
                                     value={customShiftText(row.shiftCode)}
                                     onChange={(e) => updateCalendarSubRow(row.rowId, "shiftCode", toCustomShiftCode(e.target.value))}
                                   />

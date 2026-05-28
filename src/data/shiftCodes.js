@@ -26,7 +26,7 @@ export const NURSE_SHIFT_OPTIONS = [
 ];
 
 /** 마취과 간호사 */
-export const ANESTHESIA_SHIFT_OPTIONS = ["", "D0", "R1", "R3"];
+export const ANESTHESIA_SHIFT_OPTIONS = ["", "opd", "r1", "r3", "10시"];
 
 /** 주임 */
 export const CHIEF_SHIFT_OPTIONS = ["", "D0", "D1", "9-5", "E"];
