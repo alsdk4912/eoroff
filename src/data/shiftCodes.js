@@ -91,12 +91,12 @@ export function canEditMonthlyScheduleCell(viewerRole, rowName) {
   if (role === "ADMIN") return true;
   if (sec === "anesthesia") return role === "ANESTHESIA" || role === "ADMIN2";
   if (sec === "chief") return role === "CHIEF" || role === "ADMIN3";
-  return role === "ADMIN" || role === "NURSE";
+  return role === "ADMIN";
 }
 
 export function canSaveMonthlyWorkSchedule(viewerRole) {
   const role = String(viewerRole ?? "").trim();
-  return ["ADMIN", "NURSE", "ANESTHESIA", "ADMIN2", "CHIEF", "ADMIN3"].includes(role);
+  return ["ADMIN", "ANESTHESIA", "ADMIN2", "CHIEF", "ADMIN3"].includes(role);
 }
 
 /** 주간 번표 셀 선택박스 편집 (역할·본인 행 기준) */
