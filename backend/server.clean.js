@@ -601,7 +601,25 @@ async function applyWeeklyOverridesToSubstitutes(overridesMap, actorUserId) {
       substituteUserId,
       subRole
     );
-    if (approvedLeaves.length !== 1) continue;
+    if (approvedLeaves.length !== 1) {
+      // 확정 휴가 1건과 매칭되지 않아도, 캘린더 대체자 현황에서 보이도록 독립 대체 배정으로 저장
+      const requestId = `standalone_sub:${leaveDate}`;
+      const leaveUserId = "__none__";
+      const newId = `sub_wk_standalone_${substituteUserId.replace(/[^a-z0-9_]/gi, "").slice(0, 12)}_${leaveDate.replace(/-/g, "")}_${Date.now().toString(36)}`;
+      await execute(
+        `INSERT INTO substitute_assignments (id, request_id, leave_date, leave_user_id, substitute_user_id, shift_code, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        newId,
+        requestId,
+        leaveDate,
+        leaveUserId,
+        substituteUserId,
+        main,
+        actorUserId,
+        now,
+        now
+      );
+      continue;
+    }
     const reqRow = approvedLeaves[0];
     const leaveUserId = String(reqRow.user_id);
     const requestId = String(reqRow.id);
