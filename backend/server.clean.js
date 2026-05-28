@@ -573,8 +573,12 @@ async function applyWeeklyOverridesToSubstitutes(overridesMap, actorUserId) {
     if (!mk) continue;
     const substituteUserId = mk[1];
     const leaveDate = mk[2];
-    const nurseOk = await queryOne("SELECT id FROM users WHERE id = ? AND role = 'NURSE'", substituteUserId);
-    if (!nurseOk) continue;
+    const subUser = await queryOne(
+      "SELECT id, role FROM users WHERE id = ? AND role IN ('NURSE', 'ANESTHESIA', 'CHIEF')",
+      substituteUserId
+    );
+    if (!subUser?.id) continue;
+    const subRole = String(subUser.role ?? "");
 
     const existing = await queryAll(
       "SELECT id FROM substitute_assignments WHERE substitute_user_id = ? AND leave_date = ?",
@@ -587,9 +591,15 @@ async function applyWeeklyOverridesToSubstitutes(overridesMap, actorUserId) {
     if (existing.length > 0) continue;
 
     const approvedLeaves = await queryAll(
-      `SELECT id, user_id FROM requests WHERE leave_date = ? AND status = 'APPROVED' AND ${SQL_REQ_ACTIVE} AND user_id != ?`,
+      `SELECT r.id, r.user_id
+       FROM requests r
+       JOIN users u ON u.id = r.user_id
+       WHERE r.leave_date = ? AND r.status = 'APPROVED' AND ${SQL_REQ_ACTIVE}
+         AND r.user_id != ?
+         AND u.role = ?`,
       leaveDate,
-      substituteUserId
+      substituteUserId,
+      subRole
     );
     if (approvedLeaves.length !== 1) continue;
     const reqRow = approvedLeaves[0];
@@ -617,7 +627,7 @@ app.post("/api/weekly-cell-overrides/sync", async (req, res) => {
     const overrides = req.body?.overrides;
     if (!actorUserId) return res.status(400).json({ error: "actorUserId가 필요합니다." });
     const actor = await queryOne(
-      "SELECT id FROM users WHERE id = ? AND role IN ('ADMIN', 'NURSE', 'ANESTHESIA')",
+      "SELECT id FROM users WHERE id = ? AND role IN ('ADMIN', 'ADMIN2', 'NURSE', 'ANESTHESIA', 'CHIEF')",
       actorUserId
     );
     if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
