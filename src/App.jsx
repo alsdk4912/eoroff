@@ -8067,6 +8067,11 @@ function buildMonthMatrix(year, month, confirmedRequests, users, holidaysCache) 
     const nurseReqs = byRole.NURSE;
     const anesReqs = byRole.ANESTHESIA;
     const chiefReqs = byRole.CHIEF;
+    const confirmedDayAll = dayAll.filter((r) => isWinnerStatus(r.status));
+    const confirmedByRole = splitRequestsByStaffRole(confirmedDayAll, users);
+    const confirmedNurseReqs = confirmedByRole.NURSE;
+    const confirmedAnesReqs = confirmedByRole.ANESTHESIA;
+    const confirmedChiefReqs = confirmedByRole.CHIEF;
     const activeDayReqs = dayAll;
     const hasGoldkeyRequest = activeDayReqs.some((r) => r.leaveType === "GOLDKEY");
     const displayApplicants = mapRequestsToCalendarApplicants(nurseReqs, users);
@@ -8086,9 +8091,9 @@ function buildMonthMatrix(year, month, confirmedRequests, users, holidaysCache) 
       anesthesiaDisplayApplicants,
       chiefDisplayApplicants,
       applicants: mapRequestsToCalendarApplicants(dayAll, users),
-      approvedApplicants: displayApplicants,
-      anesthesiaApprovedApplicants: anesthesiaDisplayApplicants,
-      chiefApprovedApplicants: chiefDisplayApplicants,
+      approvedApplicants: mapRequestsToCalendarApplicants(confirmedNurseReqs, users),
+      anesthesiaApprovedApplicants: mapRequestsToCalendarApplicants(confirmedAnesReqs, users),
+      chiefApprovedApplicants: mapRequestsToCalendarApplicants(confirmedChiefReqs, users),
     });
   }
   return cells;
