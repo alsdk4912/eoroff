@@ -3100,7 +3100,6 @@ const WORK_SCHEDULE_2026_ROWS = [
   { name: "최유경", values: ["1D1", "7D1", "7D1", "5D1", "안D0", "안D0", "안E", "수E", "5D1", "6D1", "수E", "PRN"] },
   { name: "정수영", values: ["", "", "6D1", "6D1", "6D1", "6D1", "1D1", "1D1", "1D1", "5D1", "5D1", "5D1"] },
   ...ANESTHESIA_MONTHLY_NAMES.map((name) => ({ name, values: emptyScheduleMonthValues(12) })),
-  ...CHIEF_MONTHLY_NAMES.map((name) => ({ name, values: emptyScheduleMonthValues(12) })),
 ];
 
 /** 2026년 9월(인덱스 8) 로컬 캐시 오입력 → 정정값 */
@@ -3137,7 +3136,6 @@ const WORK_SCHEDULE_2027_ROWS_SEED = [
   { name: "최유경", values: ["7D1", "수E"] },
   { name: "정수영", values: ["3D1", "3D1"] },
   ...ANESTHESIA_MONTHLY_NAMES.map((name) => ({ name, values: ["", ""] })),
-  ...CHIEF_MONTHLY_NAMES.map((name) => ({ name, values: ["", ""] })),
 ];
 const WORK_SCHEDULE_2027_ROWS = WORK_SCHEDULE_2027_ROWS_SEED.map((r) => padScheduleRowValues(r, SCHEDULE_MONTH_COUNT));
 
