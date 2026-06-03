@@ -451,6 +451,13 @@ app.get("/api/health", async (_, res) => {
   } catch {
     /* 초기 기동 직전 등 */
   }
+  let pushSubscriptionCount = 0;
+  try {
+    const ps = await queryOne("SELECT COUNT(*) AS c FROM push_subscriptions");
+    pushSubscriptionCount = Number(ps?.c ?? 0);
+  } catch {
+    /* ignore */
+  }
   res.json({
     ok: true,
     apiVersion: "2026-05-07-notices-v1",
@@ -460,6 +467,8 @@ app.get("/api/health", async (_, res) => {
     remoteDb: remote,
     sqlitePathSet: Boolean(process.env.SQLITE_PATH),
     leaveRequestAuditRows: leaveAuditCount,
+    pushEnabled: PUSH_ENABLED,
+    pushSubscriptionCount,
     ...(ephemeral
       ? {
           hint: "무료 유지: Turso 무료 DB + Render에 TURSO_DATABASE_URL·TURSO_AUTH_TOKEN 설정. 또는 유료 Disk + SQLITE_PATH.",

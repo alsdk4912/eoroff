@@ -64,6 +64,13 @@ import {
   generatorYearOptions,
 } from "./data/workScheduleYears.js";
 import { consumeManualVersionReloadToast, restoreHashAfterReload, useAppUpdate } from "./useAppUpdate.js";
+import {
+  enableWebPushForUser,
+  isWebPushSupported,
+  pushSetupHintForPlatform,
+  showLocalNotificationIfAllowed,
+  trySilentPushResubscribe,
+} from "./utils/webPush.js";
 import { buildAutoHolidayDutyPlan } from "./utils/holidayDutyPlan.clean.js";
 import {
   canApplyLeaveRole,
@@ -81,6 +88,15 @@ import {
   isScheduleOnlyDashboardRole,
   showHolidayDutyEditorRole,
 } from "./utils/leaveVisibility.js";
+import {
+  FORCE_GOLDKEY_NEGOTIATION_KEYS,
+  buildNegotiationMetaByRequestId,
+  goldkeyAnchorRequestedAtMs,
+  isForceManualOrderOnly,
+  isGoldkeyNegotiationPendingChip,
+  isGoldkeyUnconfirmedChip,
+  isGoldkeyWithin24HoursAfterAnchor,
+} from "./utils/negotiationMeta.js";
 
 /** 오프라인 저장소 버전 — 배포 시 키 올리면 예전 휴가·골드키 캐시 무시(빈 신청·기본 골드키로 로드) */
 const LS_REQUESTS = "or.requests.v5";
@@ -118,17 +134,6 @@ const LS_NOTIFICATIONS = "or.notifications.v1";
 const LS_NOTICES = "or.notices.v1";
 const LS_NOTICE_COMMENTS = "or.noticeComments.v1";
 
-/** 운영 예외: 해당 날짜/인원 골드키는 수동 협의로 처리 */
-const FORCE_GOLDKEY_NEGOTIATION_KEYS = new Set([
-  "2026-05-22|u_nurse_2", // 이양희
-  "2026-05-22|u_nurse_8", // 임희종
-  "2026-05-22|u_nurse_16", // 이현숙
-]);
-// 운영 예외: 아래 키는 사다리 비활성화 + 수기 순번 입력만 허용
-const FORCE_MANUAL_ORDER_ONLY_KEYS = new Set([
-  "2026-05-08|GENERAL_PRIORITY",
-]);
-
 /** 같은 날·같은 유형 APPLIED 신청으로부터 사다리 협의 대상자 userId 목록 (사다리 페이지와 동일 규칙) */
 function getLadderParticipantUserIdsForRequests(requests, leaveDate, leaveType) {
   const rows = (Array.isArray(requests) ? requests : []).filter(
@@ -150,10 +155,6 @@ function hasSavedLadderResultForKey(ladderResults, leaveDate, leaveType) {
     const k = `${String(row?.leaveDate ?? "").trim()}|${String(row?.leaveType ?? "").trim()}`;
     return k === key;
   });
-}
-
-function isForceManualOrderOnly(leaveDate, leaveType) {
-  return FORCE_MANUAL_ORDER_ONLY_KEYS.has(`${String(leaveDate ?? "").trim()}|${String(leaveType ?? "").trim()}`);
 }
 
 /** 사다리 결과 저장 전, 협의 대상자 중 누구라도 수기로 순번을 넣었으면 사다리 실행 불가 */
@@ -313,24 +314,6 @@ function isLongTermGoldkeyAprilBannerWindow(d) {
 /** 장기 골드키: 10/1~10/10 (익년 1~6월) */
 function isLongTermGoldkeyOctoberBannerWindow(d) {
   return d.getMonth() + 1 === 10 && d.getDate() >= 1 && d.getDate() <= 10;
-}
-
-/** 같은 휴가일 골드키: 최초 신청 시각으로부터 24시간 이내 제출분끼리 협의(그 이후는 신청순 자동) */
-const GOLDKEY_NEGOTIATION_WINDOW_MS = 24 * 60 * 60 * 1000;
-
-function goldkeyAnchorRequestedAtMs(requestRows) {
-  const sorted = [...requestRows].sort((a, b) =>
-    String(a.requestedAt ?? "").localeCompare(String(b.requestedAt ?? ""))
-  );
-  const t = new Date(sorted[0]?.requestedAt ?? "").getTime();
-  return Number.isFinite(t) ? t : NaN;
-}
-
-function isGoldkeyWithin24HoursAfterAnchor(anchorMs, requestedAtIso) {
-  if (!Number.isFinite(anchorMs)) return false;
-  const t = new Date(requestedAtIso ?? "").getTime();
-  if (!Number.isFinite(t)) return false;
-  return t - anchorMs <= GOLDKEY_NEGOTIATION_WINDOW_MS;
 }
 
 /** 사다리 협의 대상 행(2명 이상일 때만 사다리 가능). 4·10월 장기 모집 다인이 있으면 그 부분만 우선. */
@@ -651,6 +634,7 @@ function App() {
   const myGoldkey = goldkeys.find((g) => g.userId === auth?.userId);
   const isLoggedIn = Boolean(auth?.userId);
   const prevIsLoggedInRef = useRef(false);
+  const prevUnreadNotificationCountRef = useRef(null);
   const rememberedPushEnabled = Boolean(auth?.userId && pushEnabledByUser?.[auth.userId]);
   const notificationsSource = serverMode ? serverNotifications : notifications;
   const myNotifications = useMemo(
@@ -713,6 +697,20 @@ function App() {
       cancelled = true;
     };
   }, [isLoggedIn, currentUser?.role, serverMode, dataHydrated, rememberedPushEnabled, auth?.userId, setPushEnabledByUser]);
+
+  /** 로그인·재방문 시: 권한이 이미 허용된 간호사는 푸시 구독을 서버에 다시 맞춤 */
+  useEffect(() => {
+    if (!isLoggedIn || currentUser?.role !== "NURSE" || !serverMode || !dataHydrated) return;
+    if (!rememberedPushEnabled) return;
+    let cancelled = false;
+    void (async () => {
+      const ok = await trySilentPushResubscribe(auth?.userId);
+      if (!cancelled && ok) setPushEnabled(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn, currentUser?.role, serverMode, dataHydrated, rememberedPushEnabled, auth?.userId]);
 
   function createNotificationForNurses(message, payload = {}) {
     // 2단계: 서버 모드에서는 백엔드가 알림을 생성/동기화하므로
@@ -803,58 +801,18 @@ function App() {
         window.alert?.("서버 연결 모드에서만 푸시 알림을 설정할 수 있습니다.");
         return;
       }
-      if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      if (!isWebPushSupported()) {
         window.alert?.("이 기기/브라우저는 Web Push를 지원하지 않습니다.");
         return;
       }
-      const perm = await Notification.requestPermission();
-      if (perm !== "granted") {
-        window.alert?.("알림 권한이 허용되지 않았습니다.");
-        return;
-      }
-      const scope = import.meta.env.BASE_URL || "/";
-      let reg = await navigator.serviceWorker.getRegistration(scope);
-      if (!reg) {
-        reg = await withTimeout(
-          navigator.serviceWorker.register(`${scope}sw.js`, { scope, updateViaCache: "none" }),
-          8000,
-          "서비스 워커 등록 시간이 초과되었습니다."
-        );
-      }
-      const readyReg = await withTimeout(
-        navigator.serviceWorker.ready,
-        8000,
-        "서비스 워커 준비 시간이 초과되었습니다."
-      );
-      const keyResp = await api.getPushVapidPublicKey();
-      const publicKey = String(keyResp?.publicKey ?? "");
-      if (!publicKey) {
-        window.alert?.("서버 VAPID 설정이 없어 푸시를 사용할 수 없습니다.");
-        return;
-      }
-      let sub = await readyReg.pushManager.getSubscription();
-      if (!sub) {
-        sub = await withTimeout(
-          readyReg.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: urlBase64ToUint8Array(publicKey),
-          }),
-          12000,
-          "푸시 구독 시간이 초과되었습니다. 다시 시도해 주세요."
-        );
-      }
-      await api.savePushSubscription({
-        userId: auth?.userId,
-        subscription: sub.toJSON(),
-      });
-      await api.sendPushTestToSelf({ userId: auth?.userId });
+      await enableWebPushForUser(auth?.userId, { sendTest: true });
       if (auth?.userId) {
         setPushEnabledByUser((prev) => ({ ...(prev ?? {}), [auth.userId]: true }));
       }
       setPushEnabled(true);
-      notifyDone("푸시 알림이 활성화되었습니다. 테스트 알림을 확인해 주세요.");
+      notifyDone(`푸시 알림이 활성화되었습니다. 테스트 알림을 확인해 주세요.\n\n${pushSetupHintForPlatform()}`);
     } catch (e) {
-      window.alert?.(`푸시 설정 실패: ${e?.message || e}`);
+      window.alert?.(`푸시 설정 실패: ${e?.message || e}\n\n${pushSetupHintForPlatform()}`);
     } finally {
       setPushBusy(false);
     }
@@ -1041,6 +999,7 @@ function App() {
   useEffect(() => {
     if (!isLoggedIn || currentUser?.role !== "NURSE" || !serverMode) {
       setServerNotifications([]);
+      prevUnreadNotificationCountRef.current = null;
       return;
     }
     let cancelled = false;
@@ -1050,18 +1009,30 @@ function App() {
         const result = await api.listNotifications(auth?.userId);
         if (cancelled) return;
         const rows = Array.isArray(result?.notifications) ? result.notifications : [];
-        setServerNotifications(
-          rows.map((n) => ({
-            id: n.id,
-            userId: n.user_id ?? n.userId,
-            message: String(n.message ?? ""),
-            type: String(n.type ?? "INFO"),
-            targetDate: String(n.target_date ?? n.targetDate ?? ""),
-            leaveRequestId: String(n.leave_request_id ?? n.leaveRequestId ?? ""),
-            createdAt: String(n.created_at ?? n.createdAt ?? ""),
-            readAt: String(n.read_at ?? n.readAt ?? ""),
-          }))
-        );
+        const mapped = rows.map((n) => ({
+          id: n.id,
+          userId: n.user_id ?? n.userId,
+          message: String(n.message ?? ""),
+          type: String(n.type ?? "INFO"),
+          targetDate: String(n.target_date ?? n.targetDate ?? ""),
+          leaveRequestId: String(n.leave_request_id ?? n.leaveRequestId ?? ""),
+          createdAt: String(n.created_at ?? n.createdAt ?? ""),
+          readAt: String(n.read_at ?? n.readAt ?? ""),
+        }));
+        setServerNotifications(mapped);
+        const unread = mapped.filter((n) => n.userId === auth?.userId && !n.readAt).length;
+        const prev = prevUnreadNotificationCountRef.current;
+        if (prev != null && unread > prev) {
+          const latest = mapped.find((n) => n.userId === auth?.userId && !n.readAt);
+          if (latest) {
+            showLocalNotificationIfAllowed({
+              title: "새 알림",
+              body: latest.message,
+              tag: `eor-ntf-${latest.id}`,
+            });
+          }
+        }
+        prevUnreadNotificationCountRef.current = unread;
       } catch {
         // ignore polling failure
       } finally {
@@ -5270,13 +5241,14 @@ function NotificationsPage({
     <div className="notifications-page">
       <section className="card">
         <h2 className="screen-title">알림</h2>
-        <p className="help page-lead">읽지 않은 알림이 상단 종 아이콘에 숫자로 표시됩니다.</p>
+        <p className="help page-lead">읽지 않은 알림이 상단 종 아이콘에 숫자로 표시됩니다. 휴가·메모·댓글 등 새 소식은 푸시로도 받을 수 있습니다.</p>
         {currentUser?.role === "NURSE" ? (
           <div className="notification-head notification-head--page">
+            <p className="help notification-push-hint">{pushSetupHintForPlatform()}</p>
             <div className="notification-head-actions">
               {serverMode ? (
-                <button type="button" className="notification-readall-btn" onClick={() => void enablePushNotifications()} disabled={pushBusy || pushEnabled}>
-                  {pushEnabled ? "푸시 켜짐" : pushBusy ? "설정 중..." : "푸시 켜기"}
+                <button type="button" className="notification-readall-btn" onClick={() => void enablePushNotifications()} disabled={pushBusy || pushEnabled || !isWebPushSupported()}>
+                  {pushEnabled ? "푸시 켜짐" : pushBusy ? "설정 중..." : !isWebPushSupported() ? "푸시 미지원" : "푸시 켜기"}
                 </button>
               ) : null}
               <button type="button" className="notification-readall-btn" onClick={markAllNotificationsRead}>
@@ -6252,13 +6224,23 @@ function NegotiationOrderInput({ request, onCommit, disabled }) {
 function renderCalendarDayChip(applicant, keyPrefix, chipClassExtra, titlePrefix) {
   const nameLen = [...String(applicant.name ?? "")].length;
   const name3 = nameLen === 3 ? " calendar-day-chip--name3" : "";
+  const pendingGk = Boolean(applicant.goldkeyPending);
+  const negotiateGk = Boolean(applicant.goldkeyNegotiate);
+  const pendingClass = pendingGk ? " calendar-day-chip--goldkey-pending" : "";
+  const negotiateClass = negotiateGk ? " calendar-day-chip--goldkey-negotiate" : "";
+  const chipLabel = negotiateGk ? `${applicant.name}(미확정)` : applicant.name;
+  const statusHint = negotiateGk
+    ? " · 협의 대기(24시간 내 동일일 신청)"
+    : pendingGk
+      ? " · 순위 미확정"
+      : "";
   return (
     <span
       key={`${keyPrefix}${applicant.id}`}
-      className={`calendar-day-chip ${chipClassExtra} ${buildLeaveChipClass(applicant.leaveType, applicant.status)}${name3}`.trim()}
-      title={`${titlePrefix}${applicant.name} · ${typeFullLabel(applicant.leaveType)} · ${statusLabel(applicant.status)}`}
+      className={`calendar-day-chip ${chipClassExtra} ${buildLeaveChipClass(applicant.leaveType, applicant.status)}${name3}${pendingClass}${negotiateClass}`.trim()}
+      title={`${titlePrefix}${applicant.name} · ${typeFullLabel(applicant.leaveType)} · ${statusLabel(applicant.status)}${statusHint}`}
     >
-      <span className="calendar-day-chip__text">{applicant.name}</span>
+      <span className="calendar-day-chip__text">{chipLabel}</span>
     </span>
   );
 }
@@ -6529,106 +6511,10 @@ function CalendarPage({
       .sort((a, b) => String(a.createdAt ?? "").localeCompare(String(b.createdAt ?? "")));
   }, [dayComments, selectedYmd]);
 
-  /**
-   * 같은 휴가일·같은 유형 기준 협의/신청순 판정.
-   * - 일반휴가(우선/후순위): 2명 이상이면 협의.
-   * - 골드키: 4·10월 장기 모집 제출분은 협의(다인 시). 그 외는 최초 신청 시각 기준 24시간 이내=협의, 이후=신청순 자동.
-   */
-  const negotiationMetaByRequestId = useMemo(() => {
-    const map = new Map();
-    if (!selectedYmd) return map;
-    const todayYmd = toLocalYMD(new Date());
-    const active = dayRequests.filter((r) => r.leaveDate === selectedYmd && r.status !== "CANCELLED");
-    const byType = new Map();
-    for (const r of active) {
-      if (!byType.has(r.leaveType)) byType.set(r.leaveType, []);
-      byType.get(r.leaveType).push(r);
-    }
-    for (const [, list] of byType) {
-      const forcedManual = isForceManualOrderOnly(list[0]?.leaveDate, list[0]?.leaveType);
-      if (forcedManual) {
-        for (const r of list) map.set(r.id, { mode: "manual" });
-        continue;
-      }
-      if (list.length === 1) {
-        const only = list[0];
-        if (only.leaveType === "GENERAL_NORMAL" && String(only.leaveDate ?? "").slice(0, 10) > todayYmd) {
-          map.set(only.id, { mode: "negotiate" });
-          continue;
-        }
-        map.set(only.id, { mode: "single" });
-        continue;
-      }
-      const sortedAll = [...list].sort((a, b) => a.requestedAt.localeCompare(b.requestedAt));
-      const leaveMonth = Number(String(list[0]?.leaveDate ?? "").slice(5, 7));
-      const goldkeyAnchorMs = list[0]?.leaveType === "GOLDKEY" ? goldkeyAnchorRequestedAtMs(list) : NaN;
-      for (const r of list) {
-        if (r.leaveType === "GENERAL_PRIORITY" || r.leaveType === "GENERAL") {
-          map.set(r.id, { mode: "negotiate" });
-          continue;
-        }
-        if (r.leaveType === "GENERAL_NORMAL") {
-          map.set(r.id, { mode: "negotiate" });
-          continue;
-        }
-        if (r.leaveType === "GOLDKEY") {
-          const autoRankGlobal = sortedAll.findIndex((x) => x.id === r.id) + 1;
-          const forceKey = `${String(r.leaveDate ?? "")}|${String(r.userId ?? "")}`;
-          if (FORCE_GOLDKEY_NEGOTIATION_KEYS.has(forceKey)) {
-            map.set(r.id, { mode: "negotiate" });
-            continue;
-          }
-          if (leaveMonth >= 1 && leaveMonth <= 6) {
-            if (isFirstHalfGoldkeyOctoberConsultationRequest(r)) {
-              map.set(r.id, { mode: "negotiate" });
-            } else {
-              map.set(
-                r.id,
-                isGoldkeyWithin24HoursAfterAnchor(goldkeyAnchorMs, r.requestedAt)
-                  ? { mode: "negotiate" }
-                  : { mode: "auto", autoRank: autoRankGlobal }
-              );
-            }
-            continue;
-          }
-          if (leaveMonth >= 7 && leaveMonth <= 12) {
-            if (isSecondHalfGoldkeyAprilConsultationRequest(r)) {
-              map.set(r.id, { mode: "negotiate" });
-            } else {
-              map.set(
-                r.id,
-                isGoldkeyWithin24HoursAfterAnchor(goldkeyAnchorMs, r.requestedAt)
-                  ? { mode: "negotiate" }
-                  : { mode: "auto", autoRank: autoRankGlobal }
-              );
-            }
-            continue;
-          }
-          map.set(
-            r.id,
-            isGoldkeyWithin24HoursAfterAnchor(goldkeyAnchorMs, r.requestedAt)
-              ? { mode: "negotiate" }
-              : { mode: "auto", autoRank: autoRankGlobal }
-          );
-          continue;
-        }
-        const myDay = toLocalYMD(new Date(r.requestedAt));
-        const sameSubmitDayPeers = list.filter((x) => toLocalYMD(new Date(x.requestedAt)) === myDay);
-        const autoRankGlobal = sortedAll.findIndex((x) => x.id === r.id) + 1;
-        if (sameSubmitDayPeers.length >= 2) {
-          map.set(r.id, { mode: "negotiate" });
-        } else {
-          map.set(r.id, { mode: "auto", autoRank: autoRankGlobal });
-        }
-      }
-    }
-    for (const r of dayRequests) {
-      if (r.leaveDate === selectedYmd && r.status === "CANCELLED") {
-        map.set(r.id, { mode: "cancelled" });
-      }
-    }
-    return map;
-  }, [selectedYmd, dayRequests]);
+  const negotiationMetaByRequestId = useMemo(
+    () => buildNegotiationMetaByRequestId(dayRequests, selectedYmd),
+    [selectedYmd, dayRequests]
+  );
 
   const quickLadderTargets = useMemo(() => {
     const byType = new Map();
@@ -7209,8 +7095,20 @@ function CalendarPage({
                                     </span>
                                   ) : null}
                                   <span
-                                    className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status)}`}
-                                    title={lineText}
+                                    className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status)}${
+                                      isGoldkeyUnconfirmedChip(r) ? " calendar-applicant-name--goldkey-pending" : ""
+                                    }${
+                                      isGoldkeyNegotiationPendingChip(r, negotiationMetaByRequestId)
+                                        ? " calendar-applicant-name--goldkey-negotiate"
+                                        : ""
+                                    }`}
+                                    title={
+                                      isGoldkeyNegotiationPendingChip(r, negotiationMetaByRequestId)
+                                        ? `${lineText} · 협의 대기(24시간 내 동일일 신청)`
+                                        : isGoldkeyUnconfirmedChip(r)
+                                          ? `${lineText} · 순위 미확정`
+                                          : lineText
+                                    }
                                   >
                                     {manageRow ? (
                                       <>
@@ -8038,7 +7936,7 @@ function dedupeRequestsForCalendarChips(sortedDayReqs) {
   return out;
 }
 
-function mapRequestsToCalendarApplicants(roleReqs, users) {
+function mapRequestsToCalendarApplicants(roleReqs, users, negotiationMetaByRequestId) {
   const sorted = [...roleReqs].sort((a, b) => compareSameLeaveDateRequests(a, b, users));
   return dedupeRequestsForCalendarChips(sorted).map((r) => ({
     id: r.id,
@@ -8046,6 +7944,8 @@ function mapRequestsToCalendarApplicants(roleReqs, users) {
     leaveType: r.leaveType,
     status: r.status,
     name: users.find((u) => u.id === r.userId)?.name ?? r.userId,
+    goldkeyPending: isGoldkeyUnconfirmedChip(r),
+    goldkeyNegotiate: isGoldkeyNegotiationPendingChip(r, negotiationMetaByRequestId),
   }));
 }
 
@@ -8083,7 +7983,9 @@ function buildMonthMatrix(year, month, confirmedRequests, users, holidaysCache) 
     const confirmedChiefReqs = confirmedByRole.CHIEF;
     const activeDayReqs = dayAll;
     const hasGoldkeyRequest = activeDayReqs.some((r) => r.leaveType === "GOLDKEY");
-    const displayApplicants = mapRequestsToCalendarApplicants(nurseReqs, users);
+    const activeNurseDay = nurseReqs.filter((r) => r.status !== "CANCELLED");
+    const nurseNegotiationMeta = buildNegotiationMetaByRequestId(activeNurseDay, iso);
+    const displayApplicants = mapRequestsToCalendarApplicants(nurseReqs, users, nurseNegotiationMeta);
     const anesthesiaDisplayApplicants = mapRequestsToCalendarApplicants(anesReqs, users);
     const chiefDisplayApplicants = mapRequestsToCalendarApplicants(chiefReqs, users);
     cells.push({

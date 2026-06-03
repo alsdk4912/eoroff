@@ -48,11 +48,11 @@
 - Build: `npm run render:install`, Start: `npm start`  
 - Node **20+** 권장.
 
-## 3. 캐시·서비스 워커
+## 3. 캐시·서비스 워커·푸시
 
-- **github.io** 에 올린 Pages에서는 **서비스 워커를 쓰지 않도록** 해 두었습니다. (예전 SW가 옛 JS를 물고 빌드 SHA가 그대로인 것처럼 보이는 문제 방지)
-- `index.html` 로드 시 기존 등록 SW를 **unregister** 하는 인라인 스크립트가 한 번 실행됩니다.
-- 커스텀 도메인만 쓰는 경우(github.io 아님)에는 로컬과 같이 SW가 등록될 수 있습니다.
+- GitHub Pages에서도 **서비스 워커를 등록**합니다 (HTML·해시 JS는 네트워크 우선, `version.json`으로 배포 갱신).
+- **Web Push**: Render API에 `VAPID_PUBLIC_KEY`·`VAPID_PRIVATE_KEY`·`VAPID_SUBJECT`(mailto:…) 설정 필요. `GET /api/health` 의 `pushEnabled` 확인.
+- 간호사: **알림** 탭 → **푸시 켜기** (최초 1회). **아이폰**은 Safari → 홈 화면에 추가 후, 추가된 앱 아이콘으로 실행해야 푸시가 동작합니다.
 
 ## 4. 로컬 개발
 

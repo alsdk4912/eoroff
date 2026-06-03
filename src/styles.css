@@ -1197,6 +1197,13 @@ button.app-header-update-btn:hover {
   background: #dc2626;
 }
 
+.notification-push-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary, #5c6570);
+}
+
 .notification-readall-btn {
   padding: 6px 10px !important;
   font-size: 12px !important;
@@ -2451,6 +2458,29 @@ button.ym-wheel-check:hover {
 }
 
 /* 관리자 승인(또는 레거시 확정): 유형색 유지 + 왼쪽 포인트 블루 띠(휴가 유형 색과 충돌 적음) */
+/* 골드키 협의·순위 미확정: 빨간 배경 유지 + 점선 테두리(확정 골드키와 구분) */
+.calendar-day-chip.selected-item.type-goldkey.calendar-day-chip--goldkey-pending {
+  border-style: dashed !important;
+  border-width: 2px !important;
+}
+
+.calendar-day-chip.selected-item.type-goldkey.calendar-day-chip--goldkey-negotiate .calendar-day-chip__text {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+
+.calendar-applicant-name.selected-item.type-goldkey.calendar-applicant-name--goldkey-pending {
+  border-style: dashed !important;
+  border-width: 2px !important;
+}
+
+.calendar-applicant-name.selected-item.type-goldkey.calendar-applicant-name--goldkey-negotiate {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+
 .calendar-day-chip.selected-item.request-approved {
   box-shadow: inset 3px 0 0 0 var(--approved-stripe) !important;
 }

@@ -24,6 +24,13 @@ services:
       # Turso 없이 Disk 쓸 때만:
       # - key: SQLITE_PATH
       #   value: /data/eoroff.sqlite
+      # Web Push (간호사 푸시): npx web-push generate-vapid-keys 후 설정
+      # - key: VAPID_PUBLIC_KEY
+      #   sync: false
+      # - key: VAPID_PRIVATE_KEY
+      #   sync: false
+      # - key: VAPID_SUBJECT
+      #   value: mailto:admin@example.com
     # Disk 쓸 때만 Blueprint에 추가 (플랜에서 Disk 지원 필요)
     # disk:
     #   name: eoroff-sqlite
