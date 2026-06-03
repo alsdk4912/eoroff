@@ -91,10 +91,9 @@ import {
 import {
   FORCE_GOLDKEY_NEGOTIATION_KEYS,
   buildNegotiationMetaByRequestId,
-  goldkeyAnchorRequestedAtMs,
+  filterGoldkeyRowsForNegotiationPeers,
   isForceManualOrderOnly,
   isGoldkeyNegotiationPendingChip,
-  isGoldkeyWithin24HoursAfterAnchor,
 } from "./utils/negotiationMeta.js";
 
 /** 오프라인 저장소 버전 — 배포 시 키 올리면 예전 휴가·골드키 캐시 무시(빈 신청·기본 골드키로 로드) */
@@ -313,29 +312,6 @@ function isLongTermGoldkeyAprilBannerWindow(d) {
 /** 장기 골드키: 10/1~10/10 (익년 1~6월) */
 function isLongTermGoldkeyOctoberBannerWindow(d) {
   return d.getMonth() + 1 === 10 && d.getDate() >= 1 && d.getDate() <= 10;
-}
-
-/** 사다리 협의 대상 행(2명 이상일 때만 사다리 가능). 4·10월 장기 모집 다인이 있으면 그 부분만 우선. */
-function filterGoldkeyRowsForNegotiationPeers(rows) {
-  const sorted = [...rows].sort((a, b) => a.requestedAt.localeCompare(b.requestedAt));
-  if (sorted.length === 0) return [];
-  const month = Number(String(sorted[0]?.leaveDate ?? "").slice(5, 7));
-
-  if (month >= 1 && month <= 6) {
-    const octConsult = sorted.filter((r) => isFirstHalfGoldkeyOctoberConsultationRequest(r));
-    if (octConsult.length >= 2) return octConsult;
-    const anchorMs = goldkeyAnchorRequestedAtMs(sorted);
-    return sorted.filter((r) => isGoldkeyWithin24HoursAfterAnchor(anchorMs, r.requestedAt));
-  }
-  if (month >= 7 && month <= 12) {
-    const aprConsult = sorted.filter((r) => isSecondHalfGoldkeyAprilConsultationRequest(r));
-    if (aprConsult.length >= 2) return aprConsult;
-    const anchorMs = goldkeyAnchorRequestedAtMs(sorted);
-    return sorted.filter((r) => isGoldkeyWithin24HoursAfterAnchor(anchorMs, r.requestedAt));
-  }
-
-  const anchorMs = goldkeyAnchorRequestedAtMs(sorted);
-  return sorted.filter((r) => isGoldkeyWithin24HoursAfterAnchor(anchorMs, r.requestedAt));
 }
 
 /** iOS Safari: 로그인 화면에서의 자동·수동 확대가 캘린더에 그대로 남는 현상 완화(뷰포트 재적용 + 스크롤 원점) */

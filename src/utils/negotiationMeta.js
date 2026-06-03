@@ -41,6 +41,46 @@ export function isForceManualOrderOnly(leaveDate, leaveType) {
   return FORCE_MANUAL_ORDER_ONLY_KEYS.has(`${String(leaveDate ?? "").trim()}|${String(leaveType ?? "").trim()}`);
 }
 
+/** 사다리·협의 대상: 최초 신청 후 24시간 이내 제출분(2명 이상일 때만 협의) */
+export function filterGoldkeyRowsForNegotiationPeers(rows) {
+  const sorted = [...rows].sort((a, b) =>
+    String(a.requestedAt ?? a.requested_at ?? "").localeCompare(String(b.requestedAt ?? b.requested_at ?? ""))
+  );
+  if (sorted.length === 0) return [];
+  const month = Number(String(sorted[0]?.leaveDate ?? sorted[0]?.leave_date ?? "").slice(5, 7));
+
+  if (month >= 1 && month <= 6) {
+    const octConsult = sorted.filter((r) => isFirstHalfGoldkeyOctoberConsultationRequest(r));
+    if (octConsult.length >= 2) return octConsult;
+    const anchorMs = goldkeyAnchorRequestedAtMs(sorted);
+    return sorted.filter((r) => isGoldkeyWithin24HoursAfterAnchor(anchorMs, r.requestedAt ?? r.requested_at));
+  }
+  if (month >= 7 && month <= 12) {
+    const aprConsult = sorted.filter((r) => isSecondHalfGoldkeyAprilConsultationRequest(r));
+    if (aprConsult.length >= 2) return aprConsult;
+    const anchorMs = goldkeyAnchorRequestedAtMs(sorted);
+    return sorted.filter((r) => isGoldkeyWithin24HoursAfterAnchor(anchorMs, r.requestedAt ?? r.requested_at));
+  }
+
+  const anchorMs = goldkeyAnchorRequestedAtMs(sorted);
+  return sorted.filter((r) => isGoldkeyWithin24HoursAfterAnchor(anchorMs, r.requestedAt ?? r.requested_at));
+}
+
+/** 같은 휴가일 골드키 중 실제 협의가 필요한 신청 id (24시간 내 2명 이상) */
+function goldkeyIdsNeedingNegotiation(rows) {
+  const sorted = [...rows].sort((a, b) =>
+    String(a.requestedAt ?? a.requested_at ?? "").localeCompare(String(b.requestedAt ?? b.requested_at ?? ""))
+  );
+  const forced = sorted.filter((r) =>
+    FORCE_GOLDKEY_NEGOTIATION_KEYS.has(`${String(r.leaveDate ?? r.leave_date ?? "")}|${String(r.userId ?? r.user_id ?? "")}`)
+  );
+  if (forced.length >= 2) return new Set(forced.map((r) => String(r.id)));
+
+  const peers = filterGoldkeyRowsForNegotiationPeers(sorted);
+  if (peers.length >= 2) return new Set(peers.map((r) => String(r.id)));
+  return new Set();
+}
+
 /**
  * 같은 휴가일·같은 유형 기준 협의/신청순 판정 (캘린더 칩·상세 목록 공통).
  * @returns {Map<string, { mode: string, autoRank?: number }>}
@@ -83,9 +123,9 @@ export function buildNegotiationMetaByRequestId(dayRequests, leaveDateYmd, optio
     const sortedAll = [...list].sort((a, b) =>
       String(a.requestedAt ?? a.requested_at ?? "").localeCompare(String(b.requestedAt ?? b.requested_at ?? ""))
     );
-    const leaveMonth = Number(String(list[0]?.leaveDate ?? list[0]?.leave_date ?? "").slice(5, 7));
-    const goldkeyAnchorMs =
-      (list[0]?.leaveType ?? list[0]?.leave_type) === "GOLDKEY" ? goldkeyAnchorRequestedAtMs(list) : NaN;
+    const leaveType0 = list[0]?.leaveType ?? list[0]?.leave_type;
+    const goldkeyNegotiateIds =
+      leaveType0 === "GOLDKEY" ? goldkeyIdsNeedingNegotiation(list) : new Set();
 
     for (const r of list) {
       const lt = r.leaveType ?? r.leave_type;
@@ -101,43 +141,11 @@ export function buildNegotiationMetaByRequestId(dayRequests, leaveDateYmd, optio
       }
       if (lt === "GOLDKEY") {
         const autoRankGlobal = sortedAll.findIndex((x) => x.id === r.id) + 1;
-        const forceKey = `${String(r.leaveDate ?? r.leave_date ?? "")}|${String(r.userId ?? r.user_id ?? "")}`;
-        if (FORCE_GOLDKEY_NEGOTIATION_KEYS.has(forceKey)) {
+        if (goldkeyNegotiateIds.has(String(r.id))) {
           map.set(String(r.id), { mode: "negotiate" });
-          continue;
+        } else {
+          map.set(String(r.id), { mode: "auto", autoRank: autoRankGlobal });
         }
-        if (leaveMonth >= 1 && leaveMonth <= 6) {
-          if (isFirstHalfGoldkeyOctoberConsultationRequest(r)) {
-            map.set(String(r.id), { mode: "negotiate" });
-          } else {
-            map.set(
-              String(r.id),
-              isGoldkeyWithin24HoursAfterAnchor(goldkeyAnchorMs, reqAt)
-                ? { mode: "negotiate" }
-                : { mode: "auto", autoRank: autoRankGlobal }
-            );
-          }
-          continue;
-        }
-        if (leaveMonth >= 7 && leaveMonth <= 12) {
-          if (isSecondHalfGoldkeyAprilConsultationRequest(r)) {
-            map.set(String(r.id), { mode: "negotiate" });
-          } else {
-            map.set(
-              String(r.id),
-              isGoldkeyWithin24HoursAfterAnchor(goldkeyAnchorMs, reqAt)
-                ? { mode: "negotiate" }
-                : { mode: "auto", autoRank: autoRankGlobal }
-            );
-          }
-          continue;
-        }
-        map.set(
-          String(r.id),
-          isGoldkeyWithin24HoursAfterAnchor(goldkeyAnchorMs, reqAt)
-            ? { mode: "negotiate" }
-            : { mode: "auto", autoRank: autoRankGlobal }
-        );
         continue;
       }
 
@@ -161,7 +169,7 @@ export function buildNegotiationMetaByRequestId(dayRequests, leaveDateYmd, optio
   return map;
 }
 
-/** 캘린더: 동일일·24시간 내 2명 이상 골드키 협의 대기(APPLIED) */
+/** 캘린더: 24시간 내 동일일 골드키 2명 이상일 때만 협의 대기(점선) */
 export function isGoldkeyNegotiationPendingChip(requestRow, metaByRequestId) {
   if (!requestRow || (requestRow.leaveType ?? requestRow.leave_type) !== "GOLDKEY") return false;
   if (String(requestRow.status ?? "").trim() !== "APPLIED") return false;
