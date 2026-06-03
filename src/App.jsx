@@ -94,7 +94,6 @@ import {
   goldkeyAnchorRequestedAtMs,
   isForceManualOrderOnly,
   isGoldkeyNegotiationPendingChip,
-  isGoldkeyUnconfirmedChip,
   isGoldkeyWithin24HoursAfterAnchor,
 } from "./utils/negotiationMeta.js";
 
@@ -6224,20 +6223,14 @@ function NegotiationOrderInput({ request, onCommit, disabled }) {
 function renderCalendarDayChip(applicant, keyPrefix, chipClassExtra, titlePrefix) {
   const nameLen = [...String(applicant.name ?? "")].length;
   const name3 = nameLen === 3 ? " calendar-day-chip--name3" : "";
-  const pendingGk = Boolean(applicant.goldkeyPending);
   const negotiateGk = Boolean(applicant.goldkeyNegotiate);
-  const pendingClass = pendingGk ? " calendar-day-chip--goldkey-pending" : "";
   const negotiateClass = negotiateGk ? " calendar-day-chip--goldkey-negotiate" : "";
-  const chipLabel = negotiateGk ? `${applicant.name}(미확정)` : applicant.name;
-  const statusHint = negotiateGk
-    ? " · 협의 대기(24시간 내 동일일 신청)"
-    : pendingGk
-      ? " · 순위 미확정"
-      : "";
+  const chipLabel = applicant.name;
+  const statusHint = negotiateGk ? " · 협의 대기(동일일·24시간 내 신청)" : "";
   return (
     <span
       key={`${keyPrefix}${applicant.id}`}
-      className={`calendar-day-chip ${chipClassExtra} ${buildLeaveChipClass(applicant.leaveType, applicant.status)}${name3}${pendingClass}${negotiateClass}`.trim()}
+      className={`calendar-day-chip ${chipClassExtra} ${buildLeaveChipClass(applicant.leaveType, applicant.status)}${name3}${negotiateClass}`.trim()}
       title={`${titlePrefix}${applicant.name} · ${typeFullLabel(applicant.leaveType)} · ${statusLabel(applicant.status)}${statusHint}`}
     >
       <span className="calendar-day-chip__text">{chipLabel}</span>
@@ -7096,18 +7089,14 @@ function CalendarPage({
                                   ) : null}
                                   <span
                                     className={`calendar-applicant-name ${buildLeaveChipClass(r.leaveType, r.status)}${
-                                      isGoldkeyUnconfirmedChip(r) ? " calendar-applicant-name--goldkey-pending" : ""
-                                    }${
                                       isGoldkeyNegotiationPendingChip(r, negotiationMetaByRequestId)
                                         ? " calendar-applicant-name--goldkey-negotiate"
                                         : ""
                                     }`}
                                     title={
                                       isGoldkeyNegotiationPendingChip(r, negotiationMetaByRequestId)
-                                        ? `${lineText} · 협의 대기(24시간 내 동일일 신청)`
-                                        : isGoldkeyUnconfirmedChip(r)
-                                          ? `${lineText} · 순위 미확정`
-                                          : lineText
+                                        ? `${lineText} · 협의 대기(동일일·24시간 내 신청)`
+                                        : lineText
                                     }
                                   >
                                     {manageRow ? (
@@ -7944,7 +7933,6 @@ function mapRequestsToCalendarApplicants(roleReqs, users, negotiationMetaByReque
     leaveType: r.leaveType,
     status: r.status,
     name: users.find((u) => u.id === r.userId)?.name ?? r.userId,
-    goldkeyPending: isGoldkeyUnconfirmedChip(r),
     goldkeyNegotiate: isGoldkeyNegotiationPendingChip(r, negotiationMetaByRequestId),
   }));
 }

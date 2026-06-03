@@ -161,7 +161,7 @@ export function buildNegotiationMetaByRequestId(dayRequests, leaveDateYmd, optio
   return map;
 }
 
-/** 캘린더: 협의 대기(24h·장기모집 등) 중 미확정 골드키 */
+/** 캘린더: 동일일·24시간 내 2명 이상 골드키 협의 대기(APPLIED) */
 export function isGoldkeyNegotiationPendingChip(requestRow, metaByRequestId) {
   if (!requestRow || (requestRow.leaveType ?? requestRow.leave_type) !== "GOLDKEY") return false;
   if (String(requestRow.status ?? "").trim() !== "APPLIED") return false;
