@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { createClient } from "@libsql/client";
 import { defaultGoldkeyQuotaForName } from "../src/data/goldkeyQuotas.js";
+import { ensureKoreanHolidaysThroughYear } from "./koreanHolidays.js";
 
 const EMPLOYEE_NO_BY_NAME = {
   양현아: "0534411",
@@ -386,7 +387,7 @@ export async function initDb() {
   await ensureChiefUsers();
   await removeLegacyAdmin3Users();
   await ensureKnownEmployeeNos();
-  await ensureOfficialHolidayCorrections();
+  await ensureKoreanHolidaysSynced();
   await ensureHolidayDutyAnchors2026();
   await backfillLongTermGoldkeyCancellationExemptions();
   await ensureGoldkeyDefaults();
@@ -689,28 +690,18 @@ async function ensureKnownEmployeeNos() {
   }
 }
 
-async function ensureOfficialHolidayCorrections() {
-  const nowIso = new Date().toISOString();
-  const official2026 = [
-    ["2026-07-17", "제헌절"],
-    ["2026-08-17", "대체공휴일"],
-    ["2026-09-24", "추석 연휴"],
-    ["2026-09-25", "추석"],
-    ["2026-09-26", "추석 연휴"],
-  ];
-
-  for (const [holidayDate, holidayName] of official2026) {
-    await execute(
-      "INSERT INTO holidays (holiday_date, holiday_name, is_holiday, synced_at) VALUES (?, ?, 1, ?) ON CONFLICT(holiday_date) DO UPDATE SET holiday_name = excluded.holiday_name, is_holiday = 1, synced_at = excluded.synced_at",
-      holidayDate,
-      holidayName,
-      nowIso
-    );
+/** 2026~현재+3년 공휴일(설·추석·대체공휴일 포함) DB 반영 */
+async function ensureKoreanHolidaysSynced() {
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", "korean_holidays_sync_v2");
+  if (done) return;
+  try {
+    const endYear = new Date().getFullYear() + 3;
+    await ensureKoreanHolidaysThroughYear(endYear, { execute, queryAll });
+    await execute("INSERT INTO app_migrations (id) VALUES (?)", "korean_holidays_sync_v2");
+    console.log(`[db] korean holidays synced through ${endYear}`);
+  } catch (e) {
+    console.error("[db] korean holidays sync failed (will retry next boot)", e);
   }
-
-  // 2026 추석 대체공휴일 오표기 정정
-  await execute("DELETE FROM holidays WHERE holiday_date = ?", "2026-09-28");
-  await execute("DELETE FROM holiday_duties WHERE holiday_date = ?", "2026-09-28");
 }
 
 /** 운영에서 합의한 2026년 당직 앵커(주말·공휴·명절 순번 분리 후 기준일) */

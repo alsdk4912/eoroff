@@ -5,6 +5,11 @@ import webpush from "web-push";
 import cron from "node-cron";
 import { applyAnesthesiaGoldkeyLeaves } from "./anesthesiaGoldkeySeed.js";
 import {
+  ensureKoreanHolidaysThroughYear,
+  officialEntriesForYear,
+  upsertKoreanHolidaysForYear,
+} from "./koreanHolidays.js";
+import {
   execute,
   initDb,
   isLikelyEphemeralDeployRisk,
@@ -433,70 +438,7 @@ async function reconcileGoldkeyUsageByPolicy(nowLike = new Date().toISOString())
 }
 
 async function upsertKoreanHolidaysFromPublicApi(year, monthOpt) {
-  const y = Number(year);
-  if (!Number.isInteger(y) || y < 2000 || y > 2100) throw new Error("year 범위가 올바르지 않습니다.");
-
-  const url = `https://date.nager.at/api/v3/PublicHolidays/${y}/KR`;
-  const res = await fetch(url, { headers: { Accept: "application/json" } });
-  if (!res.ok) throw new Error(`공휴일 API 오류: HTTP ${res.status}`);
-  const rows = await res.json();
-  if (!Array.isArray(rows)) return 0;
-
-  const m = monthOpt == null ? null : Number(monthOpt);
-  const nowIso = new Date().toISOString();
-  const holidayMap = new Map();
-
-  for (const h of rows) {
-    const date = String(h?.date ?? "").trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
-    holidayMap.set(date, String(h?.localName ?? h?.name ?? "공휴일").trim() || "공휴일");
-  }
-
-  // 2026년 국내 공식 기준 교정(제헌절 복귀/추석 연휴 날짜 보정)
-  if (y === 2026) {
-    holidayMap.set("2026-07-17", "제헌절");
-    holidayMap.set("2026-09-24", "추석 연휴");
-    holidayMap.set("2026-09-25", "추석");
-    holidayMap.set("2026-09-26", "추석 연휴");
-    holidayMap.delete("2026-09-28");
-  }
-
-  const entries = [...holidayMap.entries()].filter(([date]) => {
-    if (m == null) return true;
-    return Number(date.slice(5, 7)) === m;
-  });
-
-  // 월 단위 동기화 시 공식 집합에 없는 날짜는 제거 (잘못 반영된 날짜 정정)
-  if (m != null) {
-    const first = `${y}-${String(m).padStart(2, "0")}-01`;
-    const last = `${y}-${String(m).padStart(2, "0")}-31`;
-    const keep = new Set(entries.map(([date]) => date));
-    const existing = await queryAll(
-      "SELECT holiday_date FROM holidays WHERE holiday_date >= ? AND holiday_date <= ? AND is_holiday = 1",
-      first,
-      last
-    );
-    for (const row of existing) {
-      const date = String(row.holiday_date ?? "");
-      if (!keep.has(date)) {
-        await execute("DELETE FROM holidays WHERE holiday_date = ?", date);
-        // 평일 잘못 지정이었던 경우 당직 데이터도 같이 제거
-        await execute("DELETE FROM holiday_duties WHERE holiday_date = ?", date);
-      }
-    }
-  }
-
-  let count = 0;
-  for (const [date, name] of entries) {
-    await execute(
-      "INSERT INTO holidays (holiday_date, holiday_name, is_holiday, synced_at) VALUES (?, ?, 1, ?) ON CONFLICT(holiday_date) DO UPDATE SET holiday_name = excluded.holiday_name, is_holiday = 1, synced_at = excluded.synced_at",
-      date,
-      name,
-      nowIso
-    );
-    count += 1;
-  }
-  return count;
+  return upsertKoreanHolidaysForYear(year, monthOpt, { execute, queryAll });
 }
 
 app.get("/api/health", async (_, res) => {
@@ -2346,12 +2288,40 @@ app.post("/api/holidays/sync", async (req, res) => {
 /** 공휴일/대체공휴일 수동 반영 (ADMIN/NURSE) */
 app.post("/api/admin/holidays/upsert", async (req, res) => {
   try {
-    const { actorUserId, holidays } = req.body ?? {};
+    const { actorUserId, holidays, removeHolidayDates, officialYear } = req.body ?? {};
     const actor = await queryOne(
       "SELECT id FROM users WHERE id = ? AND role IN ('ADMIN', 'NURSE')",
       actorUserId
     );
     if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
+
+    let removed = 0;
+    const toRemove = new Set(
+      [
+        ...(Array.isArray(removeHolidayDates) ? removeHolidayDates : []),
+      ].map((d) => String(d ?? "").trim()).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+    );
+    if (officialYear != null) {
+      const y = Number(officialYear);
+      const official = officialEntriesForYear(y);
+      if (official) {
+        const keep = new Set(official.map(([date]) => date));
+        const existing = await queryAll(
+          "SELECT holiday_date FROM holidays WHERE holiday_date >= ? AND holiday_date <= ? AND is_holiday = 1",
+          `${y}-01-01`,
+          `${y}-12-31`
+        );
+        for (const row of existing) {
+          const date = String(row.holiday_date ?? "");
+          if (!keep.has(date)) toRemove.add(date);
+        }
+      }
+    }
+    for (const date of toRemove) {
+      await execute("DELETE FROM holidays WHERE holiday_date = ?", date);
+      await execute("DELETE FROM holiday_duties WHERE holiday_date = ?", date);
+      removed += 1;
+    }
 
     const list = Array.isArray(holidays) ? holidays : [];
     let count = 0;
@@ -2368,7 +2338,7 @@ app.post("/api/admin/holidays/upsert", async (req, res) => {
       );
       count += 1;
     }
-    return res.json({ ok: true, count });
+    return res.json({ ok: true, count, removed });
   } catch (err) {
     console.error("POST /api/admin/holidays/upsert", err);
     return res.status(500).json({ error: String(err?.message || err) });
@@ -2579,6 +2549,13 @@ app.post("/api/admin/restore-sql", (req, res) => {
 
 async function main() {
   await initDb();
+  try {
+    const endYear = new Date().getFullYear() + 3;
+    await ensureKoreanHolidaysThroughYear(endYear, { execute, queryAll });
+    console.log(`[holidays] synced through ${endYear}`);
+  } catch (e) {
+    console.error("[holidays] startup sync failed", e);
+  }
   try {
     await reconcileGoldkeyUsageByPolicy(new Date().toISOString());
   } catch (e) {
