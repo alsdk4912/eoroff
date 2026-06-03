@@ -37,6 +37,12 @@ export function isGoldkeyWithin24HoursAfterAnchor(anchorMs, requestedAtIso) {
   return t - anchorMs <= GOLDKEY_NEGOTIATION_WINDOW_MS;
 }
 
+/** 최초 신청 후 24시간 협의 대기 구간이 아직 열려 있는지 */
+export function isGoldkeyNegotiationWindowOpen(anchorMs, nowMs = Date.now()) {
+  if (!Number.isFinite(anchorMs)) return false;
+  return nowMs < anchorMs + GOLDKEY_NEGOTIATION_WINDOW_MS;
+}
+
 export function isForceManualOrderOnly(leaveDate, leaveType) {
   return FORCE_MANUAL_ORDER_ONLY_KEYS.has(`${String(leaveDate ?? "").trim()}|${String(leaveType ?? "").trim()}`);
 }
@@ -83,7 +89,7 @@ function goldkeyLadderDoneKey(leaveDateYmd) {
 }
 
 /** 같은 휴가일 골드키 중 실제 협의가 필요한 신청 id (24시간 내 2명 이상) */
-function goldkeyIdsNeedingNegotiation(rows) {
+function goldkeyIdsNeedingNegotiation(rows, options = {}) {
   const sorted = [...rows].sort((a, b) =>
     String(a.requestedAt ?? a.requested_at ?? "").localeCompare(String(b.requestedAt ?? b.requested_at ?? ""))
   );
@@ -106,6 +112,7 @@ export function buildNegotiationMetaByRequestId(dayRequests, leaveDateYmd, optio
   const selectedYmd = String(leaveDateYmd ?? "").trim();
   if (!selectedYmd) return map;
 
+  const nowMs = options.nowMs ?? Date.now();
   const todayYmd = options.todayYmd ?? toLocalYMD(new Date());
   const active = (Array.isArray(dayRequests) ? dayRequests : []).filter(
     (r) => String(r.leaveDate ?? r.leave_date ?? "").slice(0, 10) === selectedYmd && r.status !== "CANCELLED"
@@ -132,6 +139,26 @@ export function buildNegotiationMetaByRequestId(dayRequests, leaveDateYmd, optio
         map.set(String(only.id), { mode: "negotiate" });
         continue;
       }
+      if (lt === "GOLDKEY") {
+        const ladderDoneKeys = options.ladderDoneKeys ?? null;
+        const gkLadderDone = Boolean(ladderDoneKeys?.has?.(goldkeyLadderDoneKey(selectedYmd)));
+        if (gkLadderDone) {
+          map.set(String(only.id), { mode: "negotiate", ladderDone: true });
+          continue;
+        }
+        const negotiateIds = goldkeyIdsNeedingNegotiation([only], { nowMs });
+        if (negotiateIds.has(String(only.id))) {
+          map.set(String(only.id), { mode: "negotiate" });
+          continue;
+        }
+        const anchorMs = goldkeyAnchorRequestedAtMs([only]);
+        if (isGoldkeyNegotiationWindowOpen(anchorMs, nowMs)) {
+          map.set(String(only.id), { mode: "waitingWindow" });
+        } else {
+          map.set(String(only.id), { mode: "auto", autoRank: 1 });
+        }
+        continue;
+      }
       map.set(String(only.id), { mode: "single" });
       continue;
     }
@@ -144,7 +171,9 @@ export function buildNegotiationMetaByRequestId(dayRequests, leaveDateYmd, optio
     const gkLadderDone =
       leaveType0 === "GOLDKEY" && Boolean(ladderDoneKeys?.has?.(goldkeyLadderDoneKey(selectedYmd)));
     const goldkeyNegotiateIds =
-      leaveType0 === "GOLDKEY" && !gkLadderDone ? goldkeyIdsNeedingNegotiation(list) : new Set();
+      leaveType0 === "GOLDKEY" && !gkLadderDone ? goldkeyIdsNeedingNegotiation(list, { nowMs }) : new Set();
+    const gkAnchorMs = leaveType0 === "GOLDKEY" ? goldkeyAnchorRequestedAtMs(sortedAll) : NaN;
+    const gkWindowOpen = leaveType0 === "GOLDKEY" && isGoldkeyNegotiationWindowOpen(gkAnchorMs, nowMs);
 
     for (const r of list) {
       const lt = r.leaveType ?? r.leave_type;
@@ -164,6 +193,12 @@ export function buildNegotiationMetaByRequestId(dayRequests, leaveDateYmd, optio
           map.set(String(r.id), { mode: "negotiate", ladderDone: true });
         } else if (goldkeyNegotiateIds.has(String(r.id))) {
           map.set(String(r.id), { mode: "negotiate" });
+        } else if (
+          gkWindowOpen &&
+          goldkeyNegotiateIds.size === 0 &&
+          isGoldkeyWithin24HoursAfterAnchor(gkAnchorMs, reqAt)
+        ) {
+          map.set(String(r.id), { mode: "waitingWindow" });
         } else {
           map.set(String(r.id), { mode: "auto", autoRank: autoRankGlobal });
         }
@@ -190,13 +225,19 @@ export function buildNegotiationMetaByRequestId(dayRequests, leaveDateYmd, optio
   return map;
 }
 
-/** 캘린더: 24시간 내 동일일 골드키 2명 이상·사다리 미완료일 때만 협의 대기(점선) */
+/** 캘린더: 협의 대기·24시간 대기 구간(점선). 사다리 완료·24시간 경과 단독은 제외 */
 export function isGoldkeyNegotiationPendingChip(requestRow, metaByRequestId) {
   if (!requestRow || (requestRow.leaveType ?? requestRow.leave_type) !== "GOLDKEY") return false;
   if (String(requestRow.status ?? "").trim() !== "APPLIED") return false;
   const meta = metaByRequestId?.get?.(String(requestRow.id));
   if (meta?.ladderDone) return false;
-  return meta?.mode === "negotiate";
+  return meta?.mode === "negotiate" || meta?.mode === "waitingWindow";
+}
+
+export function goldkeyNegotiationChipHint(meta) {
+  if (meta?.mode === "waitingWindow") return " · 24시간 내 동일일 신청 대기";
+  if (meta?.mode === "negotiate") return " · 협의 대기(동일일·24시간 내 신청)";
+  return "";
 }
 
 /** 캘린더: 확정 전 골드키(신청순 자동 대기 포함) */

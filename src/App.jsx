@@ -95,6 +95,7 @@ import {
   filterGoldkeyRowsForNegotiationPeers,
   isForceManualOrderOnly,
   isGoldkeyNegotiationPendingChip,
+  goldkeyNegotiationChipHint,
 } from "./utils/negotiationMeta.js";
 
 /** 오프라인 저장소 버전 — 배포 시 키 올리면 예전 휴가·골드키 캐시 무시(빈 신청·기본 골드키로 로드) */
@@ -6204,7 +6205,7 @@ function renderCalendarDayChip(applicant, keyPrefix, chipClassExtra, titlePrefix
   const negotiateGk = Boolean(applicant.goldkeyNegotiate);
   const negotiateClass = negotiateGk ? " calendar-day-chip--goldkey-negotiate" : "";
   const chipLabel = applicant.name;
-  const statusHint = negotiateGk ? " · 협의 대기(동일일·24시간 내 신청)" : "";
+  const statusHint = negotiateGk ? goldkeyNegotiationChipHint(applicant.goldkeyMeta) : "";
   return (
     <span
       key={`${keyPrefix}${applicant.id}`}
@@ -7063,7 +7064,7 @@ function CalendarPage({
                                     }`}
                                     title={
                                       isGoldkeyNegotiationPendingChip(r, negotiationMetaByRequestId)
-                                        ? `${lineText} · 협의 대기(동일일·24시간 내 신청)`
+                                        ? `${lineText}${goldkeyNegotiationChipHint(negotiationMetaByRequestId.get(r.id))}`
                                         : lineText
                                     }
                                   >
@@ -7895,14 +7896,18 @@ function dedupeRequestsForCalendarChips(sortedDayReqs) {
 
 function mapRequestsToCalendarApplicants(roleReqs, users, negotiationMetaByRequestId) {
   const sorted = [...roleReqs].sort((a, b) => compareSameLeaveDateRequests(a, b, users));
-  return dedupeRequestsForCalendarChips(sorted).map((r) => ({
-    id: r.id,
-    userId: r.userId,
-    leaveType: r.leaveType,
-    status: r.status,
-    name: users.find((u) => u.id === r.userId)?.name ?? r.userId,
-    goldkeyNegotiate: isGoldkeyNegotiationPendingChip(r, negotiationMetaByRequestId),
-  }));
+  return dedupeRequestsForCalendarChips(sorted).map((r) => {
+    const goldkeyMeta = negotiationMetaByRequestId?.get?.(String(r.id));
+    return {
+      id: r.id,
+      userId: r.userId,
+      leaveType: r.leaveType,
+      status: r.status,
+      name: users.find((u) => u.id === r.userId)?.name ?? r.userId,
+      goldkeyMeta,
+      goldkeyNegotiate: isGoldkeyNegotiationPendingChip(r, negotiationMetaByRequestId),
+    };
+  });
 }
 
 function buildMonthMatrix(year, month, confirmedRequests, users, holidaysCache, ladderDoneKeys) {
