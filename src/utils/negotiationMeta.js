@@ -66,6 +66,22 @@ export function filterGoldkeyRowsForNegotiationPeers(rows) {
   return sorted.filter((r) => isGoldkeyWithin24HoursAfterAnchor(anchorMs, r.requestedAt ?? r.requested_at));
 }
 
+/** 저장된 사다리 결과 키 집합 (`leaveDate|leaveType`) */
+export function buildLadderDoneKeySet(ladderResults) {
+  const set = new Set();
+  for (const r of Array.isArray(ladderResults) ? ladderResults : []) {
+    const d = String(r?.leaveDate ?? "").trim();
+    const t = String(r?.leaveType ?? "").trim();
+    if (d && t) set.add(`${d}|${t}`);
+  }
+  return set;
+}
+
+function goldkeyLadderDoneKey(leaveDateYmd) {
+  const d = String(leaveDateYmd ?? "").trim();
+  return d ? `${d}|GOLDKEY` : "";
+}
+
 /** 같은 휴가일 골드키 중 실제 협의가 필요한 신청 id (24시간 내 2명 이상) */
 function goldkeyIdsNeedingNegotiation(rows) {
   const sorted = [...rows].sort((a, b) =>
@@ -124,8 +140,11 @@ export function buildNegotiationMetaByRequestId(dayRequests, leaveDateYmd, optio
       String(a.requestedAt ?? a.requested_at ?? "").localeCompare(String(b.requestedAt ?? b.requested_at ?? ""))
     );
     const leaveType0 = list[0]?.leaveType ?? list[0]?.leave_type;
+    const ladderDoneKeys = options.ladderDoneKeys ?? null;
+    const gkLadderDone =
+      leaveType0 === "GOLDKEY" && Boolean(ladderDoneKeys?.has?.(goldkeyLadderDoneKey(selectedYmd)));
     const goldkeyNegotiateIds =
-      leaveType0 === "GOLDKEY" ? goldkeyIdsNeedingNegotiation(list) : new Set();
+      leaveType0 === "GOLDKEY" && !gkLadderDone ? goldkeyIdsNeedingNegotiation(list) : new Set();
 
     for (const r of list) {
       const lt = r.leaveType ?? r.leave_type;
@@ -141,7 +160,9 @@ export function buildNegotiationMetaByRequestId(dayRequests, leaveDateYmd, optio
       }
       if (lt === "GOLDKEY") {
         const autoRankGlobal = sortedAll.findIndex((x) => x.id === r.id) + 1;
-        if (goldkeyNegotiateIds.has(String(r.id))) {
+        if (gkLadderDone) {
+          map.set(String(r.id), { mode: "negotiate", ladderDone: true });
+        } else if (goldkeyNegotiateIds.has(String(r.id))) {
           map.set(String(r.id), { mode: "negotiate" });
         } else {
           map.set(String(r.id), { mode: "auto", autoRank: autoRankGlobal });
@@ -169,11 +190,12 @@ export function buildNegotiationMetaByRequestId(dayRequests, leaveDateYmd, optio
   return map;
 }
 
-/** 캘린더: 24시간 내 동일일 골드키 2명 이상일 때만 협의 대기(점선) */
+/** 캘린더: 24시간 내 동일일 골드키 2명 이상·사다리 미완료일 때만 협의 대기(점선) */
 export function isGoldkeyNegotiationPendingChip(requestRow, metaByRequestId) {
   if (!requestRow || (requestRow.leaveType ?? requestRow.leave_type) !== "GOLDKEY") return false;
   if (String(requestRow.status ?? "").trim() !== "APPLIED") return false;
   const meta = metaByRequestId?.get?.(String(requestRow.id));
+  if (meta?.ladderDone) return false;
   return meta?.mode === "negotiate";
 }
 

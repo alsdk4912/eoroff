@@ -90,6 +90,7 @@ import {
 } from "./utils/leaveVisibility.js";
 import {
   FORCE_GOLDKEY_NEGOTIATION_KEYS,
+  buildLadderDoneKeySet,
   buildNegotiationMetaByRequestId,
   filterGoldkeyRowsForNegotiationPeers,
   isForceManualOrderOnly,
@@ -1464,10 +1465,11 @@ function App() {
     }),
     [requestsVisibleInUi]
   );
+  const ladderDoneKeySet = useMemo(() => buildLadderDoneKeySet(ladderResults), [ladderResults]);
   const calendarData = useMemo(() => {
     const [year, month] = calendarMonth.split("-").map(Number);
-    return buildMonthMatrix(year, month, requestsForCalendarGrid, users, holidays);
-  }, [calendarMonth, requestsForCalendarGrid, users, holidays]);
+    return buildMonthMatrix(year, month, requestsForCalendarGrid, users, holidays, ladderDoneKeySet);
+  }, [calendarMonth, requestsForCalendarGrid, users, holidays, ladderDoneKeySet]);
 
   const calendarDayRequests = useMemo(() => {
     if (!calendarSelectedYmd) return [];
@@ -6480,9 +6482,10 @@ function CalendarPage({
       .sort((a, b) => String(a.createdAt ?? "").localeCompare(String(b.createdAt ?? "")));
   }, [dayComments, selectedYmd]);
 
+  const ladderDoneKeySet = useMemo(() => buildLadderDoneKeySet(ladderResults), [ladderResults]);
   const negotiationMetaByRequestId = useMemo(
-    () => buildNegotiationMetaByRequestId(dayRequests, selectedYmd),
-    [selectedYmd, dayRequests]
+    () => buildNegotiationMetaByRequestId(dayRequests, selectedYmd, { ladderDoneKeys: ladderDoneKeySet }),
+    [selectedYmd, dayRequests, ladderDoneKeySet]
   );
 
   const quickLadderTargets = useMemo(() => {
@@ -6496,17 +6499,6 @@ function CalendarPage({
     }
     return [...byType.values()].filter((t) => t.count >= 2);
   }, [dayRequests, negotiationMetaByRequestId]);
-
-  const ladderDoneKeySet = useMemo(() => {
-    const set = new Set();
-    for (const r of Array.isArray(ladderResults) ? ladderResults : []) {
-      const d = String(r?.leaveDate ?? "").trim();
-      const t = String(r?.leaveType ?? "").trim();
-      if (!d || !t) continue;
-      set.add(`${d}|${t}`);
-    }
-    return set;
-  }, [ladderResults]);
 
   function moveCalendarMonth(offset) {
     const [yy, mm] = String(calendarMonth || "").split("-").map(Number);
@@ -7913,7 +7905,7 @@ function mapRequestsToCalendarApplicants(roleReqs, users, negotiationMetaByReque
   }));
 }
 
-function buildMonthMatrix(year, month, confirmedRequests, users, holidaysCache) {
+function buildMonthMatrix(year, month, confirmedRequests, users, holidaysCache, ladderDoneKeys) {
   const first = new Date(year, month - 1, 1);
   const start = new Date(first);
   start.setDate(first.getDate() - first.getDay());
@@ -7948,7 +7940,9 @@ function buildMonthMatrix(year, month, confirmedRequests, users, holidaysCache) 
     const activeDayReqs = dayAll;
     const hasGoldkeyRequest = activeDayReqs.some((r) => r.leaveType === "GOLDKEY");
     const activeNurseDay = nurseReqs.filter((r) => r.status !== "CANCELLED");
-    const nurseNegotiationMeta = buildNegotiationMetaByRequestId(activeNurseDay, iso);
+    const nurseNegotiationMeta = buildNegotiationMetaByRequestId(activeNurseDay, iso, {
+      ladderDoneKeys: ladderDoneKeys ?? new Set(),
+    });
     const displayApplicants = mapRequestsToCalendarApplicants(nurseReqs, users, nurseNegotiationMeta);
     const anesthesiaDisplayApplicants = mapRequestsToCalendarApplicants(anesReqs, users);
     const chiefDisplayApplicants = mapRequestsToCalendarApplicants(chiefReqs, users);
