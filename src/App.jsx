@@ -76,9 +76,11 @@ import {
   canApplyLeaveRole,
   canViewerApproveRequest,
   CHIEF_LEAVE_TYPE,
+  canUseStandaloneSubstituteForViewer,
   filterRequestsForCalendarGrid,
   filterRequestsForViewerRole,
   filterRequestsForWeeklyRoster,
+  requestSubjectStaffRole,
   splitRequestsByStaffRole,
   STAFF_LEAVE_ROLES_ORDER,
   isAnesthesiaLeaveAdminRole,
@@ -87,6 +89,7 @@ import {
   isOrLeaveAdminRole,
   isScheduleOnlyDashboardRole,
   showHolidayDutyEditorRole,
+  substituteScopeStaffRole,
 } from "./utils/leaveVisibility.js";
 import {
   FORCE_GOLDKEY_NEGOTIATION_KEYS,
@@ -6330,8 +6333,50 @@ function CalendarPage({
     return buckets;
   }, [dayRequests, users]);
   const hasAnyDayRequest = STAFF_LEAVE_ROLES_ORDER.some((role) => dayRequestsByRole[role].length > 0);
+  const substituteScope = substituteScopeStaffRole(viewerRole);
+  const allowStandaloneSubstitute = canUseStandaloneSubstituteForViewer(viewerRole);
+  const substituteSectionMeta = useMemo(() => {
+    if (substituteScope === "ANESTHESIA") {
+      return {
+        sectionClass: "admin-calendar-substitute-section--anesthesia",
+        title: "대체 근무 지정 (마취과)",
+        lead: "확정된 마취과 휴가에 대체 인력·번표를 지정합니다.",
+        emptyLead: "이 날짜에 확정·신청 중인 마취과 휴가가 없습니다.",
+        pool: anesthesiaUsers,
+        shiftOptions: ANESTHESIA_SHIFT_OPTIONS,
+        customPlaceholder: "예: opd",
+      };
+    }
+    if (substituteScope === "CHIEF") {
+      return {
+        sectionClass: "admin-calendar-substitute-section--chief",
+        title: "대체 근무 지정 (주임)",
+        lead: "확정된 주임 휴가에 대체 인력·번표를 지정합니다.",
+        emptyLead: "이 날짜에 확정·신청 중인 주임 휴가가 없습니다.",
+        pool: chiefUsers,
+        shiftOptions: CHIEF_SHIFT_OPTIONS,
+        customPlaceholder: "예: D1",
+      };
+    }
+    if (substituteScope === "NURSE") {
+      return {
+        sectionClass: "",
+        title: "대체 근무 지정 (수술실)",
+        lead: "휴가자 선택 없이 대체 인력/번표만 입력 후 저장합니다.",
+        emptyLead: "이 날짜에 휴가 신청이 없어도 대체 인력·번표만 지정해 저장할 수 있습니다.",
+        pool: nurseUsers,
+        shiftOptions: NURSE_SHIFT_OPTIONS,
+        customPlaceholder: "예: 3 9-5",
+      };
+    }
+    return null;
+  }, [substituteScope, nurseUsers, anesthesiaUsers, chiefUsers]);
   function canManageRequest(r) {
     return canViewerApproveRequest(viewerRole, r?.userId, users);
+  }
+  function isRequestInSubstituteScope(r) {
+    if (!substituteScope || !r) return false;
+    return requestSubjectStaffRole(r, users) === substituteScope;
   }
 
   function subsForRequest(requestId) {
@@ -6381,12 +6426,13 @@ function CalendarPage({
   }, [selectedYmd]);
 
   const calendarSubTargetRequests = useMemo(() => {
-    if (!selectedYmd) return [];
+    if (!selectedYmd || !substituteScope) return [];
     const rows = (Array.isArray(dayRequests) ? dayRequests : []).filter(
       (r) =>
         String(r.leaveDate ?? "").slice(0, 10) === selectedYmd &&
         r.status !== "CANCELLED" &&
-        canManageRequest(r)
+        canManageRequest(r) &&
+        isRequestInSubstituteScope(r)
     );
     if (rows.length === 0) return [];
     const byId = new Map(rows.map((r) => [r.id, r]));
@@ -6397,18 +6443,18 @@ function CalendarPage({
       if (reqId && byId.has(reqId)) targetIds.add(reqId);
     }
     return rows.filter((r) => targetIds.has(r.id));
-  }, [selectedYmd, dayRequests, substituteAssignments]);
+  }, [selectedYmd, dayRequests, substituteAssignments, substituteScope, users, viewerRole]);
 
   useEffect(() => {
-    if (!selectedYmd) {
+    if (!selectedYmd || !substituteScope) {
       setCalendarSubRows([]);
       return;
     }
     const targets = calendarSubTargetRequests;
     const sid = standaloneSubstituteRequestId(selectedYmd);
-    const orphanRecs = getSubstituteRecordsForRequest(substituteAssignments, sid);
+    const orphanRecs = allowStandaloneSubstitute ? getSubstituteRecordsForRequest(substituteAssignments, sid) : [];
 
-    const defaultSubRole = isAnesthesiaLeaveAdmin ? "ANESTHESIA" : isChiefLeaveAdmin ? "CHIEF" : "NURSE";
+    const defaultSubRole = substituteScope;
     const shiftCell = (s, requestId) => {
       let role = defaultSubRole;
       if (requestId && requestId !== sid) {
@@ -6418,24 +6464,6 @@ function CalendarPage({
       return resolveShiftCodeFromStored(s?.shiftCode, role);
     };
 
-    if (targets.length === 0) {
-      if (orphanRecs.length > 0) {
-        setCalendarSubRows(
-          orphanRecs.map((s, idx) => ({
-            rowId: `cal_standalone_${sid}_${idx}`,
-            requestId: sid,
-            substituteUserId: String(s?.substituteUserId ?? ""),
-            shiftCode: shiftCell(s, sid),
-          }))
-        );
-        return;
-      }
-      setCalendarSubRows([{ rowId: `cal_sub_empty_${selectedYmd}`, requestId: sid, substituteUserId: "", shiftCode: "" }]);
-      return;
-    }
-
-    // 저장된 대체자가 있으면 모두 다시 보여주고,
-    // 없을 때만 기본 1박스(대체인력1)만 노출한다.
     const restored = [];
     for (const t of targets) {
       const recs = getSubstituteRecordsForRequest(substituteAssignments, t.id);
@@ -6459,21 +6487,41 @@ function CalendarPage({
         shiftCode: shiftCell(s, sid),
       });
     }
-    if (restored.length > 0) {
-      setCalendarSubRows(restored);
+
+    const pendingTargets = targets.filter(
+      (t) => getSubstituteRecordsForRequest(substituteAssignments, t.id).length === 0
+    );
+    for (const t of pendingTargets) {
+      restored.push({
+        rowId: `cal_sub_${t.id}_pending`,
+        requestId: t.id,
+        substituteUserId: "",
+        shiftCode: "",
+      });
+    }
+
+    if (targets.length === 0) {
+      if (orphanRecs.length > 0) {
+        setCalendarSubRows(restored);
+        return;
+      }
+      if (allowStandaloneSubstitute) {
+        setCalendarSubRows([{ rowId: `cal_sub_empty_${selectedYmd}`, requestId: sid, substituteUserId: "", shiftCode: "" }]);
+        return;
+      }
+      setCalendarSubRows([]);
       return;
     }
 
-    const firstTarget = targets[0];
-    setCalendarSubRows([
-      {
-        rowId: `cal_sub_${firstTarget.id}_0`,
-        requestId: firstTarget.id,
-        substituteUserId: "",
-        shiftCode: "",
-      },
-    ]);
-  }, [selectedYmd, calendarSubTargetRequests, substituteAssignments, users, isAnesthesiaLeaveAdmin, isChiefLeaveAdmin]);
+    setCalendarSubRows(restored);
+  }, [
+    selectedYmd,
+    calendarSubTargetRequests,
+    substituteAssignments,
+    users,
+    substituteScope,
+    allowStandaloneSubstitute,
+  ]);
 
   const selectedDayComments = useMemo(() => {
     if (!selectedYmd) return [];
@@ -6561,10 +6609,12 @@ function CalendarPage({
   function removeCalendarSubRow(rowId) {
     setCalendarSubRows((prev) => {
       const next = (Array.isArray(prev) ? prev : []).filter((r) => r.rowId !== rowId);
+      if (next.length > 0) return next;
       const sid = selectedYmd ? standaloneSubstituteRequestId(selectedYmd) : "";
-      return next.length > 0
-        ? next
-        : [{ rowId: `cal_sub_empty_${Date.now()}`, requestId: sid, substituteUserId: "", shiftCode: "" }];
+      if (allowStandaloneSubstitute) {
+        return [{ rowId: `cal_sub_empty_${Date.now()}`, requestId: sid, substituteUserId: "", shiftCode: "" }];
+      }
+      return [];
     });
   }
 
@@ -6572,10 +6622,19 @@ function CalendarPage({
     const targets = calendarSubTargetRequests;
     const sid = selectedYmd ? standaloneSubstituteRequestId(selectedYmd) : "";
     if (!Array.isArray(calendarSubRows) || calendarSubRows.length === 0) {
-      setCalendarSubRows([{ rowId: `cal_sub_empty_${Date.now()}`, requestId: sid, substituteUserId: "", shiftCode: "" }]);
+      if (targets.length === 0 && !allowStandaloneSubstitute) return;
+      setCalendarSubRows([
+        {
+          rowId: `cal_sub_empty_${Date.now()}`,
+          requestId: targets.length > 0 ? targets[0].id : sid,
+          substituteUserId: "",
+          shiftCode: "",
+        },
+      ]);
       return;
     }
     if (targets.length === 0) {
+      if (!allowStandaloneSubstitute) return;
       setCalendarSubRows((prev) => [
         ...(Array.isArray(prev) ? prev : []),
         { rowId: `cal_sub_empty_${Date.now()}`, requestId: sid, substituteUserId: "", shiftCode: "" },
@@ -7116,197 +7175,75 @@ function CalendarPage({
                           })}
                         </>
                       )}
-                      {isOrLeaveAdmin ? (
-                        <div className="admin-calendar-substitute-section">
-                          <h4 className="admin-calendar-substitute-title">대체 근무 지정 (수술실)</h4>
-                          <p className="help admin-calendar-substitute-lead">
-                            휴가자 선택 없이 대체 인력/번표만 입력 후 저장합니다.
-                          </p>
+                      {substituteSectionMeta ? (
+                        <div className={`admin-calendar-substitute-section ${substituteSectionMeta.sectionClass}`.trim()}>
+                          <h4 className="admin-calendar-substitute-title">{substituteSectionMeta.title}</h4>
+                          <p className="help admin-calendar-substitute-lead">{substituteSectionMeta.lead}</p>
                           {calendarSubTargetRequests.length === 0 ? (
-                            <p className="help admin-calendar-substitute-lead">
-                              이 날짜에 휴가 신청이 없어도 대체 인력·번표만 지정해 저장할 수 있습니다.
-                            </p>
+                            <p className="help admin-calendar-substitute-lead">{substituteSectionMeta.emptyLead}</p>
                           ) : null}
-                          <div className="admin-calendar-substitute-stack">
-                            {calendarSubRows.map((row, idx) => (
-                              <div key={row.rowId} className="admin-calendar-sub-bulk-row">
-                                <span className="admin-calendar-sub-bulk-label">대체 인력 {idx + 1}</span>
-                                <select
-                                  value={row.substituteUserId}
-                                  onChange={(e) => updateCalendarSubRow(row.rowId, "substituteUserId", e.target.value)}
-                                >
-                                  <option value="">대체자 선택</option>
-                                  {nurseUsers.map((u) => (
-                                    <option key={u.id} value={u.id}>
-                                      {u.name}
-                                    </option>
-                                  ))}
-                                </select>
-                                <select
-                                  value={isCustomShiftCodeValue(row.shiftCode) ? CUSTOM_SHIFT_SENTINEL : row.shiftCode}
-                                  onChange={(e) => {
-                                    const next = String(e.target.value ?? "");
-                                    if (next === CUSTOM_SHIFT_SENTINEL) {
-                                      updateCalendarSubRow(row.rowId, "shiftCode", toCustomShiftCode(customShiftText(row.shiftCode)));
-                                      return;
-                                    }
-                                    updateCalendarSubRow(row.rowId, "shiftCode", next);
-                                  }}
-                                >
-                                  <option value="">대체 근무 번표</option>
-                                  {NURSE_SHIFT_OPTIONS.filter((x) => x).map((opt) => (
-                                    <option key={opt} value={opt}>
-                                      {opt}
-                                    </option>
-                                  ))}
-                                  <option value={CUSTOM_SHIFT_SENTINEL}>직접입력</option>
-                                </select>
-                                {isCustomShiftCodeValue(row.shiftCode) ? (
-                                  <input
-                                    type="text"
-                                    placeholder="예: 3 9-5"
-                                    value={customShiftText(row.shiftCode)}
-                                    onChange={(e) => updateCalendarSubRow(row.rowId, "shiftCode", toCustomShiftCode(e.target.value))}
-                                  />
-                                ) : null}
-                                <button type="button" onClick={() => void applyCalendarSubRow(row)}>
-                                  저장
-                                </button>
-                                <button type="button" onClick={() => removeCalendarSubRow(row.rowId)}>
-                                  삭제
-                                </button>
-                              </div>
-                            ))}
-                            <button type="button" onClick={addCalendarSubRow}>
-                              대체 인력 추가
-                            </button>
-                          </div>
-                        </div>
-                      ) : null}
-                      {isAnesthesiaLeaveAdmin ? (
-                        <div className="admin-calendar-substitute-section admin-calendar-substitute-section--anesthesia">
-                          <h4 className="admin-calendar-substitute-title">대체 근무 지정 (마취과)</h4>
-                          <p className="help admin-calendar-substitute-lead">확정된 마취과 휴가에 대체 인력·번표를 지정합니다.</p>
-                          {calendarSubTargetRequests.length === 0 ? (
-                            <p className="help admin-calendar-substitute-lead">이 날짜에 확정·신청 중인 마취과 휴가가 없습니다.</p>
+                          {calendarSubRows.length > 0 ? (
+                            <div className="admin-calendar-substitute-stack">
+                              {calendarSubRows.map((row, idx) => (
+                                <div key={row.rowId} className="admin-calendar-sub-bulk-row">
+                                  <span className="admin-calendar-sub-bulk-label">대체 인력 {idx + 1}</span>
+                                  <select
+                                    value={row.substituteUserId}
+                                    onChange={(e) => updateCalendarSubRow(row.rowId, "substituteUserId", e.target.value)}
+                                  >
+                                    <option value="">대체자 선택</option>
+                                    {substituteSectionMeta.pool.map((u) => (
+                                      <option key={u.id} value={u.id}>
+                                        {u.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <select
+                                    value={isCustomShiftCodeValue(row.shiftCode) ? CUSTOM_SHIFT_SENTINEL : row.shiftCode}
+                                    onChange={(e) => {
+                                      const next = String(e.target.value ?? "");
+                                      if (next === CUSTOM_SHIFT_SENTINEL) {
+                                        updateCalendarSubRow(
+                                          row.rowId,
+                                          "shiftCode",
+                                          toCustomShiftCode(customShiftText(row.shiftCode))
+                                        );
+                                        return;
+                                      }
+                                      updateCalendarSubRow(row.rowId, "shiftCode", next);
+                                    }}
+                                  >
+                                    <option value="">대체 근무 번표</option>
+                                    {substituteSectionMeta.shiftOptions.filter((x) => x).map((opt) => (
+                                      <option key={opt} value={opt}>
+                                        {opt}
+                                      </option>
+                                    ))}
+                                    <option value={CUSTOM_SHIFT_SENTINEL}>직접입력</option>
+                                  </select>
+                                  {isCustomShiftCodeValue(row.shiftCode) ? (
+                                    <input
+                                      type="text"
+                                      placeholder={substituteSectionMeta.customPlaceholder}
+                                      value={customShiftText(row.shiftCode)}
+                                      onChange={(e) =>
+                                        updateCalendarSubRow(row.rowId, "shiftCode", toCustomShiftCode(e.target.value))
+                                      }
+                                    />
+                                  ) : null}
+                                  <button type="button" onClick={() => void applyCalendarSubRow(row)}>
+                                    저장
+                                  </button>
+                                  <button type="button" onClick={() => removeCalendarSubRow(row.rowId)}>
+                                    삭제
+                                  </button>
+                                </div>
+                              ))}
+                              <button type="button" onClick={addCalendarSubRow}>
+                                대체 인력 추가
+                              </button>
+                            </div>
                           ) : null}
-                          <div className="admin-calendar-substitute-stack">
-                            {calendarSubRows.map((row, idx) => (
-                              <div key={row.rowId} className="admin-calendar-sub-bulk-row">
-                                <span className="admin-calendar-sub-bulk-label">대체 인력 {idx + 1}</span>
-                                <select
-                                  value={row.substituteUserId}
-                                  onChange={(e) => updateCalendarSubRow(row.rowId, "substituteUserId", e.target.value)}
-                                >
-                                  <option value="">대체자 선택</option>
-                                  {anesthesiaUsers.map((u) => (
-                                    <option key={u.id} value={u.id}>
-                                      {u.name}
-                                    </option>
-                                  ))}
-                                </select>
-                                <select
-                                  value={isCustomShiftCodeValue(row.shiftCode) ? CUSTOM_SHIFT_SENTINEL : row.shiftCode}
-                                  onChange={(e) => {
-                                    const next = String(e.target.value ?? "");
-                                    if (next === CUSTOM_SHIFT_SENTINEL) {
-                                      updateCalendarSubRow(row.rowId, "shiftCode", toCustomShiftCode(customShiftText(row.shiftCode)));
-                                      return;
-                                    }
-                                    updateCalendarSubRow(row.rowId, "shiftCode", next);
-                                  }}
-                                >
-                                  <option value="">대체 근무 번표</option>
-                                  {ANESTHESIA_SHIFT_OPTIONS.filter((x) => x).map((opt) => (
-                                    <option key={opt} value={opt}>
-                                      {opt}
-                                    </option>
-                                  ))}
-                                  <option value={CUSTOM_SHIFT_SENTINEL}>직접입력</option>
-                                </select>
-                                {isCustomShiftCodeValue(row.shiftCode) ? (
-                                  <input
-                                    type="text"
-                                    placeholder="예: opd"
-                                    value={customShiftText(row.shiftCode)}
-                                    onChange={(e) => updateCalendarSubRow(row.rowId, "shiftCode", toCustomShiftCode(e.target.value))}
-                                  />
-                                ) : null}
-                                <button type="button" onClick={() => void applyCalendarSubRow(row)}>
-                                  저장
-                                </button>
-                                <button type="button" onClick={() => removeCalendarSubRow(row.rowId)}>
-                                  삭제
-                                </button>
-                              </div>
-                            ))}
-                            <button type="button" onClick={addCalendarSubRow}>
-                              대체 인력 추가
-                            </button>
-                          </div>
-                        </div>
-                      ) : null}
-                      {isChiefLeaveAdmin ? (
-                        <div className="admin-calendar-substitute-section admin-calendar-substitute-section--chief">
-                          <h4 className="admin-calendar-substitute-title">대체 근무 지정 (주임)</h4>
-                          <p className="help admin-calendar-substitute-lead">확정된 주임 휴가에 대체 인력·번표를 지정합니다.</p>
-                          {calendarSubTargetRequests.length === 0 ? (
-                            <p className="help admin-calendar-substitute-lead">이 날짜에 확정·신청 중인 주임 휴가가 없습니다.</p>
-                          ) : null}
-                          <div className="admin-calendar-substitute-stack">
-                            {calendarSubRows.map((row, idx) => (
-                              <div key={row.rowId} className="admin-calendar-sub-bulk-row">
-                                <span className="admin-calendar-sub-bulk-label">대체 인력 {idx + 1}</span>
-                                <select
-                                  value={row.substituteUserId}
-                                  onChange={(e) => updateCalendarSubRow(row.rowId, "substituteUserId", e.target.value)}
-                                >
-                                  <option value="">대체자 선택</option>
-                                  {chiefUsers.map((u) => (
-                                    <option key={u.id} value={u.id}>
-                                      {u.name}
-                                    </option>
-                                  ))}
-                                </select>
-                                <select
-                                  value={isCustomShiftCodeValue(row.shiftCode) ? CUSTOM_SHIFT_SENTINEL : row.shiftCode}
-                                  onChange={(e) => {
-                                    const next = String(e.target.value ?? "");
-                                    if (next === CUSTOM_SHIFT_SENTINEL) {
-                                      updateCalendarSubRow(row.rowId, "shiftCode", toCustomShiftCode(customShiftText(row.shiftCode)));
-                                      return;
-                                    }
-                                    updateCalendarSubRow(row.rowId, "shiftCode", next);
-                                  }}
-                                >
-                                  <option value="">대체 근무 번표</option>
-                                  {CHIEF_SHIFT_OPTIONS.filter((x) => x).map((opt) => (
-                                    <option key={opt} value={opt}>
-                                      {opt}
-                                    </option>
-                                  ))}
-                                  <option value={CUSTOM_SHIFT_SENTINEL}>직접입력</option>
-                                </select>
-                                {isCustomShiftCodeValue(row.shiftCode) ? (
-                                  <input
-                                    type="text"
-                                    placeholder="예: D1"
-                                    value={customShiftText(row.shiftCode)}
-                                    onChange={(e) => updateCalendarSubRow(row.rowId, "shiftCode", toCustomShiftCode(e.target.value))}
-                                  />
-                                ) : null}
-                                <button type="button" onClick={() => void applyCalendarSubRow(row)}>
-                                  저장
-                                </button>
-                                <button type="button" onClick={() => removeCalendarSubRow(row.rowId)}>
-                                  삭제
-                                </button>
-                              </div>
-                            ))}
-                            <button type="button" onClick={addCalendarSubRow}>
-                              대체 인력 추가
-                            </button>
-                          </div>
                         </div>
                       ) : null}
                     </div>
@@ -7401,30 +7338,27 @@ function CalendarPage({
               <div className="admin-day-substitute-grid__head">대체자</div>
               {(() => {
                 const sid = standaloneSubstituteRequestId(selectedYmd);
-                const orphanSubs = getSubstituteRecordsForRequest(substituteAssignments, sid);
-                const approvedAll = [
-                  ...(Array.isArray(selectedCell.approvedApplicants) ? selectedCell.approvedApplicants : []),
-                  ...(Array.isArray(selectedCell.anesthesiaApprovedApplicants) ? selectedCell.anesthesiaApprovedApplicants : []),
-                  ...(Array.isArray(selectedCell.chiefApprovedApplicants) ? selectedCell.chiefApprovedApplicants : []),
-                ];
+                const orphanSubs = allowStandaloneSubstitute
+                  ? getSubstituteRecordsForRequest(substituteAssignments, sid)
+                  : [];
+                const approvedAll =
+                  substituteScope === "ANESTHESIA"
+                    ? [...(Array.isArray(selectedCell.anesthesiaApprovedApplicants) ? selectedCell.anesthesiaApprovedApplicants : [])]
+                    : substituteScope === "CHIEF"
+                      ? [...(Array.isArray(selectedCell.chiefApprovedApplicants) ? selectedCell.chiefApprovedApplicants : [])]
+                      : [...(Array.isArray(selectedCell.approvedApplicants) ? selectedCell.approvedApplicants : [])];
                 const cells = [];
                 for (const item of approvedAll) {
                   const subs = getSubstituteRecordsForRequest(substituteAssignments, item.id);
-                  if (!subs.length) {
+                  if (!subs.length) continue;
+                  subs.forEach((s, i) => {
+                    const subName = users.find((u) => u.id === s.substituteUserId)?.name ?? s.substituteUserId;
+                    const code = String(s.shiftCode ?? "").trim() || "-";
                     cells.push(
-                      <span key={`${item.id}_code`} className="admin-day-substitute-grid__cell">-</span>,
-                      <span key={`${item.id}_sub`} className="admin-day-substitute-grid__cell">-</span>
+                      <span key={`${item.id}_${i}_code`} className="admin-day-substitute-grid__cell">{code}</span>,
+                      <span key={`${item.id}_${i}_sub`} className="admin-day-substitute-grid__cell">{subName}</span>
                     );
-                  } else {
-                    subs.forEach((s, i) => {
-                      const subName = users.find((u) => u.id === s.substituteUserId)?.name ?? s.substituteUserId;
-                      const code = String(s.shiftCode ?? "").trim() || "-";
-                      cells.push(
-                        <span key={`${item.id}_${i}_code`} className="admin-day-substitute-grid__cell">{code}</span>,
-                        <span key={`${item.id}_${i}_sub`} className="admin-day-substitute-grid__cell">{subName}</span>
-                      );
-                    });
-                  }
+                  });
                 }
                 orphanSubs.forEach((s, i) => {
                   const subName = users.find((u) => u.id === s.substituteUserId)?.name ?? s.substituteUserId;

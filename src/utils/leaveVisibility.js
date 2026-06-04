@@ -171,6 +171,23 @@ export function isChiefLeaveAdminRole(role) {
   return role === "CHIEF";
 }
 
+/** 캘린더 대체 입력 UI 담당 부서 (ADMIN→수술실, ADMIN2→마취, CHIEF→주임) */
+export function substituteScopeStaffRole(viewerRole) {
+  if (isOrLeaveAdminRole(viewerRole)) return "NURSE";
+  if (isAnesthesiaLeaveAdminRole(viewerRole)) return "ANESTHESIA";
+  if (isChiefLeaveAdminRole(viewerRole)) return "CHIEF";
+  return null;
+}
+
+/** 휴가 신청 없이 날짜만 대체 번표 저장(수술실 관리자 전용) */
+export function canUseStandaloneSubstituteForViewer(viewerRole) {
+  return isOrLeaveAdminRole(viewerRole);
+}
+
+export function requestSubjectStaffRole(requestRow, users) {
+  return userById(users, requestRow?.userId)?.role ?? "";
+}
+
 export function isLeaveManagerRole(role) {
   return isOrLeaveAdminRole(role) || isAnesthesiaLeaveAdminRole(role) || isChiefLeaveAdminRole(role);
 }
