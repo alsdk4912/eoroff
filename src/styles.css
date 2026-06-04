@@ -528,6 +528,23 @@ button.app-header-update-btn:hover {
   display: none;
 }
 
+.weekly-cell-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+.weekly-cell-custom-input {
+  width: 100%;
+  min-width: 0;
+  font-size: 10px;
+  padding: 3px 4px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--separator);
+  text-align: center;
+}
+
 /* 주말·공휴일 열: 파스텔 (휴무일 눈에 띄게) */
 .weekly-schedule-table tbody td.weekly-cell--restcol {
   background: #f3e8ff !important;

@@ -1393,7 +1393,8 @@ app.post("/api/substitute-assignments/:requestId/upsert", async (req, res) => {
       if (!substituteUserId || !shiftCode) {
         return res.status(400).json({ error: "대체 인력과 근무 코드를 모두 입력해야 합니다." });
       }
-      if (!standaloneM && substituteUserId === leaveUserIdForSub) {
+      const isStandalone = Boolean(standaloneNurseM || standaloneAnesM);
+      if (!isStandalone && substituteUserId === leaveUserIdForSub) {
         return res.status(400).json({ error: "휴가자 본인을 대체 인력으로 지정할 수 없습니다." });
       }
       normalized.push({
@@ -1409,9 +1410,16 @@ app.post("/api/substitute-assignments/:requestId/upsert", async (req, res) => {
     if (normalized.length > 0) {
       const subIds = [...new Set(normalized.map((it) => it.substituteUserId))];
       const ph = subIds.map(() => "?").join(", ");
-      const leaveRoleForSub = leaveUserIdForSub ? await userRoleById(leaveUserIdForSub) : "NURSE";
-      const subRole =
-        leaveRoleForSub === "ANESTHESIA" ? "ANESTHESIA" : leaveRoleForSub === "CHIEF" ? "CHIEF" : "NURSE";
+      let subRole = "NURSE";
+      if (standaloneAnesM) {
+        subRole = "ANESTHESIA";
+      } else if (standaloneNurseM) {
+        subRole = "NURSE";
+      } else {
+        const leaveRoleForSub = await userRoleById(leaveUserIdForSub);
+        if (leaveRoleForSub === "ANESTHESIA") subRole = "ANESTHESIA";
+        else if (leaveRoleForSub === "CHIEF") subRole = "CHIEF";
+      }
       const validSubs = await queryAll(`SELECT id FROM users WHERE role = ? AND id IN (${ph})`, subRole, ...subIds);
       if (validSubs.length !== subIds.length) {
         const roleLabel =

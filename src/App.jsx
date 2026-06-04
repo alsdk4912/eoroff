@@ -3399,6 +3399,9 @@ function parseWeeklyOverrideSelectValue(val) {
     const code = val.slice(7);
     return { mode: "manual", kind: "sub", main: code, sub: "" };
   }
+  if (val === CUSTOM_SHIFT_SENTINEL) {
+    return { mode: "manual", kind: "base", main: toCustomShiftCode(""), sub: "" };
+  }
   if (val.startsWith("__base__:")) {
     const code = val.slice(9);
     return { mode: "manual", kind: "base", main: code, sub: "" };
@@ -3410,7 +3413,10 @@ function weeklyOverrideSelectValue(ov) {
   if (!ov || ov.mode !== "manual") return "__auto__";
   if (ov.kind === "leave") return `__leave__:${normalizeWeeklyLeaveMark(ov.main || "휴가")}`;
   if (ov.kind === "sub") return `__sub__:${ov.main}`;
-  if (ov.kind === "base") return `__base__:${ov.main}`;
+  if (ov.kind === "base") {
+    if (isCustomShiftCodeValue(ov.main)) return CUSTOM_SHIFT_SENTINEL;
+    return `__base__:${ov.main}`;
+  }
   return "__auto__";
 }
 
@@ -3443,7 +3449,9 @@ function mapWeeklyOverrideRowsToClient(rows) {
 /** 주간 번표: 번표 코드(안D0, 3D2 등)·휴가·당직만 한 줄로 표시(부가 문구 없음) */
 function weeklyCellDisplayLine(cell) {
   if (!cell) return "—";
-  const m = String(cell.main ?? "").trim() || "—";
+  const m = String(cell.main ?? "").trim();
+  if (!m) return "—";
+  if (isCustomShiftCodeValue(m)) return customShiftText(m).trim() || "—";
   return normalizeWeeklyLeaveMark(m);
 }
 
@@ -3605,9 +3613,20 @@ function WeeklyScheduleTab({
     setDraftOverrides((prev) => {
       const next = { ...(prev || {}) };
       if (!parsed) delete next[key];
-      else next[key] = parsed;
+      else if (val === CUSTOM_SHIFT_SENTINEL && next[key]?.mode === "manual" && isCustomShiftCodeValue(next[key]?.main)) {
+        next[key] = { mode: "manual", kind: "base", main: next[key].main, sub: "" };
+      } else next[key] = parsed;
       return next;
     });
+  }
+
+  function onWeeklyCustomBaseChange(userId, ymd, text) {
+    const key = weeklyCellKey(userId, ymd);
+    setWeeklyMsg("");
+    setDraftOverrides((prev) => ({
+      ...(prev || {}),
+      [key]: { mode: "manual", kind: "base", main: toCustomShiftCode(text), sub: "" },
+    }));
   }
 
   function exportOfficialWeeklyDocument(overrideMapForExport) {
@@ -3715,42 +3734,74 @@ function WeeklyScheduleTab({
                   {days.map((d) => {
                     const cell = displayCell(u, d);
                     const key = weeklyCellKey(u.id, d);
-                    const selVal = weeklyOverrideSelectValue(draftOverrides[key]);
+                    const ov = draftOverrides[key];
+                    const selVal = weeklyOverrideSelectValue(ov);
                     const auto = computedCell(u, d);
                     const autoMain = normalizeWeeklyLeaveMark(auto?.main ?? "");
                     const autoLabel = weeklyCellDisplayLine(auto);
+                    const showCustomInput =
+                      cellEditable && ov?.mode === "manual" && ov?.kind === "base" && isCustomShiftCodeValue(ov.main);
+                    const customPlaceholder =
+                      sec === "anesthesia" ? "예: 9-5" : sec === "chief" ? "예: D1" : "예: 3D2";
+                    const extraBaseOpts = (() => {
+                      const set = new Set();
+                      const candidates = [ov?.main, auto?.main, cell?.main];
+                      for (const raw of candidates) {
+                        const t = isCustomShiftCodeValue(raw) ? customShiftText(raw) : String(raw ?? "").trim();
+                        if (!t || WEEKLY_LEAVE_MARK_OPTIONS.includes(t)) continue;
+                        if (!shiftOptionSetForRole(u.role).has(t)) set.add(t);
+                      }
+                      return [...set];
+                    })();
                     return (
                       <td
                         key={d}
                         className={`weekly-cell weekly-cell--${cell.kind}${isWeeklyRestDayColumn(d) ? " weekly-cell--restcol" : ""}`}
                       >
                         {cellEditable ? (
-                          <select
-                            className="weekly-cell-select"
-                            value={selVal}
-                            onChange={(e) => onCellOverrideChange(u.id, d, e.target.value)}
-                            aria-label={`${u.name} ${d} 표시`}
-                          >
-                            <option value="__auto__">{autoLabel || "자동"}</option>
-                            {WEEKLY_LEAVE_MARK_OPTIONS.filter((mark) => mark !== autoMain).map((mark) => (
-                              <option key={`leave-${mark}`} value={`__leave__:${mark}`}>
-                                {mark}
-                              </option>
-                            ))}
-                            {shiftOptionsForRole(u.role)
-                              .filter(
-                                (x) =>
-                                  x &&
-                                  !WEEKLY_LEAVE_MARK_OPTIONS.includes(x) &&
-                                  x !== LEGACY_WEEKLY_REQUIRED_TRAINING_MARK &&
-                                  x !== autoMain
-                              )
-                              .map((opt) => (
-                                <option key={`base-${opt}`} value={`__base__:${opt}`}>
+                          <div className="weekly-cell-editor">
+                            <select
+                              className="weekly-cell-select"
+                              value={selVal}
+                              onChange={(e) => onCellOverrideChange(u.id, d, e.target.value)}
+                              aria-label={`${u.name} ${d} 표시`}
+                            >
+                              <option value="__auto__">{autoLabel || "자동"}</option>
+                              {WEEKLY_LEAVE_MARK_OPTIONS.filter((mark) => mark !== autoMain).map((mark) => (
+                                <option key={`leave-${mark}`} value={`__leave__:${mark}`}>
+                                  {mark}
+                                </option>
+                              ))}
+                              {shiftOptionsForRole(u.role)
+                                .filter(
+                                  (x) =>
+                                    x &&
+                                    !WEEKLY_LEAVE_MARK_OPTIONS.includes(x) &&
+                                    x !== LEGACY_WEEKLY_REQUIRED_TRAINING_MARK &&
+                                    x !== autoMain
+                                )
+                                .map((opt) => (
+                                  <option key={`base-${opt}`} value={`__base__:${opt}`}>
+                                    {opt}
+                                  </option>
+                                ))}
+                              {extraBaseOpts.map((opt) => (
+                                <option key={`base-extra-${opt}`} value={`__base__:${opt}`}>
                                   {opt}
                                 </option>
                               ))}
-                          </select>
+                              <option value={CUSTOM_SHIFT_SENTINEL}>직접입력</option>
+                            </select>
+                            {showCustomInput ? (
+                              <input
+                                type="text"
+                                className="weekly-cell-custom-input"
+                                placeholder={customPlaceholder}
+                                value={customShiftText(ov.main)}
+                                onChange={(e) => onWeeklyCustomBaseChange(u.id, d, e.target.value)}
+                              />
+                            ) : null}
+                          </div>
                         ) : (
                           <div className="weekly-cell-main weekly-cell-main--one">{weeklyCellDisplayLine(cell)}</div>
                         )}
@@ -6779,6 +6830,10 @@ function CalendarPage({
           shiftCode: normalizeShiftCodeForSave(r?.shiftCode),
         }))
         .filter((it) => it.substituteUserId && it.shiftCode);
+      if (items.length === 0) {
+        window.alert?.("대체자와 번표를 모두 선택(또는 직접입력)한 뒤 저장해 주세요.");
+        return;
+      }
       const staffRole = String(requestId).startsWith("standalone_sub_anesthesia:") ? "ANESTHESIA" : "NURSE";
       await saveStandaloneSubstituteAssignments(leaveDate, items, staffRole);
       return;
@@ -6798,6 +6853,10 @@ function CalendarPage({
         shiftCode: normalizeShiftCodeForSave(r?.shiftCode),
       }))
       .filter((it) => it.substituteUserId && it.shiftCode);
+    if (items.length === 0) {
+      window.alert?.("대체자와 번표를 모두 선택(또는 직접입력)한 뒤 저장해 주세요.");
+      return;
+    }
     if (target.status === "APPLIED") {
       await selectRequest(requestId, { substituteItems: items });
       return;
