@@ -506,7 +506,7 @@ app.get("/api/bootstrap", async (_, res) => {
     await reconcileGoldkeyUsageByPolicy(new Date().toISOString());
     const auditCountRow = await queryOne("SELECT COUNT(*) AS c FROM leave_request_audit");
     res.json({
-      users: await queryAll("SELECT id, name, employee_no, role FROM users"),
+      users: await queryAll("SELECT id, name, employee_no, role, phone FROM users"),
       goldkeys: await queryAll("SELECT * FROM goldkeys"),
       requests: await queryAll(`SELECT * FROM requests WHERE ${SQL_REQ_ACTIVE}`),
       substituteAssignments: await queryAll("SELECT * FROM substitute_assignments"),
@@ -961,7 +961,7 @@ app.post("/api/login", async (req, res) => {
   }
 
   const rows = await queryAll(
-    "SELECT id, name, employee_no, role FROM users WHERE REPLACE(name, ' ', '') = REPLACE(?, ' ', '') AND password = ?",
+    "SELECT id, name, employee_no, role, phone FROM users WHERE REPLACE(name, ' ', '') = REPLACE(?, ' ', '') AND password = ?",
     name,
     password
   );
@@ -1074,7 +1074,7 @@ app.post("/api/admin/registration-requests/:id/approve", async (req, res) => {
     });
 
     const user = await queryOne(
-      "SELECT id, name, employee_no, role FROM users WHERE id = ?",
+      "SELECT id, name, employee_no, role, phone FROM users WHERE id = ?",
       userId
     );
     return res.json({ ok: true, user });
@@ -1148,7 +1148,7 @@ app.post("/api/password-reset", async (req, res) => {
 
 app.get("/api/admin/users", async (_, res) => {
   res.json({
-    users: await queryAll("SELECT id, name, employee_no, role FROM users ORDER BY role DESC, name ASC"),
+    users: await queryAll("SELECT id, name, employee_no, role, phone FROM users ORDER BY role DESC, name ASC"),
   });
 });
 

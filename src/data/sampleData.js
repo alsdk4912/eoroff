@@ -2,6 +2,11 @@
 // 로그인 후 `/api/bootstrap`이 있으면 서버 데이터로 덮어씀.
 
 import { defaultGoldkeyQuotaForName } from "./goldkeyQuotas.js";
+import { phoneForUserName } from "./userPhones.js";
+
+function userPhone(name) {
+  return phoneForUserName(name);
+}
 
 const NURSE_NAMES = [
   "오민아",
@@ -54,36 +59,42 @@ export const users = [
     name,
     role: "NURSE",
     employeeNo: EMPLOYEE_NO_BY_NAME[name] || `N${String(idx + 1).padStart(4, "0")}`,
+    phone: userPhone(name),
   })),
   ...ADMIN_NAMES.map((name, idx) => ({
     id: `u_admin_${idx + 1}`,
     name,
     role: "ADMIN",
     employeeNo: EMPLOYEE_NO_BY_NAME[name] || `A${String(idx + 1).padStart(4, "0")}`,
+    phone: userPhone(name),
   })),
   {
     id: "u_admin2_1",
     name: "관리자2",
     role: "ADMIN2",
     employeeNo: "A9002",
+    phone: "",
   },
   ...ANESTHESIA_NAMES.map((name, idx) => ({
     id: `u_anesthesia_${idx + 1}`,
     name,
     role: "ANESTHESIA",
     employeeNo: EMPLOYEE_NO_BY_NAME[name] || `A${String(idx + 1).padStart(4, "0")}`,
+    phone: userPhone(name),
   })),
   ...CHIEF_NAMES.map((name, idx) => ({
     id: `u_chief_${idx + 1}`,
     name,
     role: "CHIEF",
     employeeNo: EMPLOYEE_NO_BY_NAME[name] || `C${String(idx + 1).padStart(4, "0")}`,
+    phone: userPhone(name),
   })),
   {
     id: "u_emergency_or_1",
     name: "의국",
     role: "EMERGENCY_OR",
     employeeNo: "E0001",
+    phone: "",
   },
 ];
 

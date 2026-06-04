@@ -810,7 +810,15 @@ function App() {
   }
 
   function applyBootstrapPayload(data) {
-    setUsers(data.users.map((u) => ({ id: u.id, name: u.name, role: u.role, employeeNo: u.employee_no })));
+    setUsers(
+      data.users.map((u) => ({
+        id: u.id,
+        name: u.name,
+        role: u.role,
+        employeeNo: u.employee_no,
+        phone: String(u.phone ?? "").trim(),
+      }))
+    );
     const mappedReqs = (data.requests ?? []).map(mapRequestRow);
     const uniqById = new Map();
     for (const r of mappedReqs) {
@@ -996,6 +1004,7 @@ function App() {
           name: u.name,
           employeeNo: u.employee_no,
           role: u.role,
+          phone: String(u.phone ?? "").trim(),
         }))
       );
     } catch {

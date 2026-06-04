@@ -1,13 +1,13 @@
 import { useMemo, useState } from "react";
 
-function dialHref(employeeNo) {
-  const digits = String(employeeNo ?? "").replace(/\D/g, "");
-  if (digits.length < 4) return null;
+function dialHref(user) {
+  const digits = String(user?.phone ?? user?.employeeNo ?? "").replace(/\D/g, "");
+  if (digits.length < 10) return null;
   return `tel:${digits}`;
 }
 
 function DutyCallRow({ label, user }) {
-  const href = user ? dialHref(user.employeeNo) : null;
+  const href = user ? dialHref(user) : null;
   return (
     <li className="emergency-duty-row">
       <span className="emergency-duty-row__label">{label}</span>

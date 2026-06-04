@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { createClient } from "@libsql/client";
 import { defaultGoldkeyQuotaForName } from "../src/data/goldkeyQuotas.js";
+import { PHONE_BY_NAME } from "../src/data/userPhones.js";
 import { ensureKoreanHolidaysThroughYear } from "./koreanHolidays.js";
 
 const EMPLOYEE_NO_BY_NAME = {
@@ -117,7 +118,8 @@ CREATE TABLE IF NOT EXISTS users (
   name TEXT NOT NULL,
   employee_no TEXT NOT NULL,
   role TEXT NOT NULL,
-  password TEXT NOT NULL
+  password TEXT NOT NULL,
+  phone TEXT
 );
 
 CREATE TABLE IF NOT EXISTS goldkeys (
@@ -400,6 +402,7 @@ export async function initDb() {
   await ensureRequestsSoftDeleteColumns();
   await ensureWeeklyCellOverridesTable();
   await ensureRegistrationRequestsTable();
+  await ensureUsersPhoneColumn();
 
   await seedDefaultsIfEmpty();
   await ensureAnesthesiaUsers();
@@ -408,6 +411,7 @@ export async function initDb() {
   await ensureEmergencyOrUser();
   await removeLegacyAdmin3Users();
   await ensureKnownEmployeeNos();
+  await ensureUserPhones();
   await ensureKoreanHolidaysSynced();
   await ensureHolidayDutyAnchors2026();
   await backfillLongTermGoldkeyCancellationExemptions();
@@ -739,6 +743,24 @@ async function ensureEmergencyOrUser() {
 /** 레거시 관리자3 계정 제거 (주임 5명 직접 확정/대체 지정) */
 async function removeLegacyAdmin3Users() {
   await execute("DELETE FROM users WHERE role = 'ADMIN3'");
+}
+
+async function ensureUsersPhoneColumn() {
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", "users_phone_v1");
+  if (done) return;
+  try {
+    await execute("ALTER TABLE users ADD COLUMN phone TEXT");
+  } catch (e) {
+    const msg = String(e?.message ?? e);
+    if (!/duplicate column/i.test(msg)) throw e;
+  }
+  await execute("INSERT INTO app_migrations (id) VALUES (?)", "users_phone_v1");
+}
+
+async function ensureUserPhones() {
+  for (const [name, phone] of Object.entries(PHONE_BY_NAME)) {
+    await execute("UPDATE users SET phone = ? WHERE name = ?", String(phone), name);
+  }
 }
 
 async function ensureKnownEmployeeNos() {
