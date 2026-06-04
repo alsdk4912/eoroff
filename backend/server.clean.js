@@ -1231,7 +1231,7 @@ app.post("/api/day-comments", async (req, res) => {
   try {
     const { actorUserId, targetDate, content } = req.body ?? {};
     const actor = await queryOne(
-      "SELECT id, role FROM users WHERE id = ? AND role IN ('ADMIN', 'NURSE', 'ANESTHESIA')",
+      "SELECT id, role FROM users WHERE id = ? AND role IN ('ADMIN', 'NURSE', 'ANESTHESIA', 'EMERGENCY_OR')",
       actorUserId
     );
     if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
@@ -1249,16 +1249,37 @@ app.post("/api/day-comments", async (req, res) => {
       txt,
       new Date().toISOString()
     );
-    await createNotificationsForAllNurses({
-      type: "DAY_COMMENT",
-      message: `${ymd} 새 댓글 등록`,
-      targetDate: ymd,
-    });
-    await sendPushToAllNurses({
-      title: `${ymd} 새 댓글 등록`,
-      body: `${ymd} 새 댓글 등록`,
-      url: `#/calendar?ymd=${encodeURIComponent(ymd)}&detail=1&focus=comments`,
-    });
+    const commentMsg = `${ymd} 의사소통 메모: ${txt.slice(0, 80)}${txt.length > 80 ? "…" : ""}`;
+    if (String(actor.role) === "EMERGENCY_OR") {
+      const duty = await queryOne(
+        "SELECT nurse1_user_id, nurse2_user_id, anesthesia_user_id FROM holiday_duties WHERE holiday_date = ?",
+        ymd
+      );
+      const chiefRow = await queryOne("SELECT id FROM users WHERE name = ? AND role = 'ADMIN' LIMIT 1", "진기숙");
+      const notifyIds = [
+        duty?.nurse1_user_id,
+        duty?.nurse2_user_id,
+        duty?.anesthesia_user_id,
+        chiefRow?.id,
+      ].filter(Boolean);
+      await createNotificationsForUserIds({
+        userIds: notifyIds,
+        type: "DAY_COMMENT",
+        message: commentMsg,
+        targetDate: ymd,
+      });
+    } else {
+      await createNotificationsForAllNurses({
+        type: "DAY_COMMENT",
+        message: `${ymd} 새 댓글 등록`,
+        targetDate: ymd,
+      });
+      await sendPushToAllNurses({
+        title: `${ymd} 새 댓글 등록`,
+        body: `${ymd} 새 댓글 등록`,
+        url: `#/calendar?ymd=${encodeURIComponent(ymd)}&detail=1&focus=comments`,
+      });
+    }
     return res.json({ ok: true, id });
   } catch (err) {
     console.error("POST /api/day-comments", err);

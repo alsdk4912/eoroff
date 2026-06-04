@@ -850,7 +850,7 @@ button.app-header-update-btn:hover {
 }
 
 @media (max-width: 900px) {
-  .calendar-page__detail {
+  .calendar-page__detail:not(.calendar-page__detail--modal) {
     max-height: min(50vh, 440px);
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
@@ -869,7 +869,7 @@ button.app-header-update-btn:hover {
   position: fixed;
   left: 50%;
   top: 50%;
-  transform: translate(-50%, -50%);
+  transform: translate3d(-50%, -50%, 0);
   width: min(700px, calc(100vw - 56px));
   max-height: 82dvh;
   display: flex;
@@ -880,13 +880,18 @@ button.app-header-update-btn:hover {
   background: var(--bg-page);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
   z-index: 80;
+  overscroll-behavior: contain;
+  touch-action: none;
 }
 
 .calendar-detail-modal-body {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
   padding-bottom: 8px;
 }
 
@@ -906,12 +911,20 @@ button.app-header-update-btn:hover {
 }
 
 @media (max-width: 768px) {
-  /* 신청현황 팝업: 바깥 캘린더가 사방으로 살짝 보이도록 여백 유지 */
   .calendar-page__detail--modal {
-    width: calc(100vw - 44px);
-    max-height: 80dvh;
-    top: 50%;
-    transform: translate(-50%, -50%);
+    left: 0;
+    right: 0;
+    top: auto;
+    bottom: 0;
+    width: 100%;
+    max-height: min(92dvh, 720px);
+    transform: none;
+    border-radius: 16px 16px 0 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .calendar-detail-modal-backdrop {
+    touch-action: none;
   }
 }
 
@@ -4273,4 +4286,29 @@ tr.request-cancelled-row td button {
 .app-bottom-nav--emergency .app-bottom-nav__link {
   flex: 1;
   max-width: none;
+}
+
+.calendar-day-memo-section {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--separator);
+}
+
+.calendar-day-memo-section--emergency {
+  margin-top: 12px;
+}
+
+.calendar-day-memo-section__heading {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+}
+
+.calendar-day-memo-section__admin-memo {
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+.calendar-day-memo-section__compose textarea {
+  width: 100%;
+  box-sizing: border-box;
 }

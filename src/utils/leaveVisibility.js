@@ -417,8 +417,7 @@ export function calendarShowsAllDepartmentsLeaveAndSubstitute(viewerRole) {
     viewerRole === "ANESTHESIA" ||
     viewerRole === "CHIEF" ||
     viewerRole === "ADMIN" ||
-    viewerRole === "ADMIN2" ||
-    viewerRole === "EMERGENCY_OR"
+    viewerRole === "ADMIN2"
   );
 }
 

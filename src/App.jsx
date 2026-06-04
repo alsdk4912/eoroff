@@ -107,6 +107,7 @@ import {
   isConfirmedLeaveStatus,
 } from "./utils/leaveVisibility.js";
 import EmergencySurgeryPanel from "./components/EmergencySurgeryPanel.jsx";
+import CalendarDayMemoSection from "./components/CalendarDayMemoSection.jsx";
 import {
   FORCE_GOLDKEY_NEGOTIATION_KEYS,
   buildLadderDoneKeySet,
@@ -6789,6 +6790,55 @@ function CalendarPage({
     }
   }, [selectedYmd]);
 
+  useEffect(() => {
+    if (!detailModalOpen) return undefined;
+    const prevOverflow = document.body.style.overflow;
+    const prevTouchAction = document.body.style.touchAction;
+    document.body.style.overflow = "hidden";
+    document.body.style.touchAction = "none";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.body.style.touchAction = prevTouchAction;
+    };
+  }, [detailModalOpen]);
+
+  const dayMemoSectionProps = {
+    selectedYmd,
+    adminDayMemos,
+    adminMemoDraft,
+    onAdminMemoDraftChange: setAdminMemoDraft,
+    isOrLeaveAdmin,
+    onSaveAdminMemo: saveAdminDayMemo,
+    selectedDayComments,
+    users,
+    currentUserId,
+    isAnesthesiaLeaveAdmin,
+    isChiefLeaveAdmin,
+    commentDraft,
+    onCommentDraftChange: setCommentDraft,
+    onCreateComment: async (ymd, txt) => {
+      await createDayComment(ymd, txt);
+      setCommentDraft("");
+    },
+    editingCommentId,
+    editingCommentDraft,
+    onEditingCommentDraftChange: setEditingCommentDraft,
+    onStartEditComment: (id, content) => {
+      setEditingCommentId(id);
+      setEditingCommentDraft(content);
+    },
+    onCancelEditComment: () => {
+      setEditingCommentId("");
+      setEditingCommentDraft("");
+    },
+    onUpdateComment: async (id, txt) => {
+      await updateDayComment(id, txt);
+      setEditingCommentId("");
+      setEditingCommentDraft("");
+    },
+    onDeleteComment: deleteDayComment,
+  };
+
   /** 알림·푸시에서 /calendar?ymd=&detail=1 로 진입 시 해당 날짜 상세 모달을 연다 */
   useEffect(() => {
     if (location.pathname !== "/calendar") return;
@@ -7399,14 +7449,17 @@ function CalendarPage({
             <h3 className="calendar-detail-title">{selectedYmd} 상세</h3>
               {isEmergencyOrViewer ? (
                 selectedCell?.isOffDay ? (
-                  <EmergencySurgeryPanel
-                    selectedYmd={selectedYmd}
-                    holidayName={selectedCell?.holidayName}
-                    holidayDuties={holidayDuties}
-                    users={users}
-                    serverMode={serverMode}
-                    onNotify={onNotifyEmergencySurgery}
-                  />
+                  <>
+                    <EmergencySurgeryPanel
+                      selectedYmd={selectedYmd}
+                      holidayName={selectedCell?.holidayName}
+                      holidayDuties={holidayDuties}
+                      users={users}
+                      serverMode={serverMode}
+                      onNotify={onNotifyEmergencySurgery}
+                    />
+                    <CalendarDayMemoSection {...dayMemoSectionProps} variant="emergency" />
+                  </>
                 ) : (
                   <p className="help">주말·공휴일·명절·대체공휴일만 조회할 수 있습니다.</p>
                 )
@@ -7803,6 +7856,7 @@ function CalendarPage({
 
       {selectedYmd &&
       selectedCell?.inMonth &&
+      !isEmergencyOrViewer &&
       calendarShowsAllDepartmentsLeaveAndSubstitute(viewerRole) &&
       (!detailModalOpen || detailTab === "list") ? (
         <section className="admin-day-panel">
@@ -7867,122 +7921,7 @@ function CalendarPage({
               })()}
             </div>
           </div>
-          <div style={{ marginTop: 10 }} data-calendar-scroll-target="duty-memo">
-            <h4>듀티 메모</h4>
-            {isOrLeaveAdmin ? (
-              <>
-                <textarea
-                  className="duty-memo-text"
-                  rows={3}
-                  placeholder="해당 날짜 메모를 입력하세요"
-                  value={adminMemoDraft}
-                  onChange={(e) => setAdminMemoDraft(e.target.value)}
-                />
-                <div style={{ marginTop: 8 }}>
-                  <button type="button" onClick={() => void saveAdminDayMemo(selectedYmd, adminMemoDraft)}>
-                    메모 저장
-                  </button>
-                </div>
-              </>
-            ) : (
-              <p className="help duty-memo-text" style={{ whiteSpace: "pre-wrap" }}>
-                {adminDayMemos?.[selectedYmd] || "등록된 메모가 없습니다."}
-              </p>
-            )}
-          </div>
-          <div className="day-comment-section" style={{ marginTop: 12 }} data-calendar-scroll-target="comments">
-            {selectedDayComments.length === 0 ? (
-              <p className="help">등록된 추가 메모가 없습니다.</p>
-            ) : (
-              <ul className="day-comment-list">
-                {selectedDayComments.map((row) => {
-                  const authorName = users.find((u) => u.id === row.userId)?.name ?? row.userId;
-                  const canManageComment =
-                    currentUserId === row.userId || isOrLeaveAdmin || isAnesthesiaLeaveAdmin || isChiefLeaveAdmin;
-                  const isEditing = editingCommentId === row.id;
-                  return (
-                    <li key={row.id} className="day-comment-item">
-                      {isEditing ? (
-                        <div className="day-comment-edit-wrap">
-                          <textarea rows={2} value={editingCommentDraft} onChange={(e) => setEditingCommentDraft(e.target.value)} />
-                          <div className="row wrap" style={{ marginTop: 6 }}>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (!editingCommentDraft.trim()) return;
-                                void updateDayComment(row.id, editingCommentDraft);
-                                setEditingCommentId("");
-                                setEditingCommentDraft("");
-                              }}
-                              disabled={!editingCommentDraft.trim()}
-                            >
-                              저장
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingCommentId("");
-                                setEditingCommentDraft("");
-                              }}
-                            >
-                              취소
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          <span className="day-comment-author">{authorName}</span>: {row.content}
-                          {canManageComment ? (
-                            <span className="row wrap day-comment-actions">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingCommentId(row.id);
-                                  setEditingCommentDraft(row.content);
-                                }}
-                              >
-                                수정
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (!window.confirm("이 댓글을 삭제할까요?")) return;
-                                  void deleteDayComment(row.id);
-                                }}
-                              >
-                                삭제
-                              </button>
-                            </span>
-                          ) : null}
-                        </>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            <div style={{ marginTop: 8 }}>
-              <textarea
-                rows={2}
-                placeholder="추가 메모를 입력하세요"
-                value={commentDraft}
-                onChange={(e) => setCommentDraft(e.target.value)}
-              />
-              <div style={{ marginTop: 8 }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!selectedYmd || !commentDraft.trim()) return;
-                    void createDayComment(selectedYmd, commentDraft);
-                    setCommentDraft("");
-                  }}
-                  disabled={!commentDraft.trim()}
-                >
-                  댓글 등록
-                </button>
-              </div>
-            </div>
-          </div>
+          <CalendarDayMemoSection {...dayMemoSectionProps} />
         </section>
       ) : null}
       </div>
