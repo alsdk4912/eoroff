@@ -90,6 +90,9 @@ import {
   isScheduleOnlyDashboardRole,
   showHolidayDutyEditorRole,
   substituteScopeStaffRole,
+  standaloneSubstituteRequestId,
+  isStandaloneSubstituteRequestId,
+  parseStandaloneSubstituteLeaveDate,
 } from "./utils/leaveVisibility.js";
 import {
   FORCE_GOLDKEY_NEGOTIATION_KEYS,
@@ -122,16 +125,6 @@ const LS_SUBSTITUTE_ASSIGNMENTS = "or.substituteAssignments.v1";
 
 /** 휴가 신청 없이 날짜만으로 대체 번표를 저장할 때 DB·API와 맞춘 자리표시자 */
 const STANDALONE_SUBSTITUTE_LEAVE_USER_ID = "__none__";
-function standaloneSubstituteRequestId(ymd) {
-  return `standalone_sub:${String(ymd ?? "").slice(0, 10)}`;
-}
-function isStandaloneSubstituteRequestId(id) {
-  return /^standalone_sub:\d{4}-\d{2}-\d{2}$/.test(String(id ?? ""));
-}
-function parseStandaloneSubstituteLeaveDate(requestId) {
-  const m = /^standalone_sub:(\d{4}-\d{2}-\d{2})$/.exec(String(requestId ?? ""));
-  return m ? m[1] : "";
-}
 const LS_WEEKLY_CELL_OVERRIDES = "or.weeklyCellOverrides.v1";
 const LS_NOTIFICATIONS = "or.notifications.v1";
 const LS_NOTICES = "or.notices.v1";
@@ -1884,14 +1877,14 @@ function App() {
     }
   }
 
-  async function saveStandaloneSubstituteAssignments(leaveDate, items) {
+  async function saveStandaloneSubstituteAssignments(leaveDate, items, staffRole = "NURSE") {
     const ld = String(leaveDate ?? "").slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(ld)) return;
     if (!serverMode) {
       window.alert?.("서버 연결 상태에서만 대체 근무를 저장할 수 있습니다. 잠시 후 다시 시도해 주세요.");
       return;
     }
-    const requestId = standaloneSubstituteRequestId(ld);
+    const requestId = standaloneSubstituteRequestId(ld, staffRole);
     const rawItems = Array.isArray(items) ? items : [];
     const normalizedItems = rawItems
       .map((it, idx) => ({
@@ -3176,6 +3169,87 @@ function baseMonthCodeForNurseName(name, ymd, workScheduleByYear) {
   if (raw == null || String(raw).trim() === "") return "—";
   if (isCustomShiftCodeValue(raw)) return customShiftText(raw).trim() || "—";
   return String(raw).trim();
+}
+
+/** 하단 대체자 표: ADMIN2는 수술실·마취·주임 전체, 그 외는 담당 부서만 */
+function renderAdminDaySubstituteGridCells(selectedYmd, selectedCell, substituteAssignments, users, viewerRole) {
+  const cells = [];
+  const pushSubs = (subs, keyPrefix) => {
+    for (let i = 0; i < subs.length; i += 1) {
+      const s = subs[i];
+      const subName = users.find((u) => u.id === s.substituteUserId)?.name ?? s.substituteUserId;
+      const code = String(s.shiftCode ?? "").trim() || "-";
+      cells.push(
+        <span key={`${keyPrefix}_${i}_code`} className="admin-day-substitute-grid__cell">
+          {code}
+        </span>,
+        <span key={`${keyPrefix}_${i}_sub`} className="admin-day-substitute-grid__cell">
+          {subName}
+        </span>
+      );
+    }
+  };
+  const pushApplicant = (item) => {
+    const subs = getSubstituteRecordsForRequest(substituteAssignments, item.id);
+    if (subs.length) {
+      pushSubs(subs, String(item.id));
+      return;
+    }
+    cells.push(
+      <span key={`${item.id}_code`} className="admin-day-substitute-grid__cell">
+        -
+      </span>,
+      <span key={`${item.id}_sub`} className="admin-day-substitute-grid__cell">
+        -
+      </span>
+    );
+  };
+
+  const showAllDepts = viewerRole === "ADMIN2";
+  if (showAllDepts) {
+    for (const item of Array.isArray(selectedCell?.approvedApplicants) ? selectedCell.approvedApplicants : []) {
+      pushApplicant(item);
+    }
+    pushSubs(
+      getSubstituteRecordsForRequest(substituteAssignments, standaloneSubstituteRequestId(selectedYmd, "NURSE")),
+      `orphan_n_${selectedYmd}`
+    );
+    for (const item of Array.isArray(selectedCell?.anesthesiaApprovedApplicants)
+      ? selectedCell.anesthesiaApprovedApplicants
+      : []) {
+      pushApplicant(item);
+    }
+    pushSubs(
+      getSubstituteRecordsForRequest(substituteAssignments, standaloneSubstituteRequestId(selectedYmd, "ANESTHESIA")),
+      `orphan_a_${selectedYmd}`
+    );
+    for (const item of Array.isArray(selectedCell?.chiefApprovedApplicants) ? selectedCell.chiefApprovedApplicants : []) {
+      pushApplicant(item);
+    }
+    return cells;
+  }
+
+  const scope = substituteScopeStaffRole(viewerRole);
+  const approved =
+    scope === "ANESTHESIA"
+      ? [...(Array.isArray(selectedCell?.anesthesiaApprovedApplicants) ? selectedCell.anesthesiaApprovedApplicants : [])]
+      : scope === "CHIEF"
+        ? [...(Array.isArray(selectedCell?.chiefApprovedApplicants) ? selectedCell.chiefApprovedApplicants : [])]
+        : [...(Array.isArray(selectedCell?.approvedApplicants) ? selectedCell.approvedApplicants : [])];
+  for (const item of approved) pushApplicant(item);
+  if (scope === "NURSE") {
+    pushSubs(
+      getSubstituteRecordsForRequest(substituteAssignments, standaloneSubstituteRequestId(selectedYmd, "NURSE")),
+      `orphan_${selectedYmd}`
+    );
+  }
+  if (scope === "ANESTHESIA") {
+    pushSubs(
+      getSubstituteRecordsForRequest(substituteAssignments, standaloneSubstituteRequestId(selectedYmd, "ANESTHESIA")),
+      `orphan_a_${selectedYmd}`
+    );
+  }
+  return cells;
 }
 
 function getSubstituteRecordsForRequest(substituteAssignments, requestId) {
@@ -6451,7 +6525,7 @@ function CalendarPage({
       return;
     }
     const targets = calendarSubTargetRequests;
-    const sid = standaloneSubstituteRequestId(selectedYmd);
+    const sid = standaloneSubstituteRequestId(selectedYmd, substituteScope);
     const orphanRecs = allowStandaloneSubstitute ? getSubstituteRecordsForRequest(substituteAssignments, sid) : [];
 
     const defaultSubRole = substituteScope;
@@ -6606,21 +6680,60 @@ function CalendarPage({
     setCalendarSubRows((prev) => prev.map((r) => (r.rowId === rowId ? { ...r, [key]: value } : r)));
   }
 
-  function removeCalendarSubRow(rowId) {
-    setCalendarSubRows((prev) => {
-      const next = (Array.isArray(prev) ? prev : []).filter((r) => r.rowId !== rowId);
-      if (next.length > 0) return next;
-      const sid = selectedYmd ? standaloneSubstituteRequestId(selectedYmd) : "";
-      if (allowStandaloneSubstitute) {
-        return [{ rowId: `cal_sub_empty_${Date.now()}`, requestId: sid, substituteUserId: "", shiftCode: "" }];
-      }
-      return [];
-    });
+  async function persistSubstituteRowsForRequest(requestId, rowsForRequest) {
+    const items = (Array.isArray(rowsForRequest) ? rowsForRequest : [])
+      .map((r) => ({
+        substituteUserId: String(r?.substituteUserId ?? "").trim(),
+        shiftCode: normalizeShiftCodeForSave(r?.shiftCode),
+      }))
+      .filter((it) => it.substituteUserId && it.shiftCode);
+
+    if (isStandaloneSubstituteRequestId(requestId)) {
+      const leaveDate = parseStandaloneSubstituteLeaveDate(requestId);
+      const staffRole = String(requestId).startsWith("standalone_sub_anesthesia:") ? "ANESTHESIA" : "NURSE";
+      await saveStandaloneSubstituteAssignments(leaveDate, items, staffRole);
+      return;
+    }
+    const target = (Array.isArray(dayRequests) ? dayRequests : []).find((r) => r.id === requestId);
+    if (!target) return;
+    if (target.status === "APPLIED") {
+      await selectRequest(requestId, { substituteItems: items });
+      return;
+    }
+    if (isWinnerStatus(target.status)) {
+      await saveSubstituteForApprovedRequest(requestId, { substituteItems: items });
+    }
+  }
+
+  async function removeCalendarSubRow(rowId) {
+    const row = (Array.isArray(calendarSubRows) ? calendarSubRows : []).find((r) => r.rowId === rowId);
+    if (!row) return;
+    const requestId = String(row.requestId ?? "");
+    const sid = selectedYmd ? standaloneSubstituteRequestId(selectedYmd, substituteScope) : "";
+    const prev = Array.isArray(calendarSubRows) ? calendarSubRows : [];
+    let next = prev.filter((r) => r.rowId !== rowId);
+    if (next.length === 0) {
+      next = [{ rowId: `cal_sub_empty_${Date.now()}`, requestId: requestId || sid, substituteUserId: "", shiftCode: "" }];
+    }
+    setCalendarSubRows(next);
+
+    const recs = getSubstituteRecordsForRequest(substituteAssignments, requestId);
+    const rowWasSaved =
+      recs.length > 0 &&
+      recs.some(
+        (s) =>
+          String(s.substituteUserId) === String(row.substituteUserId) &&
+          String(s.shiftCode ?? "") === String(normalizeShiftCodeForSave(row.shiftCode) ?? "")
+      );
+    if (rowWasSaved) {
+      const grouped = next.filter((r) => String(r.requestId) === requestId);
+      await persistSubstituteRowsForRequest(requestId, grouped);
+    }
   }
 
   function addCalendarSubRow() {
     const targets = calendarSubTargetRequests;
-    const sid = selectedYmd ? standaloneSubstituteRequestId(selectedYmd) : "";
+    const sid = selectedYmd ? standaloneSubstituteRequestId(selectedYmd, substituteScope) : "";
     if (!Array.isArray(calendarSubRows) || calendarSubRows.length === 0) {
       if (targets.length === 0 && !allowStandaloneSubstitute) return;
       setCalendarSubRows([
@@ -6666,7 +6779,8 @@ function CalendarPage({
           shiftCode: normalizeShiftCodeForSave(r?.shiftCode),
         }))
         .filter((it) => it.substituteUserId && it.shiftCode);
-      await saveStandaloneSubstituteAssignments(leaveDate, items);
+      const staffRole = String(requestId).startsWith("standalone_sub_anesthesia:") ? "ANESTHESIA" : "NURSE";
+      await saveStandaloneSubstituteAssignments(leaveDate, items, staffRole);
       return;
     }
     if (!requestId) {
@@ -7234,9 +7348,9 @@ function CalendarPage({
                                   <button type="button" onClick={() => void applyCalendarSubRow(row)}>
                                     저장
                                   </button>
-                                  <button type="button" onClick={() => removeCalendarSubRow(row.rowId)}>
-                                    삭제
-                                  </button>
+                                <button type="button" onClick={() => void removeCalendarSubRow(row.rowId)}>
+                                  삭제
+                                </button>
                                 </div>
                               ))}
                               <button type="button" onClick={addCalendarSubRow}>
@@ -7337,37 +7451,13 @@ function CalendarPage({
               <div className="admin-day-substitute-grid__head">번표</div>
               <div className="admin-day-substitute-grid__head">대체자</div>
               {(() => {
-                const sid = standaloneSubstituteRequestId(selectedYmd);
-                const orphanSubs = allowStandaloneSubstitute
-                  ? getSubstituteRecordsForRequest(substituteAssignments, sid)
-                  : [];
-                const approvedAll =
-                  substituteScope === "ANESTHESIA"
-                    ? [...(Array.isArray(selectedCell.anesthesiaApprovedApplicants) ? selectedCell.anesthesiaApprovedApplicants : [])]
-                    : substituteScope === "CHIEF"
-                      ? [...(Array.isArray(selectedCell.chiefApprovedApplicants) ? selectedCell.chiefApprovedApplicants : [])]
-                      : [...(Array.isArray(selectedCell.approvedApplicants) ? selectedCell.approvedApplicants : [])];
-                const cells = [];
-                for (const item of approvedAll) {
-                  const subs = getSubstituteRecordsForRequest(substituteAssignments, item.id);
-                  if (!subs.length) continue;
-                  subs.forEach((s, i) => {
-                    const subName = users.find((u) => u.id === s.substituteUserId)?.name ?? s.substituteUserId;
-                    const code = String(s.shiftCode ?? "").trim() || "-";
-                    cells.push(
-                      <span key={`${item.id}_${i}_code`} className="admin-day-substitute-grid__cell">{code}</span>,
-                      <span key={`${item.id}_${i}_sub`} className="admin-day-substitute-grid__cell">{subName}</span>
-                    );
-                  });
-                }
-                orphanSubs.forEach((s, i) => {
-                  const subName = users.find((u) => u.id === s.substituteUserId)?.name ?? s.substituteUserId;
-                  const code = String(s.shiftCode ?? "").trim() || "-";
-                  cells.push(
-                    <span key={`orphan_${sid}_${i}_code`} className="admin-day-substitute-grid__cell">{code}</span>,
-                    <span key={`orphan_${sid}_${i}_sub`} className="admin-day-substitute-grid__cell">{subName}</span>
-                  );
-                });
+                const cells = renderAdminDaySubstituteGridCells(
+                  selectedYmd,
+                  selectedCell,
+                  substituteAssignments,
+                  users,
+                  viewerRole
+                );
                 if (cells.length === 0) {
                   return <div className="help" style={{ gridColumn: "1 / -1" }}>없음</div>;
                 }

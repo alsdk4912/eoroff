@@ -1341,13 +1341,18 @@ app.post("/api/substitute-assignments/:requestId/upsert", async (req, res) => {
     const actor = await queryOne("SELECT id, role FROM users WHERE id = ?", actorUserId);
     if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
 
-    const standaloneM = /^standalone_sub:(\d{4}-\d{2}-\d{2})$/.exec(requestId);
+    const standaloneNurseM = /^standalone_sub:(\d{4}-\d{2}-\d{2})$/.exec(requestId);
+    const standaloneAnesM = /^standalone_sub_anesthesia:(\d{4}-\d{2}-\d{2})$/.exec(requestId);
     let leaveDateFromRequest = "";
     let leaveUserIdForSub = "";
-    if (standaloneM) {
-      leaveDateFromRequest = standaloneM[1];
+    if (standaloneNurseM || standaloneAnesM) {
+      leaveDateFromRequest = (standaloneNurseM || standaloneAnesM)[1];
       leaveUserIdForSub = STANDALONE_SUBSTITUTE_LEAVE_USER_ID;
-      if (actor.role !== "ADMIN") {
+      if (standaloneAnesM) {
+        if (actor.role !== "ADMIN2") {
+          return res.status(403).json({ error: "마취과 대체 근무(휴가 없음)는 관리자2만 지정할 수 있습니다." });
+        }
+      } else if (actor.role !== "ADMIN") {
         return res.status(403).json({ error: "수술실 대체 근무는 관리자만 지정할 수 있습니다." });
       }
     } else {

@@ -179,9 +179,24 @@ export function substituteScopeStaffRole(viewerRole) {
   return null;
 }
 
-/** 휴가 신청 없이 날짜만 대체 번표 저장(수술실 관리자 전용) */
+/** 휴가 신청 없이 날짜만 대체 번표 저장 (ADMIN→수술실, ADMIN2→마취과) */
 export function canUseStandaloneSubstituteForViewer(viewerRole) {
-  return isOrLeaveAdminRole(viewerRole);
+  return isOrLeaveAdminRole(viewerRole) || isAnesthesiaLeaveAdminRole(viewerRole);
+}
+
+export function standaloneSubstituteRequestId(ymd, staffRole = "NURSE") {
+  const d = String(ymd ?? "").slice(0, 10);
+  if (staffRole === "ANESTHESIA") return `standalone_sub_anesthesia:${d}`;
+  return `standalone_sub:${d}`;
+}
+
+export function isStandaloneSubstituteRequestId(id) {
+  return /^standalone_sub(?:_anesthesia)?:\d{4}-\d{2}-\d{2}$/.test(String(id ?? ""));
+}
+
+export function parseStandaloneSubstituteLeaveDate(requestId) {
+  const m = /^standalone_sub(?:_anesthesia)?:(\d{4}-\d{2}-\d{2})$/.exec(String(requestId ?? ""));
+  return m ? m[1] : "";
 }
 
 export function requestSubjectStaffRole(requestRow, users) {
