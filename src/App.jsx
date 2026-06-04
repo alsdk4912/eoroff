@@ -97,6 +97,7 @@ import {
   parseStandaloneSubstituteLeaveDate,
   getSubstituteRecordsForRequest,
   buildCalendarSubstituteEditorRows,
+  buildCalendarSubstituteDisplayRows,
   userById,
   isStaffLeaveRole,
   isConfirmedLeaveStatus,
@@ -3516,59 +3517,35 @@ function baseMonthCodeForNurseName(name, ymd, workScheduleByYear) {
   return String(raw).trim();
 }
 
-/** 캘린더 하단 대체자 표: 수술실·마취·주임 전체(모든 로그인 사용자 공유) */
+/** 캘린더 하단 대체자 표: 수술실·마취·주임 전체(미지정 `-` 행 없음) */
 function renderDaySubstituteGridCells(selectedYmd, selectedCell, substituteAssignments, users) {
   const cells = [];
-  const pushSubs = (subs, keyPrefix) => {
-    for (let i = 0; i < subs.length; i += 1) {
-      const s = subs[i];
+  const sections = [
+    { staffRole: "NURSE", applicants: selectedCell?.approvedApplicants, key: "n" },
+    { staffRole: "ANESTHESIA", applicants: selectedCell?.anesthesiaApprovedApplicants, key: "a" },
+    { staffRole: "CHIEF", applicants: selectedCell?.chiefApprovedApplicants, key: "c" },
+  ];
+  for (const { staffRole, applicants, key } of sections) {
+    const rows = buildCalendarSubstituteDisplayRows({
+      selectedYmd,
+      staffRole,
+      approvedApplicants: applicants,
+      substituteAssignments,
+    });
+    for (let i = 0; i < rows.length; i += 1) {
+      const s = rows[i];
       const subName = users.find((u) => u.id === s.substituteUserId)?.name ?? s.substituteUserId;
       const rawCode = String(s.shiftCode ?? "").trim();
       const code = isCustomShiftCodeValue(rawCode) ? customShiftText(rawCode).trim() || "-" : rawCode || "-";
       cells.push(
-        <span key={`${keyPrefix}_${i}_code`} className="admin-day-substitute-grid__cell">
+        <span key={`${key}_${selectedYmd}_${i}_code`} className="admin-day-substitute-grid__cell">
           {code}
         </span>,
-        <span key={`${keyPrefix}_${i}_sub`} className="admin-day-substitute-grid__cell">
+        <span key={`${key}_${selectedYmd}_${i}_sub`} className="admin-day-substitute-grid__cell">
           {subName}
         </span>
       );
     }
-  };
-  const pushApplicant = (item) => {
-    const subs = getSubstituteRecordsForRequest(substituteAssignments, item.id);
-    if (subs.length) {
-      pushSubs(subs, String(item.id));
-      return;
-    }
-    cells.push(
-      <span key={`${item.id}_code`} className="admin-day-substitute-grid__cell">
-        -
-      </span>,
-      <span key={`${item.id}_sub`} className="admin-day-substitute-grid__cell">
-        -
-      </span>
-    );
-  };
-
-  for (const item of Array.isArray(selectedCell?.approvedApplicants) ? selectedCell.approvedApplicants : []) {
-    pushApplicant(item);
-  }
-  pushSubs(
-    getSubstituteRecordsForRequest(substituteAssignments, standaloneSubstituteRequestId(selectedYmd, "NURSE")),
-    `orphan_n_${selectedYmd}`
-  );
-  for (const item of Array.isArray(selectedCell?.anesthesiaApprovedApplicants)
-    ? selectedCell.anesthesiaApprovedApplicants
-    : []) {
-    pushApplicant(item);
-  }
-  pushSubs(
-    getSubstituteRecordsForRequest(substituteAssignments, standaloneSubstituteRequestId(selectedYmd, "ANESTHESIA")),
-    `orphan_a_${selectedYmd}`
-  );
-  for (const item of Array.isArray(selectedCell?.chiefApprovedApplicants) ? selectedCell.chiefApprovedApplicants : []) {
-    pushApplicant(item);
   }
   return cells;
 }

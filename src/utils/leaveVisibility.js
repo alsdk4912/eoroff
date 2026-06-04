@@ -296,6 +296,46 @@ export function buildCalendarSubstituteEditorRows({
   return restored;
 }
 
+/**
+ * 캘린더 하단 「대체자 (전 부서)」 읽기 전용 행. 미지정 휴가자용 `-` 칸 없이 실제 지정만 나열.
+ * standalone 버킷이 있으면 해당 부서는 버킷만 표시(입력란과 동일).
+ */
+export function buildCalendarSubstituteDisplayRows({
+  selectedYmd,
+  staffRole,
+  approvedApplicants,
+  substituteAssignments,
+}) {
+  const applicants = Array.isArray(approvedApplicants) ? approvedApplicants : [];
+  const scopeForStandalone = staffRole === "ANESTHESIA" ? "ANESTHESIA" : "NURSE";
+  const sid =
+    staffRole === "CHIEF" ? null : standaloneSubstituteRequestId(selectedYmd, scopeForStandalone);
+  const orphanRecs = sid ? getSubstituteRecordsForRequest(substituteAssignments, sid) : [];
+  const useStandaloneOnly = orphanRecs.length > 0;
+  const rows = [];
+
+  if (!useStandaloneOnly) {
+    for (const item of applicants) {
+      const recs = getSubstituteRecordsForRequest(substituteAssignments, item.id);
+      for (const s of recs) {
+        rows.push({
+          shiftCode: String(s?.shiftCode ?? "").trim(),
+          substituteUserId: String(s?.substituteUserId ?? ""),
+        });
+      }
+    }
+    return rows;
+  }
+
+  for (const s of orphanRecs) {
+    rows.push({
+      shiftCode: String(s?.shiftCode ?? "").trim(),
+      substituteUserId: String(s?.substituteUserId ?? ""),
+    });
+  }
+  return rows;
+}
+
 export function requestSubjectStaffRole(requestRow, users) {
   return userById(users, requestRow?.userId)?.role ?? "";
 }
