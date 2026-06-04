@@ -4221,7 +4221,7 @@ tr.request-cancelled-row td button {
   background: #e8f2fc;
   border: none;
   box-shadow: none;
-  border-radius: 8px;
+  border-radius: 0;
 }
 
 .calendar-cell--emergency-holiday.calendar-cell--selected {
@@ -4243,7 +4243,14 @@ tr.request-cancelled-row td button {
   bottom: auto;
   transform: translate3d(-50%, -50%, 0);
   width: min(560px, calc(100vw - 28px));
-  max-height: min(68dvh, 520px);
+  max-height: min(62dvh, 480px);
+  z-index: 90;
+}
+
+.calendar-page__detail--modal-emergency .calendar-detail {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
 }
 
 @media (max-width: 768px) {
@@ -4253,10 +4260,14 @@ tr.request-cancelled-row td button {
     top: 50%;
     bottom: auto;
     width: calc(100vw - 24px);
-    max-height: min(72dvh, 560px);
+    max-height: min(58dvh, 440px);
     transform: translate3d(-50%, -50%, 0);
-    border-radius: 16px;
+    border-radius: 12px;
     padding-bottom: 0;
+  }
+
+  .app-shell--emergency .calendar-page__detail:not(.calendar-page__detail--modal) {
+    display: none;
   }
 }
 
@@ -4318,6 +4329,22 @@ tr.request-cancelled-row td button {
 .emergency-anesthesia-type label {
   margin-right: 14px;
   font-size: 14px;
+}
+
+.app-shell--emergency .app-main {
+  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+}
+
+.calendar-page--emergency {
+  gap: 0;
+}
+
+.app-bottom-nav--emergency {
+  z-index: 120;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  position: fixed;
 }
 
 .app-bottom-nav--emergency .app-bottom-nav__link {

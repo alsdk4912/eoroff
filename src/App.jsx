@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -2459,7 +2459,7 @@ function App() {
   }
 
   return (
-    <div className="app app-shell">
+    <div className={`app app-shell${isEmergencyOrViewer ? " app-shell--emergency" : ""}`}>
       <header className="app-header app-header--shell">
         <div className="app-header-row">
           <div className="app-header-brand">
@@ -6909,6 +6909,18 @@ function CalendarPage({
   const calendarSwipeRef = useRef({ startX: 0, startY: 0, tracking: false, triggered: false });
   const skipNextCalendarTapRef = useRef(false);
   const calendarTopRef = useRef(null);
+  const showCalendarDetailPanel = !isEmergencyOrViewer || detailModalOpen;
+  const closeCalendarDetailModal = useCallback(() => {
+    setDetailModalOpen(false);
+    setSelectedYmd("");
+    if (isEmergencyOrViewer) {
+      requestAnimationFrame(() => {
+        calendarTopRef.current?.scrollIntoView({ block: "nearest", behavior: "auto" });
+        const main = document.querySelector(".app-main");
+        if (main) main.scrollTo({ top: 0, behavior: "auto" });
+      });
+    }
+  }, [isEmergencyOrViewer, setSelectedYmd]);
 
   useEffect(() => {
     if (!selectedYmd || !selectedCell?.isOffDay) {
@@ -7290,7 +7302,7 @@ function CalendarPage({
 
   return (
     <section className="card calendar-page-card">
-      <div className="calendar-page">
+      <div className={`calendar-page${isEmergencyOrViewer ? " calendar-page--emergency" : ""}`}>
         <div
           ref={calendarTopRef}
           className="calendar-page__top"
@@ -7457,14 +7469,10 @@ function CalendarPage({
       </div>
         </div>
 
+        {showCalendarDetailPanel ? (
+          <>
         {detailModalOpen ? (
-          <div
-            className="calendar-detail-modal-backdrop"
-            onClick={() => {
-              setDetailModalOpen(false);
-              setSelectedYmd("");
-            }}
-          />
+          <div className="calendar-detail-modal-backdrop" onClick={closeCalendarDetailModal} />
         ) : null}
         <div
           className={`calendar-page__detail${detailModalOpen ? " calendar-page__detail--modal" : ""}${
@@ -7965,19 +7973,14 @@ function CalendarPage({
 
       {detailModalOpen ? (
         <div className="calendar-detail-modal-footer">
-          <button
-            type="button"
-            className="calendar-detail-modal-close"
-            onClick={() => {
-              setDetailModalOpen(false);
-              setSelectedYmd("");
-            }}
-          >
+          <button type="button" className="calendar-detail-modal-close" onClick={closeCalendarDetailModal}>
             닫기
           </button>
         </div>
       ) : null}
         </div>
+          </>
+        ) : null}
       </div>
     </section>
   );

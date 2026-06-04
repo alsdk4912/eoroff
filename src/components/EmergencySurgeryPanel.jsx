@@ -114,7 +114,7 @@ export default function EmergencySurgeryPanel({
           type="text"
           value={surgeryName}
           onChange={(e) => setSurgeryName(e.target.value)}
-          placeholder="예: 급성 충수절제술"
+          placeholder="예: 유리체절제술"
           disabled={busy}
         />
         <label className="field-label">수술 시작</label>
