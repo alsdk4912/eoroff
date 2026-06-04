@@ -2694,64 +2694,20 @@ function App() {
   );
 }
 
-/** 앱 아이콘(public/icon.svg)과 동일 — 로그인 상단 마크 */
-function LoginEorMark() {
-  return (
-    <svg
-      className="login-brand__mark"
-      viewBox="0 0 512 512"
-      width={72}
-      height={72}
-      role="img"
-      aria-label="EOROFF 휴가시스템"
-    >
-      <rect width="512" height="512" rx="96" fill="#2B9EF0" />
-      <g fill="none" stroke="#ffffff" strokeWidth="10" strokeLinecap="round">
-        <path d="M320 118c-8-22-35-34-58-26-6-28-35-46-64-40-22 4-40 22-44 44-18 2-32 18-32 36 0 22 18 40 40 40h98c26 0 48-20 52-46 4-2 6-4 8-8z" />
-      </g>
-      <g fill="none" stroke="#ffffff" strokeWidth="9" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M128 400V280" />
-        <path d="M148 400V300" />
-        <path d="M118 268c-28-48-22-92 8-120" />
-        <path d="M138 278c18-62 8-108-18-132" />
-        <path d="M158 288c32-58 28-102 2-128" />
-        <path d="M108 248c-42-8-62 12-68 38" />
-        <path d="M168 258c38-18 58-8 72 14" />
-      </g>
-      <text
-        x="310"
-        y="258"
-        fill="#ffffff"
-        fontFamily="system-ui, -apple-system, sans-serif"
-        fontSize="88"
-        fontWeight="800"
-      >
-        EOR
-      </text>
-      <text
-        x="256"
-        y="378"
-        fill="#ffffff"
-        fontFamily="system-ui, -apple-system, 'Apple SD Gothic Neo', sans-serif"
-        fontSize="44"
-        fontWeight="600"
-        textAnchor="middle"
-      >
-        휴가시스템
-      </text>
-    </svg>
-  );
-}
+const LOGIN_APP_LOGO_URL = `${import.meta.env.BASE_URL}app-logo.png`;
 
 function LoginBrandHeader() {
   return (
     <header className="login-brand" aria-label="EOROFF 이오알오프">
-      <LoginEorMark />
+      <img
+        className="login-brand__logo"
+        src={LOGIN_APP_LOGO_URL}
+        width={112}
+        height={112}
+        alt="eoroff 휴가·근무 관리"
+        decoding="async"
+      />
       <p className="login-brand__eyebrow">수술실 휴가·근무 관리</p>
-      <p className="login-brand__title">EOROFF</p>
-      <p className="login-brand__kr" lang="ko">
-        이오알오프
-      </p>
       <p className="login-brand__tag">수술실 · 마취 · 주임 휴가를 한곳에서</p>
     </header>
   );
@@ -2837,28 +2793,9 @@ function LoginPage({ onLogin, onResetPassword, onRegister, apiConfigured, apiRea
 
   return (
     <div className="login-scene">
-      <div className="login-scene__sky" aria-hidden="true">
-        <span className="login-scene__orb login-scene__orb--1" />
-        <span className="login-scene__orb login-scene__orb--2" />
-        <span className="login-scene__orb login-scene__orb--3" />
-        <svg className="login-scene__palm login-scene__palm--left" viewBox="0 0 120 200" aria-hidden="true">
-          <path
-            d="M60 200V95M48 200V115M72 200V125M60 92c-18-32-14-62 6-82M72 98c10-38 4-66-14-84M88 104c22-36 18-64-4-80M42 88c-28-6-40 8-44 28"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="5"
-            strokeLinecap="round"
-          />
-        </svg>
-        <svg className="login-scene__palm login-scene__palm--right" viewBox="0 0 120 200" aria-hidden="true">
-          <path
-            d="M60 200V95M48 200V115M72 200V125M60 92c-18-32-14-62 6-82M72 98c10-38 4-66-14-84M88 104c22-36 18-64-4-80M42 88c-28-6-40 8-44 28"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="5"
-            strokeLinecap="round"
-          />
-        </svg>
+      <div className="login-scene__decor" aria-hidden="true">
+        <span className="login-scene__blob login-scene__blob--blue" />
+        <span className="login-scene__blob login-scene__blob--green" />
       </div>
 
       <div className="login-scene__content">
