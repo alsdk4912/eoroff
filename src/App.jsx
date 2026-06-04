@@ -6802,43 +6802,6 @@ function CalendarPage({
     };
   }, [detailModalOpen]);
 
-  const dayMemoSectionProps = {
-    selectedYmd,
-    adminDayMemos,
-    adminMemoDraft,
-    onAdminMemoDraftChange: setAdminMemoDraft,
-    isOrLeaveAdmin,
-    onSaveAdminMemo: saveAdminDayMemo,
-    selectedDayComments,
-    users,
-    currentUserId,
-    isAnesthesiaLeaveAdmin,
-    isChiefLeaveAdmin,
-    commentDraft,
-    onCommentDraftChange: setCommentDraft,
-    onCreateComment: async (ymd, txt) => {
-      await createDayComment(ymd, txt);
-      setCommentDraft("");
-    },
-    editingCommentId,
-    editingCommentDraft,
-    onEditingCommentDraftChange: setEditingCommentDraft,
-    onStartEditComment: (id, content) => {
-      setEditingCommentId(id);
-      setEditingCommentDraft(content);
-    },
-    onCancelEditComment: () => {
-      setEditingCommentId("");
-      setEditingCommentDraft("");
-    },
-    onUpdateComment: async (id, txt) => {
-      await updateDayComment(id, txt);
-      setEditingCommentId("");
-      setEditingCommentDraft("");
-    },
-    onDeleteComment: deleteDayComment,
-  };
-
   /** 알림·푸시에서 /calendar?ymd=&detail=1 로 진입 시 해당 날짜 상세 모달을 연다 */
   useEffect(() => {
     if (location.pathname !== "/calendar") return;
@@ -7017,6 +6980,43 @@ function CalendarPage({
       .slice()
       .sort((a, b) => String(a.createdAt ?? "").localeCompare(String(b.createdAt ?? "")));
   }, [dayComments, selectedYmd]);
+
+  const dayMemoSectionProps = {
+    selectedYmd,
+    adminDayMemos,
+    adminMemoDraft,
+    onAdminMemoDraftChange: setAdminMemoDraft,
+    isOrLeaveAdmin,
+    onSaveAdminMemo: saveAdminDayMemo,
+    selectedDayComments,
+    users,
+    currentUserId,
+    isAnesthesiaLeaveAdmin,
+    isChiefLeaveAdmin,
+    commentDraft,
+    onCommentDraftChange: setCommentDraft,
+    onCreateComment: async (ymd, txt) => {
+      await createDayComment(ymd, txt);
+      setCommentDraft("");
+    },
+    editingCommentId,
+    editingCommentDraft,
+    onEditingCommentDraftChange: setEditingCommentDraft,
+    onStartEditComment: (id, content) => {
+      setEditingCommentId(id);
+      setEditingCommentDraft(content);
+    },
+    onCancelEditComment: () => {
+      setEditingCommentId("");
+      setEditingCommentDraft("");
+    },
+    onUpdateComment: async (id, txt) => {
+      await updateDayComment(id, txt);
+      setEditingCommentId("");
+      setEditingCommentDraft("");
+    },
+    onDeleteComment: deleteDayComment,
+  };
 
   const ladderDoneKeySet = useMemo(() => buildLadderDoneKeySet(ladderResults), [ladderResults]);
   const negotiationMetaByRequestId = useMemo(
