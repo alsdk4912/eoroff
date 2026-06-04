@@ -6974,20 +6974,20 @@ function CalendarPage({
   const calendarTopRef = useRef(null);
   const deptHeadHolidayViewer = isDeptHeadRole(viewerRole);
   const holidayDutyContactViewer = isHolidayDutyContactViewer(viewerRole);
-  const useHolidayDutyModalOnly =
-    isEmergencyOrViewer || (deptHeadHolidayViewer && Boolean(selectedCell?.isOffDay));
-  const showCalendarDetailPanel = useHolidayDutyModalOnly ? detailModalOpen : true;
+  /** 의국·부서파트장: 모바일 포함 당직일과 동일한 여백 있는 중앙 팝업 */
+  const useCompactDetailModal = isEmergencyOrViewer || deptHeadHolidayViewer;
+  const showCalendarDetailPanel = useCompactDetailModal ? detailModalOpen : true;
   const closeCalendarDetailModal = useCallback(() => {
     setDetailModalOpen(false);
     setSelectedYmd("");
-    if (useHolidayDutyModalOnly) {
+    if (useCompactDetailModal) {
       requestAnimationFrame(() => {
         calendarTopRef.current?.scrollIntoView({ block: "nearest", behavior: "auto" });
         const main = document.querySelector(".app-main");
         if (main) main.scrollTo({ top: 0, behavior: "auto" });
       });
     }
-  }, [useHolidayDutyModalOnly, setSelectedYmd]);
+  }, [useCompactDetailModal, setSelectedYmd]);
 
   useEffect(() => {
     if (!selectedYmd || !selectedCell?.isOffDay) {
@@ -7543,7 +7543,7 @@ function CalendarPage({
         ) : null}
         <div
           className={`calendar-page__detail${detailModalOpen ? " calendar-page__detail--modal" : ""}${
-            detailModalOpen && useHolidayDutyModalOnly ? " calendar-page__detail--modal-emergency" : ""
+            detailModalOpen && useCompactDetailModal ? " calendar-page__detail--modal-emergency" : ""
           }`}
         >
       <div className={detailModalOpen ? "calendar-detail-modal-body" : undefined}>
