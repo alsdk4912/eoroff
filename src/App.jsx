@@ -30,6 +30,7 @@ import {
   generalNormalLadderLockedMessage,
 } from "./utils/rules";
 import { api, isApiConfigured, pingApiHealth } from "./api/client";
+import EoroffLoginLogo from "./components/EoroffLoginLogo.jsx";
 import { defaultGoldkeyQuotaForName } from "./data/goldkeyQuotas.js";
 import {
   ANESTHESIA_SHIFT_OPTIONS,
@@ -2722,20 +2723,11 @@ function App() {
   );
 }
 
-const LOGIN_APP_LOGO_URL = `${import.meta.env.BASE_URL}app-logo.png`;
-
 function LoginBrandHeader() {
   return (
     <header className="login-hero" aria-label="eoroff">
       <div className="login-hero__logo-wrap">
-        <img
-          className="login-hero__logo"
-          src={LOGIN_APP_LOGO_URL}
-          width={104}
-          height={110}
-          alt=""
-          decoding="async"
-        />
+        <EoroffLoginLogo />
       </div>
       <p className="login-hero__caption">수술실 · 마취 · 주임 휴가를 한곳에서</p>
     </header>
