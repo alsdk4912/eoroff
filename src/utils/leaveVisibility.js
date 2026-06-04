@@ -171,6 +171,16 @@ export function isChiefLeaveAdminRole(role) {
   return role === "CHIEF";
 }
 
+/** 응급실 의국: 캘린더 휴일 당직·응급수술 연락 전용 */
+export function isEmergencyOrRole(role) {
+  return role === "EMERGENCY_OR";
+}
+
+/** 캘린더에서 주말·공휴·명절·대체공휴일만 열람 */
+export function isCalendarOffDaysOnlyRole(role) {
+  return isEmergencyOrRole(role);
+}
+
 /** 캘린더 대체 입력 UI 담당 부서 (ADMIN→수술실, ADMIN2→마취, CHIEF→주임) */
 export function substituteScopeStaffRole(viewerRole) {
   if (isOrLeaveAdminRole(viewerRole)) return "NURSE";
@@ -407,7 +417,8 @@ export function calendarShowsAllDepartmentsLeaveAndSubstitute(viewerRole) {
     viewerRole === "ANESTHESIA" ||
     viewerRole === "CHIEF" ||
     viewerRole === "ADMIN" ||
-    viewerRole === "ADMIN2"
+    viewerRole === "ADMIN2" ||
+    viewerRole === "EMERGENCY_OR"
   );
 }
 

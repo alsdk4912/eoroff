@@ -4196,3 +4196,81 @@ tr.request-cancelled-row td button {
     font-size: 12px !important;
   }
 }
+
+.calendar-cell--noninteractive {
+  opacity: 0.45;
+  cursor: default;
+  pointer-events: none;
+}
+
+.calendar-cell-duty-hint {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent, #2563eb);
+  margin-top: 2px;
+}
+
+.emergency-surgery-panel {
+  margin: 12px 0 16px;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--separator);
+  background: var(--surface-elevated, #f8fafc);
+}
+
+.emergency-surgery-panel__title {
+  margin: 0 0 6px;
+  font-size: 1rem;
+}
+
+.emergency-surgery-panel__lead {
+  margin: 0 0 12px;
+}
+
+.emergency-duty-list {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+}
+
+.emergency-duty-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--separator);
+}
+
+.emergency-duty-row__label {
+  min-width: 6.5rem;
+  font-size: 13px;
+  color: var(--text-secondary, #64748b);
+}
+
+.emergency-duty-row__name {
+  flex: 1;
+  font-weight: 600;
+}
+
+.emergency-duty-row__call {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--accent, #2563eb);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.emergency-anesthesia-type label {
+  margin-right: 14px;
+  font-size: 14px;
+}
+
+.app-bottom-nav--emergency .app-bottom-nav__link {
+  flex: 1;
+  max-width: none;
+}

@@ -405,6 +405,7 @@ export async function initDb() {
   await ensureAnesthesiaUsers();
   await ensureAdmin2User();
   await ensureChiefUsers();
+  await ensureEmergencyOrUser();
   await removeLegacyAdmin3Users();
   await ensureKnownEmployeeNos();
   await ensureKoreanHolidaysSynced();
@@ -719,6 +720,20 @@ async function ensureChiefUsers() {
       "1234"
     );
   }
+}
+
+/** 응급실 의국 — 휴일 당직·응급수술 연락 전용 */
+async function ensureEmergencyOrUser() {
+  const row = await queryOne("SELECT id FROM users WHERE name = ? AND role = 'EMERGENCY_OR'", "의국");
+  if (row?.id) return;
+  await execute(
+    "INSERT INTO users (id, name, employee_no, role, password) VALUES (?, ?, ?, ?, ?)",
+    "u_emergency_or_1",
+    "의국",
+    "E0001",
+    "EMERGENCY_OR",
+    "1234"
+  );
 }
 
 /** 레거시 관리자3 계정 제거 (주임 5명 직접 확정/대체 지정) */

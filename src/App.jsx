@@ -89,6 +89,8 @@ import {
   isLeaveManagerRole,
   calendarShowsAllDepartmentsLeaveAndSubstitute,
   isOrLeaveAdminRole,
+  isEmergencyOrRole,
+  isCalendarOffDaysOnlyRole,
   isScheduleOnlyDashboardRole,
   showHolidayDutyEditorRole,
   substituteScopeStaffRole,
@@ -104,6 +106,7 @@ import {
   isStaffLeaveRole,
   isConfirmedLeaveStatus,
 } from "./utils/leaveVisibility.js";
+import EmergencySurgeryPanel from "./components/EmergencySurgeryPanel.jsx";
 import {
   FORCE_GOLDKEY_NEGOTIATION_KEYS,
   buildLadderDoneKeySet,
@@ -616,6 +619,7 @@ function App() {
   const isAnesthesiaLeaveAdmin = isAnesthesiaLeaveAdminRole(viewerRole);
   const isChiefLeaveAdmin = isChiefLeaveAdminRole(viewerRole);
   const isLeaveManager = isLeaveManagerRole(viewerRole);
+  const isEmergencyOrViewer = isEmergencyOrRole(viewerRole);
   const isAdmin = isOrLeaveAdmin;
   const canEditHolidayDuty = showHolidayDutyEditorRole(viewerRole);
   const myGoldkey = goldkeys.find((g) => g.userId === auth?.userId);
@@ -2398,6 +2402,19 @@ function App() {
     setRegistrationAdminMessage("가입 요청을 승인했습니다.");
   }
 
+  async function handleNotifyEmergencySurgery(payload) {
+    if (!serverMode || !auth?.userId) {
+      throw new Error("서버 연결 후 알림을 보낼 수 있습니다.");
+    }
+    await api.notifyEmergencySurgery({
+      actorUserId: auth.userId,
+      leaveDate: payload?.leaveDate,
+      surgeryName: payload?.surgeryName,
+      startTime: payload?.startTime,
+      anesthesiaType: payload?.anesthesiaType,
+    });
+  }
+
   async function handleRejectRegistration(requestId, reason) {
     await api.rejectRegistrationRequest(requestId, {
       adminUserId: auth.userId,
@@ -2446,7 +2463,9 @@ function App() {
                         ? " · 마취"
                         : viewerRole === "CHIEF"
                           ? " · 주임"
-                          : ""}
+                          : viewerRole === "EMERGENCY_OR"
+                            ? " · 의국"
+                            : ""}
             </p>
           </div>
           <div className="app-header-actions app-header-actions--inline">
@@ -2502,6 +2521,9 @@ function App() {
         <Route
           path="/request"
           element={
+            isEmergencyOrViewer ? (
+              <Navigate to="/calendar" replace />
+            ) : (
             <RequestPage
               leaveType={leaveType}
               setLeaveType={setLeaveType}
@@ -2514,11 +2536,15 @@ function App() {
               message={message}
               viewerRole={viewerRole}
             />
+            )
           }
         />
         <Route
           path="/my"
           element={
+            isEmergencyOrViewer ? (
+              <Navigate to="/calendar" replace />
+            ) : (
             <MyRequestsPage
               myRequests={myRequests}
               cancelRequest={cancelRequest}
@@ -2527,11 +2553,15 @@ function App() {
               serverMode={serverMode}
               onUpdateLeaveNature={updateLeaveNatureForRequest}
             />
+            )
           }
         />
         <Route
           path="/dashboard"
           element={
+            isEmergencyOrViewer ? (
+              <Navigate to="/calendar" replace />
+            ) : (
             <DashboardPage
               dashboard={dashboard}
               goldkeys={goldkeys}
@@ -2562,11 +2592,15 @@ function App() {
               rejectRequest={rejectRequest}
               saveSubstituteForApprovedRequest={saveSubstituteForApprovedRequest}
             />
+            )
           }
         />
         <Route
           path="/notices"
           element={
+            isEmergencyOrViewer ? (
+              <Navigate to="/calendar" replace />
+            ) : (
             <NoticeBoardPage
               notices={notices}
               noticeComments={noticeComments}
@@ -2580,11 +2614,15 @@ function App() {
               updateNoticeComment={updateNoticeComment}
               deleteNoticeComment={deleteNoticeComment}
             />
+            )
           }
         />
         <Route
           path="/ladder"
           element={
+            isEmergencyOrViewer ? (
+              <Navigate to="/calendar" replace />
+            ) : (
             <LadderGamePage
               users={users}
               requests={requestsVisibleInUi}
@@ -2593,6 +2631,7 @@ function App() {
               applyLadderResultToNegotiationOrder={applyLadderResultToNegotiationOrder}
               currentUserId={auth?.userId}
             />
+            )
           }
         />
         <Route
@@ -2639,6 +2678,9 @@ function App() {
               deleteDayComment={deleteDayComment}
               ladderResults={ladderResults}
               cancelRequest={cancelRequest}
+              isEmergencyOrViewer={isEmergencyOrViewer}
+              serverMode={serverMode}
+              onNotifyEmergencySurgery={handleNotifyEmergencySurgery}
             />
           }
         />
@@ -2664,7 +2706,9 @@ function App() {
         <Route
           path="/settings"
           element={
-            isAdmin ? (
+            isEmergencyOrViewer ? (
+              <Navigate to="/calendar" replace />
+            ) : isAdmin ? (
               <SettingsPage
                 apiKey={apiKey}
                 setApiKey={setApiKey}
@@ -2711,7 +2755,18 @@ function App() {
             />
           }
         />
-        <Route path="/more" element={isAdmin ? <Navigate to="/settings" replace /> : <Navigate to="/calendar" replace />} />
+        <Route
+          path="/more"
+          element={
+            isEmergencyOrViewer ? (
+              <Navigate to="/calendar" replace />
+            ) : isAdmin ? (
+              <Navigate to="/settings" replace />
+            ) : (
+              <Navigate to="/calendar" replace />
+            )
+          }
+        />
         <Route path="*" element={<Navigate to="/calendar" />} />
       </Routes>
       </main>
@@ -2720,6 +2775,7 @@ function App() {
         isOrLeaveAdmin={isOrLeaveAdmin}
         isAnesthesiaLeaveAdmin={isAnesthesiaLeaveAdmin}
         isChiefLeaveAdmin={isChiefLeaveAdmin}
+        isEmergencyOrViewer={isEmergencyOrViewer}
         role={viewerRole}
       />
     </div>
@@ -5528,7 +5584,7 @@ function navLinkClass({ isActive }) {
 }
 
 /** 하단 고정 탭 — 한 손 엄지로 주요 화면 전환 */
-function AppBottomNav({ isOrLeaveAdmin, isAnesthesiaLeaveAdmin, isChiefLeaveAdmin, role }) {
+function AppBottomNav({ isOrLeaveAdmin, isAnesthesiaLeaveAdmin, isChiefLeaveAdmin, isEmergencyOrViewer, role }) {
   const showMy = role === "NURSE" || role === "ANESTHESIA" || role === "CHIEF";
   const showNotices =
     role === "NURSE" ||
@@ -5536,6 +5592,16 @@ function AppBottomNav({ isOrLeaveAdmin, isAnesthesiaLeaveAdmin, isChiefLeaveAdmi
     role === "CHIEF" ||
     role === "ADMIN" ||
     role === "ADMIN2";
+
+  if (isEmergencyOrViewer) {
+    return (
+      <nav className="app-bottom-nav app-bottom-nav--emergency" aria-label="주 메뉴">
+        <NavLink to="/calendar" className={navLinkClass} end>
+          휴일·당직
+        </NavLink>
+      </nav>
+    );
+  }
 
   if (isOrLeaveAdmin) {
     return (
@@ -6684,10 +6750,14 @@ function CalendarPage({
   deleteDayComment,
   ladderResults,
   cancelRequest,
+  isEmergencyOrViewer = false,
+  serverMode = false,
+  onNotifyEmergencySurgery,
 }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [detailTab, setDetailTab] = useState("list");
+  const offDaysOnlyViewer = isCalendarOffDaysOnlyRole(viewerRole);
   const [ymModalOpen, setYmModalOpen] = useState(false);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const CALENDAR_DAY_CHIP_MAX = 4;
@@ -7201,13 +7271,17 @@ function CalendarPage({
             hasDuty &&
             (duty?.nurse1UserId === currentUserId || duty?.nurse2UserId === currentUserId || duty?.anesthesiaUserId === currentUserId);
           const myDutyClass = isMyDuty ? " calendar-cell--my-duty" : "";
+          const canOpenCell = cell.inMonth && (!offDaysOnlyViewer || cell.isOffDay);
+          const nonInteractiveClass =
+            offDaysOnlyViewer && cell.inMonth && !cell.isOffDay ? " calendar-cell--noninteractive" : "";
           return (
             <div
               key={`${cell.date}-${idx}`}
-              role="button"
-              tabIndex={0}
-              className={`calendar-cell calendar-cell--clickable ${cell.inMonth ? "" : "muted"}${myDutyClass}${isToday ? " calendar-cell--today" : ""}${isSel ? " calendar-cell--selected" : ""}`}
+              role={canOpenCell ? "button" : undefined}
+              tabIndex={canOpenCell ? 0 : -1}
+              className={`calendar-cell${canOpenCell ? " calendar-cell--clickable" : ""} ${cell.inMonth ? "" : "muted"}${myDutyClass}${nonInteractiveClass}${isToday ? " calendar-cell--today" : ""}${isSel ? " calendar-cell--selected" : ""}`}
               onClick={() => {
+                if (!canOpenCell) return;
                 if (skipNextCalendarTapRef.current) {
                   skipNextCalendarTapRef.current = false;
                   return;
@@ -7218,6 +7292,7 @@ function CalendarPage({
                 setDetailModalOpen(true);
               }}
               onKeyDown={(e) => {
+                if (!canOpenCell) return;
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
                   setSelectedYmd(cell.date);
@@ -7228,7 +7303,12 @@ function CalendarPage({
               }}
             >
               <div className={`calendar-date${cell.isOffDay ? " calendar-date--holiday" : ""}`}>{cell.day}</div>
-              {cell.inMonth && calendarCellHasConfirmedChips(cell) ? (
+              {offDaysOnlyViewer && cell.inMonth && hasDuty ? (
+                <div className="calendar-cell-duty-hint" title="당직 등록됨">
+                  당직
+                </div>
+              ) : null}
+              {cell.inMonth && !offDaysOnlyViewer && calendarCellHasConfirmedChips(cell) ? (
                 <div className="calendar-cell-events">
                   {(() => {
                     const or = cell.displayApplicants ?? [];
@@ -7308,7 +7388,21 @@ function CalendarPage({
         {!selectedYmd ? null : (
           <>
             <h3 className="calendar-detail-title">{selectedYmd} 상세</h3>
-              {canEditHolidayDuty && selectedCell?.isOffDay ? (
+              {isEmergencyOrViewer ? (
+                selectedCell?.isOffDay ? (
+                  <EmergencySurgeryPanel
+                    selectedYmd={selectedYmd}
+                    holidayName={selectedCell?.holidayName}
+                    holidayDuties={holidayDuties}
+                    users={users}
+                    serverMode={serverMode}
+                    onNotify={onNotifyEmergencySurgery}
+                  />
+                ) : (
+                  <p className="help">주말·공휴일·명절·대체공휴일만 조회할 수 있습니다.</p>
+                )
+              ) : null}
+              {!isEmergencyOrViewer && canEditHolidayDuty && selectedCell?.isOffDay ? (
                 <section className="holiday-duty-panel">
                   <h4 className="holiday-duty-title">휴일 당직자 기록 (주말·공휴·대체공휴일·명절)</h4>
                   <div className="row wrap holiday-duty-grid">
@@ -7372,11 +7466,11 @@ function CalendarPage({
                   )}
                 </section>
               ) : null}
-              {selectedCell?.isOffDay && !isChiefViewer ? (
+              {!isEmergencyOrViewer && selectedCell?.isOffDay && !isChiefViewer ? (
                 <p className="help" style={{ marginTop: 10 }}>
                   이 날짜는 휴일(공휴일/주말)로 휴가 신청을 받지 않습니다.
                 </p>
-              ) : (
+              ) : !isEmergencyOrViewer ? (
                 <>
                   <div className="calendar-detail-tabs" role="tablist">
                     <button
@@ -7589,7 +7683,7 @@ function CalendarPage({
                           })}
                         </>
                       )}
-                      {substituteSectionMeta ? (
+                      {substituteSectionMeta && !isEmergencyOrViewer ? (
                         <div className={`admin-calendar-substitute-section ${substituteSectionMeta.sectionClass}`.trim()}>
                           <h4 className="admin-calendar-substitute-title">{substituteSectionMeta.title}</h4>
                           <p className="help admin-calendar-substitute-lead">{substituteSectionMeta.lead}</p>
@@ -7693,7 +7787,7 @@ function CalendarPage({
                     </div>
                   )}
                 </>
-              )}
+              ) : null}
           </>
         )}
       </div>

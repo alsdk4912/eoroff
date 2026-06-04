@@ -79,6 +79,12 @@ export const users = [
     role: "CHIEF",
     employeeNo: EMPLOYEE_NO_BY_NAME[name] || `C${String(idx + 1).padStart(4, "0")}`,
   })),
+  {
+    id: "u_emergency_or_1",
+    name: "의국",
+    role: "EMERGENCY_OR",
+    employeeNo: "E0001",
+  },
 ];
 
 export const initialGoldkeys = [

@@ -348,6 +348,29 @@ async function createNotificationsForAllNurses({ type, message, targetDate = "",
   }
 }
 
+async function createNotificationsForUserIds({ userIds, type, message, targetDate = "", leaveRequestId = "" }) {
+  const msg = String(message ?? "").trim();
+  if (!msg) return;
+  const nowIso = new Date().toISOString();
+  const seen = new Set();
+  let i = 0;
+  for (const rawId of Array.isArray(userIds) ? userIds : []) {
+    const uid = String(rawId ?? "").trim();
+    if (!uid || seen.has(uid)) continue;
+    seen.add(uid);
+    await execute(
+      "INSERT INTO notifications (id, user_id, type, message, target_date, leave_request_id, created_at, read_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)",
+      `ntf_${Date.now()}_${i++}_${Math.random().toString(36).slice(2, 7)}`,
+      uid,
+      String(type ?? "INFO"),
+      msg,
+      String(targetDate ?? ""),
+      String(leaveRequestId ?? ""),
+      nowIso
+    );
+  }
+}
+
 async function sendPushToAllNurses({ title, body, url = "#/calendar" }) {
   if (!PUSH_ENABLED) return;
   const rows = await queryAll(
@@ -783,6 +806,55 @@ app.post("/api/notifications/read-all", async (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     console.error("POST /api/notifications/read-all", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
+/** 응급실 의국: 휴일 당직자·진기숙에게 응급수술 알림 */
+app.post("/api/emergency-surgery/notify", async (req, res) => {
+  try {
+    const actorUserId = String(req.body?.actorUserId ?? "").trim();
+    const leaveDate = String(req.body?.leaveDate ?? "").slice(0, 10);
+    const surgeryName = String(req.body?.surgeryName ?? "").trim();
+    const startTime = String(req.body?.startTime ?? "").trim();
+    const anesthesiaType = String(req.body?.anesthesiaType ?? "GENERAL").trim().toUpperCase();
+    if (!actorUserId) return res.status(400).json({ error: "actorUserId가 필요합니다." });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(leaveDate)) {
+      return res.status(400).json({ error: "leaveDate(YYYY-MM-DD)가 필요합니다." });
+    }
+    if (!surgeryName) return res.status(400).json({ error: "수술명이 필요합니다." });
+    if (!startTime) return res.status(400).json({ error: "수술 시작 시간이 필요합니다." });
+
+    const actor = await queryOne("SELECT id, role FROM users WHERE id = ?", actorUserId);
+    if (!actor || String(actor.role) !== "EMERGENCY_OR") {
+      return res.status(403).json({ error: "의국 계정만 응급수술 알림을 보낼 수 있습니다." });
+    }
+
+    const duty = await queryOne(
+      "SELECT nurse1_user_id, nurse2_user_id, anesthesia_user_id FROM holiday_duties WHERE holiday_date = ?",
+      leaveDate
+    );
+    const n1 = String(duty?.nurse1_user_id ?? "").trim();
+    const n2 = String(duty?.nurse2_user_id ?? "").trim();
+    const anes = String(duty?.anesthesia_user_id ?? "").trim();
+    if (!n1 || !n2 || !anes) {
+      return res.status(409).json({ error: "해당 날짜 당직자가 등록되지 않았습니다." });
+    }
+
+    const chiefRow = await queryOne("SELECT id FROM users WHERE name = ? AND role = 'ADMIN' LIMIT 1", "진기숙");
+    const anesLabel = anesthesiaType === "LOCAL" ? "국소(로컬)마취" : "전신마취";
+    const msg = `[응급수술] ${leaveDate} ${startTime} | ${surgeryName} | ${anesLabel} (의국)`;
+
+    await createNotificationsForUserIds({
+      userIds: [n1, n2, anes, chiefRow?.id].filter(Boolean),
+      type: "EMERGENCY_SURGERY",
+      message: msg,
+      targetDate: leaveDate,
+    });
+
+    return res.json({ ok: true, message: msg });
+  } catch (err) {
+    console.error("POST /api/emergency-surgery/notify", err);
     return res.status(500).json({ error: String(err?.message || err) });
   }
 });
