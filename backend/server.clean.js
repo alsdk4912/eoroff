@@ -1227,19 +1227,86 @@ app.post("/api/admin/day-memos", async (req, res) => {
   }
 });
 
+function isYmdWeekendServer(ymd) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd ?? "").slice(0, 10));
+  if (!m) return false;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const dow = d.getDay();
+  return dow === 0 || dow === 6;
+}
+
+async function isYmdOffDayServer(ymd) {
+  const ld = String(ymd ?? "").slice(0, 10);
+  if (!ld) return false;
+  if (isYmdWeekendServer(ld)) return true;
+  const row = await queryOne(
+    "SELECT 1 AS ok FROM holidays WHERE holiday_date = ? AND is_holiday = 1 LIMIT 1",
+    ld
+  );
+  return Boolean(row?.ok);
+}
+
+async function jinGiSukUserId() {
+  const row = await queryOne("SELECT id FROM users WHERE name = ? AND role = 'ADMIN' LIMIT 1", "진기숙");
+  return String(row?.id ?? "").trim();
+}
+
+async function canActorUseHolidayDutyDayMemoForDate(actor, ymd) {
+  const role = String(actor?.role ?? "").trim();
+  if (role === "EMERGENCY_OR") return true;
+  if (role === "ADMIN" && String(actor?.name ?? "") === "진기숙") return true;
+  const duty = await queryOne(
+    "SELECT nurse1_user_id, nurse2_user_id, anesthesia_user_id FROM holiday_duties WHERE holiday_date = ?",
+    ymd
+  );
+  if (!duty) return false;
+  const uid = String(actor?.id ?? "").trim();
+  return [duty.nurse1_user_id, duty.nurse2_user_id, duty.anesthesia_user_id]
+    .map((id) => String(id ?? "").trim())
+    .includes(uid);
+}
+
+async function holidayDutyNotifyUserIds(ymd) {
+  const duty = await queryOne(
+    "SELECT nurse1_user_id, nurse2_user_id, anesthesia_user_id FROM holiday_duties WHERE holiday_date = ?",
+    ymd
+  );
+  const jin = await jinGiSukUserId();
+  const emergency = await queryOne("SELECT id FROM users WHERE role = 'EMERGENCY_OR' LIMIT 1");
+  return [
+    duty?.nurse1_user_id,
+    duty?.nurse2_user_id,
+    duty?.anesthesia_user_id,
+    jin,
+    emergency?.id,
+  ].filter(Boolean);
+}
+
+async function canManageHolidayDutyDayCommentServer(actor, commentUserId) {
+  if (String(actor?.id) === String(commentUserId)) return true;
+  return String(actor?.role) === "ADMIN" && String(actor?.name ?? "") === "진기숙";
+}
+
 app.post("/api/day-comments", async (req, res) => {
   try {
     const { actorUserId, targetDate, content } = req.body ?? {};
-    const actor = await queryOne(
-      "SELECT id, role FROM users WHERE id = ? AND role IN ('ADMIN', 'NURSE', 'ANESTHESIA', 'EMERGENCY_OR')",
-      actorUserId
-    );
+    const actor = await queryOne("SELECT id, role, name FROM users WHERE id = ?", actorUserId);
     if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
     const ymd = String(targetDate ?? "").trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return res.status(400).json({ error: "targetDate 형식이 올바르지 않습니다." });
     const txt = String(content ?? "").trim();
     if (!txt) return res.status(400).json({ error: "메모 내용을 입력하세요." });
     if (txt.length > 500) return res.status(400).json({ error: "메모는 500자 이내로 입력하세요." });
+
+    const offDay = await isYmdOffDayServer(ymd);
+    if (offDay) {
+      if (!(await canActorUseHolidayDutyDayMemoForDate(actor, ymd))) {
+        return res.status(403).json({ error: "휴일 메모는 당직 간호사·진기숙·의국만 작성할 수 있습니다." });
+      }
+    } else if (!["ADMIN", "NURSE", "ANESTHESIA"].includes(String(actor.role))) {
+      return res.status(403).json({ error: "권한이 없습니다." });
+    }
+
     const id = `dc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     await execute(
       "INSERT INTO day_comments (id, target_date, user_id, content, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -1250,20 +1317,9 @@ app.post("/api/day-comments", async (req, res) => {
       new Date().toISOString()
     );
     const commentMsg = `${ymd} 의사소통 메모: ${txt.slice(0, 80)}${txt.length > 80 ? "…" : ""}`;
-    if (String(actor.role) === "EMERGENCY_OR") {
-      const duty = await queryOne(
-        "SELECT nurse1_user_id, nurse2_user_id, anesthesia_user_id FROM holiday_duties WHERE holiday_date = ?",
-        ymd
-      );
-      const chiefRow = await queryOne("SELECT id FROM users WHERE name = ? AND role = 'ADMIN' LIMIT 1", "진기숙");
-      const notifyIds = [
-        duty?.nurse1_user_id,
-        duty?.nurse2_user_id,
-        duty?.anesthesia_user_id,
-        chiefRow?.id,
-      ].filter(Boolean);
+    if (offDay) {
       await createNotificationsForUserIds({
-        userIds: notifyIds,
+        userIds: await holidayDutyNotifyUserIds(ymd),
         type: "DAY_COMMENT",
         message: commentMsg,
         targetDate: ymd,
@@ -1296,13 +1352,16 @@ app.post("/api/day-comments/:id/update", async (req, res) => {
     if (!txt) return res.status(400).json({ error: "메모 내용을 입력하세요." });
     if (txt.length > 500) return res.status(400).json({ error: "메모는 500자 이내로 입력하세요." });
 
-    const actor = await queryOne("SELECT id, role FROM users WHERE id = ?", actorUserId);
+    const actor = await queryOne("SELECT id, role, name FROM users WHERE id = ?", actorUserId);
     if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
-    const row = await queryOne("SELECT id, user_id FROM day_comments WHERE id = ?", commentId);
+    const row = await queryOne("SELECT id, user_id, target_date FROM day_comments WHERE id = ?", commentId);
     if (!row) return res.status(404).json({ error: "댓글을 찾을 수 없습니다." });
 
-    const canManage = actor.role === "ADMIN" || row.user_id === actorUserId;
-    if (!canManage) return res.status(403).json({ error: "작성자 또는 관리자만 수정할 수 있습니다." });
+    const offDay = await isYmdOffDayServer(String(row.target_date ?? ""));
+    const canManage = offDay
+      ? await canManageHolidayDutyDayCommentServer(actor, row.user_id)
+      : actor.role === "ADMIN" || row.user_id === actorUserId;
+    if (!canManage) return res.status(403).json({ error: "수정 권한이 없습니다." });
 
     await execute("UPDATE day_comments SET content = ? WHERE id = ?", txt, commentId);
     return res.json({ ok: true });
@@ -1318,13 +1377,16 @@ app.post("/api/day-comments/:id/delete", async (req, res) => {
     const commentId = String(req.params.id ?? "").trim();
     if (!commentId) return res.status(400).json({ error: "comment id가 필요합니다." });
 
-    const actor = await queryOne("SELECT id, role FROM users WHERE id = ?", actorUserId);
+    const actor = await queryOne("SELECT id, role, name FROM users WHERE id = ?", actorUserId);
     if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
-    const row = await queryOne("SELECT id, user_id FROM day_comments WHERE id = ?", commentId);
+    const row = await queryOne("SELECT id, user_id, target_date FROM day_comments WHERE id = ?", commentId);
     if (!row) return res.status(404).json({ error: "댓글을 찾을 수 없습니다." });
 
-    const canManage = actor.role === "ADMIN" || row.user_id === actorUserId;
-    if (!canManage) return res.status(403).json({ error: "작성자 또는 관리자만 삭제할 수 있습니다." });
+    const offDay = await isYmdOffDayServer(String(row.target_date ?? ""));
+    const canManage = offDay
+      ? await canManageHolidayDutyDayCommentServer(actor, row.user_id)
+      : actor.role === "ADMIN" || row.user_id === actorUserId;
+    if (!canManage) return res.status(403).json({ error: "삭제 권한이 없습니다." });
 
     await execute("DELETE FROM day_comments WHERE id = ?", commentId);
     return res.json({ ok: true });

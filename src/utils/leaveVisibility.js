@@ -181,6 +181,44 @@ export function isCalendarOffDaysOnlyRole(role) {
   return isEmergencyOrRole(role);
 }
 
+export function isYmdWeekend(ymd) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd ?? "").slice(0, 10));
+  if (!m) return false;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const dow = d.getDay();
+  return dow === 0 || dow === 6;
+}
+
+export function isYmdOffDay(ymd, holidaysCache) {
+  const ld = String(ymd ?? "").slice(0, 10);
+  if (!ld) return false;
+  if (isYmdWeekend(ld)) return true;
+  return (Array.isArray(holidaysCache) ? holidaysCache : []).some(
+    (h) => h?.isHoliday && String(h.holidayDate ?? "").slice(0, 10) === ld
+  );
+}
+
+/** 휴일 당직 의사소통 메모: 당직 3인·진기숙·의국만 */
+export function canUseHolidayDutyDayMemo({ viewerUserId, viewerRole, ymd, holidayDuties, users, holidaysCache }) {
+  const ld = String(ymd ?? "").slice(0, 10);
+  if (!ld || !isYmdOffDay(ld, holidaysCache)) return false;
+  if (isEmergencyOrRole(viewerRole)) return true;
+  const jin = (Array.isArray(users) ? users : []).find((u) => u.name === "진기숙" && u.role === "ADMIN");
+  if (jin && String(viewerUserId) === String(jin.id)) return true;
+  const duty = holidayDuties?.[ld];
+  if (!duty) return false;
+  const dutyIds = [duty.nurse1UserId, duty.nurse2UserId, duty.anesthesiaUserId]
+    .map((id) => String(id ?? "").trim())
+    .filter(Boolean);
+  return dutyIds.includes(String(viewerUserId ?? "").trim());
+}
+
+export function canManageHolidayDutyDayComment({ viewerUserId, users, commentUserId }) {
+  if (String(viewerUserId) === String(commentUserId)) return true;
+  const jin = (Array.isArray(users) ? users : []).find((u) => u.name === "진기숙" && u.role === "ADMIN");
+  return Boolean(jin && String(viewerUserId) === String(jin.id));
+}
+
 /** 캘린더 대체 입력 UI 담당 부서 (ADMIN→수술실, ADMIN2→마취, CHIEF→주임) */
 export function substituteScopeStaffRole(viewerRole) {
   if (isOrLeaveAdminRole(viewerRole)) return "NURSE";

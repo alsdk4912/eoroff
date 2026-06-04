@@ -91,6 +91,8 @@ import {
   isOrLeaveAdminRole,
   isEmergencyOrRole,
   isCalendarOffDaysOnlyRole,
+  canUseHolidayDutyDayMemo,
+  canManageHolidayDutyDayComment,
   isScheduleOnlyDashboardRole,
   showHolidayDutyEditorRole,
   substituteScopeStaffRole,
@@ -2691,6 +2693,7 @@ function App() {
               isEmergencyOrViewer={isEmergencyOrViewer}
               serverMode={serverMode}
               onNotifyEmergencySurgery={handleNotifyEmergencySurgery}
+              holidays={holidays}
             />
           }
         />
@@ -6763,6 +6766,7 @@ function CalendarPage({
   isEmergencyOrViewer = false,
   serverMode = false,
   onNotifyEmergencySurgery,
+  holidays = [],
 }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -6981,6 +6985,26 @@ function CalendarPage({
       .sort((a, b) => String(a.createdAt ?? "").localeCompare(String(b.createdAt ?? "")));
   }, [dayComments, selectedYmd]);
 
+  const selectedIsOffDay = Boolean(selectedCell?.isOffDay);
+  const canHolidayDutyMemo = useMemo(
+    () =>
+      canUseHolidayDutyDayMemo({
+        viewerUserId: currentUserId,
+        viewerRole,
+        ymd: selectedYmd,
+        holidayDuties,
+        users,
+        holidaysCache: holidays,
+      }),
+    [currentUserId, viewerRole, selectedYmd, holidayDuties, users, holidays]
+  );
+
+  const visibleDayComments = useMemo(() => {
+    if (!selectedYmd) return [];
+    if (selectedIsOffDay && !canHolidayDutyMemo) return [];
+    return selectedDayComments;
+  }, [selectedYmd, selectedIsOffDay, canHolidayDutyMemo, selectedDayComments]);
+
   const dayMemoSectionProps = {
     selectedYmd,
     adminDayMemos,
@@ -6988,11 +7012,14 @@ function CalendarPage({
     onAdminMemoDraftChange: setAdminMemoDraft,
     isOrLeaveAdmin,
     onSaveAdminMemo: saveAdminDayMemo,
-    selectedDayComments,
+    selectedDayComments: visibleDayComments,
     users,
     currentUserId,
-    isAnesthesiaLeaveAdmin,
-    isChiefLeaveAdmin,
+    canComposeMemo: selectedIsOffDay ? canHolidayDutyMemo : true,
+    canManageCommentForRow: (row) =>
+      selectedIsOffDay
+        ? canManageHolidayDutyDayComment({ viewerUserId: currentUserId, users, commentUserId: row.userId })
+        : currentUserId === row.userId || isOrLeaveAdmin || isAnesthesiaLeaveAdmin || isChiefLeaveAdmin,
     commentDraft,
     onCommentDraftChange: setCommentDraft,
     onCreateComment: async (ymd, txt) => {
@@ -7333,12 +7360,18 @@ function CalendarPage({
           const canOpenCell = cell.inMonth && (!offDaysOnlyViewer || cell.isOffDay);
           const nonInteractiveClass =
             offDaysOnlyViewer && cell.inMonth && !cell.isOffDay ? " calendar-cell--noninteractive" : "";
+          const emergencyHolidayClass =
+            offDaysOnlyViewer && cell.inMonth && cell.isOffDay
+              ? hasDuty
+                ? " calendar-cell--emergency-holiday calendar-cell--emergency-holiday--duty"
+                : " calendar-cell--emergency-holiday"
+              : "";
           return (
             <div
               key={`${cell.date}-${idx}`}
               role={canOpenCell ? "button" : undefined}
               tabIndex={canOpenCell ? 0 : -1}
-              className={`calendar-cell${canOpenCell ? " calendar-cell--clickable" : ""} ${cell.inMonth ? "" : "muted"}${myDutyClass}${nonInteractiveClass}${isToday ? " calendar-cell--today" : ""}${isSel ? " calendar-cell--selected" : ""}`}
+              className={`calendar-cell${canOpenCell ? " calendar-cell--clickable" : ""} ${cell.inMonth ? "" : "muted"}${myDutyClass}${nonInteractiveClass}${emergencyHolidayClass}${isToday ? " calendar-cell--today" : ""}${isSel ? " calendar-cell--selected" : ""}`}
               onClick={() => {
                 if (!canOpenCell) return;
                 if (skipNextCalendarTapRef.current) {
@@ -7362,9 +7395,9 @@ function CalendarPage({
               }}
             >
               <div className={`calendar-date${cell.isOffDay ? " calendar-date--holiday" : ""}`}>{cell.day}</div>
-              {offDaysOnlyViewer && cell.inMonth && hasDuty ? (
-                <div className="calendar-cell-duty-hint" title="당직 등록됨">
-                  당직
+              {offDaysOnlyViewer && cell.inMonth && cell.isOffDay ? (
+                <div className="calendar-cell-duty-hint" title={cell.holidayName || "휴일"}>
+                  {hasDuty ? "당직" : "휴일"}
                 </div>
               ) : null}
               {cell.inMonth && !offDaysOnlyViewer && calendarCellHasConfirmedChips(cell) ? (
@@ -7458,7 +7491,9 @@ function CalendarPage({
                       serverMode={serverMode}
                       onNotify={onNotifyEmergencySurgery}
                     />
-                    <CalendarDayMemoSection {...dayMemoSectionProps} variant="emergency" />
+                    {canHolidayDutyMemo ? (
+                      <CalendarDayMemoSection {...dayMemoSectionProps} variant="holiday-duty" />
+                    ) : null}
                   </>
                 ) : (
                   <p className="help">주말·공휴일·명절·대체공휴일만 조회할 수 있습니다.</p>
@@ -7921,7 +7956,12 @@ function CalendarPage({
               })()}
             </div>
           </div>
-          <CalendarDayMemoSection {...dayMemoSectionProps} />
+          {(!selectedIsOffDay || canHolidayDutyMemo) && (
+            <CalendarDayMemoSection
+              {...dayMemoSectionProps}
+              variant={selectedIsOffDay ? "holiday-duty" : "default"}
+            />
+          )}
         </section>
       ) : null}
       </div>
