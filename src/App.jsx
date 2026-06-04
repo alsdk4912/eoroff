@@ -7959,6 +7959,7 @@ function CalendarPage({
       {selectedYmd &&
       selectedCell?.inMonth &&
       !isEmergencyOrViewer &&
+      !(jinHolidayDutyViewer && selectedIsOffDay) &&
       !hideCalendarAllDeptPanelOnOffDay(viewerRole, selectedIsOffDay) &&
       calendarShowsAllDepartmentsLeaveAndSubstitute(viewerRole) &&
       (!detailModalOpen || detailTab === "list") ? (
