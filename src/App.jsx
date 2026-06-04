@@ -29,7 +29,7 @@ import {
   isGeneralNormalLadderTimeLocked,
   generalNormalLadderLockedMessage,
 } from "./utils/rules";
-import { api } from "./api/client";
+import { api, isApiConfigured, pingApiHealth } from "./api/client";
 import { defaultGoldkeyQuotaForName } from "./data/goldkeyQuotas.js";
 import {
   ANESTHESIA_SHIFT_OPTIONS,
@@ -565,6 +565,8 @@ function App() {
   const [restoreSqlText, setRestoreSqlText] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [serverMode, setServerMode] = useState(false);
+  /** 로그인 전에도 API( Render 휴가 DB ) 연결 가능 여부 */
+  const [apiReachable, setApiReachable] = useState(() => (isApiConfigured() ? "checking" : "no"));
   /** 첫 bootstrap 완료 전에 서버 저장·덮어쓰기 레이스 방지 */
   const [dataHydrated, setDataHydrated] = useState(false);
   const now = new Date();
@@ -931,8 +933,26 @@ function App() {
   }
 
   useEffect(() => {
-    if (!isLoggedIn) {
+    if (isLoggedIn) return;
+    if (!isApiConfigured()) {
+      setApiReachable("no");
       setDataHydrated(true);
+      return;
+    }
+    let cancelled = false;
+    setApiReachable("checking");
+    void (async () => {
+      const ok = await pingApiHealth();
+      if (!cancelled) setApiReachable(ok ? "yes" : "no");
+      if (!cancelled) setDataHydrated(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn]);
+
+  useEffect(() => {
+    if (!isLoggedIn) {
       return;
     }
     let cancelled = false;
@@ -2327,8 +2347,8 @@ function App() {
   }
 
   async function handleRegister({ name, phone, password }) {
-    if (!serverMode) {
-      throw new Error("회원가입은 서버에 연결된 경우에만 가능합니다. 관리자에게 문의해주세요.");
+    if (!isApiConfigured()) {
+      throw new Error("이 환경에서는 가입 요청을 보낼 수 없습니다. EOROFF 공식 주소(github.io/eoroff)에서 시도해 주세요.");
     }
     const data = await api.register({ name, phone, password });
     return data?.message || "가입 요청이 접수되었습니다.";
@@ -2366,7 +2386,12 @@ function App() {
         onLogin={handleLogin}
         onResetPassword={handleSelfPasswordReset}
         onRegister={handleRegister}
-        serverMode={serverMode}
+        apiConfigured={isApiConfigured()}
+        apiReachable={apiReachable}
+        onRetryApiCheck={() => {
+          setApiReachable("checking");
+          void pingApiHealth().then((ok) => setApiReachable(ok ? "yes" : "no"));
+        }}
       />
     );
   }
@@ -2669,14 +2694,61 @@ function App() {
   );
 }
 
-const LOGIN_ICON_URL = `${import.meta.env.BASE_URL}icon.svg`;
+/** 앱 아이콘(public/icon.svg)과 동일 — 로그인 상단 마크 */
+function LoginEorMark() {
+  return (
+    <svg
+      className="login-brand__mark"
+      viewBox="0 0 512 512"
+      width={72}
+      height={72}
+      role="img"
+      aria-label="EOROFF 휴가시스템"
+    >
+      <rect width="512" height="512" rx="96" fill="#2B9EF0" />
+      <g fill="none" stroke="#ffffff" strokeWidth="10" strokeLinecap="round">
+        <path d="M320 118c-8-22-35-34-58-26-6-28-35-46-64-40-22 4-40 22-44 44-18 2-32 18-32 36 0 22 18 40 40 40h98c26 0 48-20 52-46 4-2 6-4 8-8z" />
+      </g>
+      <g fill="none" stroke="#ffffff" strokeWidth="9" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M128 400V280" />
+        <path d="M148 400V300" />
+        <path d="M118 268c-28-48-22-92 8-120" />
+        <path d="M138 278c18-62 8-108-18-132" />
+        <path d="M158 288c32-58 28-102 2-128" />
+        <path d="M108 248c-42-8-62 12-68 38" />
+        <path d="M168 258c38-18 58-8 72 14" />
+      </g>
+      <text
+        x="310"
+        y="258"
+        fill="#ffffff"
+        fontFamily="system-ui, -apple-system, sans-serif"
+        fontSize="88"
+        fontWeight="800"
+      >
+        EOR
+      </text>
+      <text
+        x="256"
+        y="378"
+        fill="#ffffff"
+        fontFamily="system-ui, -apple-system, 'Apple SD Gothic Neo', sans-serif"
+        fontSize="44"
+        fontWeight="600"
+        textAnchor="middle"
+      >
+        휴가시스템
+      </text>
+    </svg>
+  );
+}
 
 function LoginBrandHeader() {
   return (
     <header className="login-brand" aria-label="EOROFF 이오알오프">
-      <img className="login-brand__logo" src={LOGIN_ICON_URL} width={80} height={80} alt="" decoding="async" />
+      <LoginEorMark />
       <p className="login-brand__eyebrow">수술실 휴가·근무 관리</p>
-      <h1 className="login-brand__title">EOROFF</h1>
+      <p className="login-brand__title">EOROFF</p>
       <p className="login-brand__kr" lang="ko">
         이오알오프
       </p>
@@ -2685,7 +2757,7 @@ function LoginBrandHeader() {
   );
 }
 
-function LoginPage({ onLogin, onResetPassword, onRegister, serverMode }) {
+function LoginPage({ onLogin, onResetPassword, onRegister, apiConfigured, apiReachable, onRetryApiCheck }) {
   const [loginName, setLoginName] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -2827,57 +2899,80 @@ function LoginPage({ onLogin, onResetPassword, onRegister, serverMode }) {
           {panelMode === "register" ? (
             <>
               <p className="login-panel__lead">실명·전화번호·비밀번호를 입력하면 관리자 승인 후 이용할 수 있습니다.</p>
-              {!serverMode ? (
-                <p className="login-feedback login-feedback--warn">서버에 연결되지 않아 회원가입을 할 수 없습니다.</p>
+              {!apiConfigured ? (
+                <p className="login-feedback login-feedback--warn">
+                  이 주소에서는 가입 요청을 보낼 수 없습니다. 공식 앱 주소에서 다시 시도해 주세요.
+                </p>
               ) : (
-                <form className="login-form" onSubmit={submitRegister}>
-                  <label className="login-field">
-                    <span className="login-field__label">실명</span>
-                    <input
-                      className="login-field__input"
-                      placeholder="예: 홍길동"
-                      value={regName}
-                      onChange={(e) => setRegName(e.target.value)}
-                      autoComplete="name"
-                    />
-                  </label>
-                  <label className="login-field">
-                    <span className="login-field__label">전화번호</span>
-                    <input
-                      className="login-field__input"
-                      type="tel"
-                      placeholder="10~11자리 숫자"
-                      value={regPhone}
-                      onChange={(e) => setRegPhone(e.target.value)}
-                      autoComplete="tel"
-                    />
-                  </label>
-                  <label className="login-field">
-                    <span className="login-field__label">비밀번호</span>
-                    <input
-                      className="login-field__input"
-                      type="password"
-                      placeholder="4자 이상"
-                      value={regPassword}
-                      onChange={(e) => setRegPassword(e.target.value)}
-                      autoComplete="new-password"
-                    />
-                  </label>
-                  <label className="login-field">
-                    <span className="login-field__label">비밀번호 확인</span>
-                    <input
-                      className="login-field__input"
-                      type="password"
-                      placeholder="다시 입력"
-                      value={regPassword2}
-                      onChange={(e) => setRegPassword2(e.target.value)}
-                      autoComplete="new-password"
-                    />
-                  </label>
-                  <button type="submit" className="login-submit">
-                    가입 요청하기
-                  </button>
-                </form>
+                <>
+                  {apiReachable === "checking" ? (
+                    <p className="login-feedback login-feedback--muted">데이터 서버 연결 확인 중…</p>
+                  ) : null}
+                  {apiReachable === "no" ? (
+                    <p className="login-feedback login-feedback--warn" role="status">
+                      휴가 데이터 서버에 잠시 연결되지 않습니다. Wi‑Fi·LTE를 확인한 뒤 다시 시도해 주세요. (별도
+                      설치 없이 이 화면에서 바로 요청됩니다.)
+                      <button type="button" className="login-link-button login-retry-api" onClick={onRetryApiCheck}>
+                        연결 다시 확인
+                      </button>
+                    </p>
+                  ) : null}
+                  <form className="login-form" onSubmit={submitRegister}>
+                    <label className="login-field">
+                      <span className="login-field__label">실명</span>
+                      <input
+                        className="login-field__input"
+                        placeholder="예: 홍길동"
+                        value={regName}
+                        onChange={(e) => setRegName(e.target.value)}
+                        autoComplete="name"
+                        required
+                      />
+                    </label>
+                    <label className="login-field">
+                      <span className="login-field__label">전화번호</span>
+                      <input
+                        className="login-field__input"
+                        type="tel"
+                        inputMode="numeric"
+                        placeholder="01012345678"
+                        value={regPhone}
+                        onChange={(e) => setRegPhone(e.target.value)}
+                        autoComplete="tel"
+                        required
+                      />
+                    </label>
+                    <label className="login-field">
+                      <span className="login-field__label">비밀번호</span>
+                      <input
+                        className="login-field__input"
+                        type="password"
+                        placeholder="4자 이상"
+                        value={regPassword}
+                        onChange={(e) => setRegPassword(e.target.value)}
+                        autoComplete="new-password"
+                        required
+                        minLength={4}
+                      />
+                    </label>
+                    <label className="login-field">
+                      <span className="login-field__label">비밀번호 확인</span>
+                      <input
+                        className="login-field__input"
+                        type="password"
+                        placeholder="다시 입력"
+                        value={regPassword2}
+                        onChange={(e) => setRegPassword2(e.target.value)}
+                        autoComplete="new-password"
+                        required
+                        minLength={4}
+                      />
+                    </label>
+                    <button type="submit" className="login-submit">
+                      가입 요청하기
+                    </button>
+                  </form>
+                </>
               )}
             </>
           ) : panelMode === "reset" ? (

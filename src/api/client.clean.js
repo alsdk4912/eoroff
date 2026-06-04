@@ -1,6 +1,11 @@
-// 로컬: 폰으로 LAN IP로 접속 시 API도 같은 IP:4000
-// github.io + VITE_API_BASE_URL 없음 → /api POST 시 405 방지 (null)
+// 로컬: 폰으로 LAN IP로 접속 시 API도 같은 IP:4015
+// GitHub Pages(alsdk4912.github.io/eoroff) — 빌드 시크릿 누락 시에도 공용 API 사용
 const DEV_API_PORT = 4015;
+const DEFAULT_PROD_API_BASE = "https://eoroff-api.onrender.com";
+
+function isGithubPagesHost(hostname) {
+  return String(hostname ?? "").endsWith(".github.io");
+}
 
 function getResolvedApiBase() {
   const raw = import.meta.env.VITE_API_BASE_URL;
@@ -8,6 +13,9 @@ function getResolvedApiBase() {
     return String(raw).trim().replace(/\/$/, "");
   }
   if (import.meta.env.PROD) {
+    if (typeof window !== "undefined" && isGithubPagesHost(window.location.hostname)) {
+      return DEFAULT_PROD_API_BASE;
+    }
     return null;
   }
   if (typeof window !== "undefined") {
@@ -23,6 +31,32 @@ const API_ROOT = (() => {
   const b = getResolvedApiBase();
   return b === null ? null : `${b}/api`;
 })();
+
+/** 회원가입·로그인 등 API 사용 가능 여부(빌드에 API 주소가 있는지) */
+export function isApiConfigured() {
+  return API_ROOT !== null;
+}
+
+export function getPublicApiBaseUrl() {
+  return getResolvedApiBase();
+}
+
+/** 로그인 화면·앱 기동 시 서버 생존 확인 */
+export async function pingApiHealth() {
+  if (API_ROOT === null) return false;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const res = await fetch(`${API_ROOT}/health`, { cache: "no-store", signal: ctrl.signal });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return Boolean(data?.ok);
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 async function requestJson(path, options = {}) {
   if (API_ROOT === null) {
