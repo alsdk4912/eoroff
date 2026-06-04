@@ -245,10 +245,24 @@ async function insertLeaveRequestAuditRow(tx, row) {
   return id;
 }
 
+function isDeptHeadRoleServer(role) {
+  return String(role ?? "").trim() === "DEPT_HEAD";
+}
+
+function isOrLeaveAdminRoleServer(role) {
+  const r = String(role ?? "").trim();
+  return r === "ADMIN" || r === "DEPT_HEAD";
+}
+
 async function requireAdminUser(actorUserId) {
   const uid = String(actorUserId ?? "").trim();
   if (!uid) return null;
   return await queryOne("SELECT id FROM users WHERE id = ? AND role = 'ADMIN'", uid);
+}
+
+async function deptHeadUserIds() {
+  const rows = await queryAll("SELECT id FROM users WHERE role = 'DEPT_HEAD'");
+  return rows.map((r) => String(r.id ?? "").trim()).filter(Boolean);
 }
 
 async function requireAdmin2User(actorUserId) {
@@ -288,8 +302,8 @@ async function assertActorCanManageLeaveRequest(actorUserId, leaveUserId) {
     return;
   }
   if (leaveRole === "NURSE") {
-    if (actorRole !== "ADMIN") {
-      const err = new Error("수술실 휴가는 관리자만 확정·반려할 수 있습니다.");
+    if (!isOrLeaveAdminRoleServer(actorRole)) {
+      const err = new Error("수술실 휴가는 관리자·부서파트장만 확정·반려할 수 있습니다.");
       err.statusCode = 403;
       throw err;
     }
@@ -629,7 +643,7 @@ app.post("/api/weekly-cell-overrides/sync", async (req, res) => {
     const overrides = req.body?.overrides;
     if (!actorUserId) return res.status(400).json({ error: "actorUserId가 필요합니다." });
     const actor = await queryOne(
-      "SELECT id FROM users WHERE id = ? AND role IN ('ADMIN', 'ADMIN2', 'NURSE', 'ANESTHESIA', 'CHIEF')",
+      "SELECT id FROM users WHERE id = ? AND role IN ('ADMIN', 'DEPT_HEAD', 'ADMIN2', 'NURSE', 'ANESTHESIA', 'CHIEF')",
       actorUserId
     );
     if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
@@ -826,11 +840,10 @@ app.post("/api/emergency-surgery/notify", async (req, res) => {
     if (!startTime) return res.status(400).json({ error: "수술 시작 시간이 필요합니다." });
 
     const actor = await queryOne("SELECT id, role, name FROM users WHERE id = ?", actorUserId);
-    const jinRow = await queryOne("SELECT id FROM users WHERE name = ? AND role = 'ADMIN' LIMIT 1", "진기숙");
     const fromEmergencyOr = actor && String(actor.role) === "EMERGENCY_OR";
-    const fromJinGisuk = jinRow && actor && String(actor.id) === String(jinRow.id);
-    if (!fromEmergencyOr && !fromJinGisuk) {
-      return res.status(403).json({ error: "의국·진기숙 계정만 응급수술 알림을 보낼 수 있습니다." });
+    const fromDeptHead = actor && isDeptHeadRoleServer(actor.role);
+    if (!fromEmergencyOr && !fromDeptHead) {
+      return res.status(403).json({ error: "의국·부서파트장 계정만 응급수술 알림을 보낼 수 있습니다." });
     }
 
     const duty = await queryOne(
@@ -844,14 +857,14 @@ app.post("/api/emergency-surgery/notify", async (req, res) => {
       return res.status(409).json({ error: "해당 날짜 당직자가 등록되지 않았습니다." });
     }
 
-    const chiefRow = jinRow;
+    const deptHeads = await deptHeadUserIds();
     const anesLabel = anesthesiaType === "LOCAL" ? "국소(로컬)마취" : "전신마취";
-    const senderLabel = fromJinGisuk ? "진기숙" : "의국";
+    const senderLabel = fromDeptHead ? String(actor?.name ?? "부서파트장") : "의국";
     const msg = `[응급수술] ${leaveDate} ${startTime} | ${surgeryName} | ${anesLabel} (${senderLabel})`;
 
     const notifyIds = [n1, n2, anes];
-    if (fromEmergencyOr && chiefRow?.id) notifyIds.push(chiefRow.id);
-    if (fromJinGisuk) {
+    if (fromEmergencyOr) notifyIds.push(...deptHeads);
+    if (fromDeptHead) {
       const emergencyOr = await queryOne("SELECT id FROM users WHERE role = 'EMERGENCY_OR' LIMIT 1");
       if (emergencyOr?.id) notifyIds.push(emergencyOr.id);
     }
@@ -905,7 +918,7 @@ function employeeNoFromPhone(phoneDigits) {
   return `P${tail.padStart(7, "0")}`;
 }
 
-const REGISTRATION_APPROVE_ROLES = new Set(["NURSE", "ANESTHESIA", "CHIEF", "ADMIN"]);
+const REGISTRATION_APPROVE_ROLES = new Set(["NURSE", "ANESTHESIA", "CHIEF", "DEPT_HEAD"]);
 
 app.post("/api/register", async (req, res) => {
   try {
@@ -1028,7 +1041,7 @@ app.post("/api/admin/registration-requests/:id/approve", async (req, res) => {
     if (!requestId) return res.status(400).json({ error: "요청 id가 필요합니다." });
     if (!REGISTRATION_APPROVE_ROLES.has(role)) {
       return res.status(400).json({
-        error: "부서는 수술실, 마취과, 주임, 관리자급(ADMIN) 중 하나여야 합니다.",
+        error: "역할은 수술실 간호사, 마취과 간호사, 주임, 부서파트장 중 하나여야 합니다.",
       });
     }
 
@@ -1270,15 +1283,10 @@ async function isYmdOffDayServer(ymd) {
   return Boolean(row?.ok);
 }
 
-async function jinGiSukUserId() {
-  const row = await queryOne("SELECT id FROM users WHERE name = ? AND role = 'ADMIN' LIMIT 1", "진기숙");
-  return String(row?.id ?? "").trim();
-}
-
 async function canActorUseHolidayDutyDayMemoForDate(actor, ymd) {
   const role = String(actor?.role ?? "").trim();
   if (role === "EMERGENCY_OR") return true;
-  if (role === "ADMIN" && String(actor?.name ?? "") === "진기숙") return true;
+  if (isDeptHeadRoleServer(role)) return true;
   const duty = await queryOne(
     "SELECT nurse1_user_id, nurse2_user_id, anesthesia_user_id FROM holiday_duties WHERE holiday_date = ?",
     ymd
@@ -1295,20 +1303,20 @@ async function holidayDutyNotifyUserIds(ymd) {
     "SELECT nurse1_user_id, nurse2_user_id, anesthesia_user_id FROM holiday_duties WHERE holiday_date = ?",
     ymd
   );
-  const jin = await jinGiSukUserId();
+  const deptHeads = await deptHeadUserIds();
   const emergency = await queryOne("SELECT id FROM users WHERE role = 'EMERGENCY_OR' LIMIT 1");
   return [
     duty?.nurse1_user_id,
     duty?.nurse2_user_id,
     duty?.anesthesia_user_id,
-    jin,
+    ...deptHeads,
     emergency?.id,
   ].filter(Boolean);
 }
 
 async function canManageHolidayDutyDayCommentServer(actor, commentUserId) {
   if (String(actor?.id) === String(commentUserId)) return true;
-  return String(actor?.role) === "ADMIN" && String(actor?.name ?? "") === "진기숙";
+  return isDeptHeadRoleServer(actor?.role);
 }
 
 app.post("/api/day-comments", async (req, res) => {
@@ -1325,9 +1333,9 @@ app.post("/api/day-comments", async (req, res) => {
     const offDay = await isYmdOffDayServer(ymd);
     if (offDay) {
       if (!(await canActorUseHolidayDutyDayMemoForDate(actor, ymd))) {
-        return res.status(403).json({ error: "휴일 메모는 당직 간호사·진기숙·의국만 작성할 수 있습니다." });
+        return res.status(403).json({ error: "휴일 메모는 당직 간호사·부서파트장·의국만 작성할 수 있습니다." });
       }
-    } else if (!["ADMIN", "NURSE", "ANESTHESIA"].includes(String(actor.role))) {
+    } else if (!["ADMIN", "DEPT_HEAD", "NURSE", "ANESTHESIA"].includes(String(actor.role))) {
       return res.status(403).json({ error: "권한이 없습니다." });
     }
 
@@ -1384,7 +1392,7 @@ app.post("/api/day-comments/:id/update", async (req, res) => {
     const offDay = await isYmdOffDayServer(String(row.target_date ?? ""));
     const canManage = offDay
       ? await canManageHolidayDutyDayCommentServer(actor, row.user_id)
-      : actor.role === "ADMIN" || row.user_id === actorUserId;
+      : isOrLeaveAdminRoleServer(actor.role) || row.user_id === actorUserId;
     if (!canManage) return res.status(403).json({ error: "수정 권한이 없습니다." });
 
     await execute("UPDATE day_comments SET content = ? WHERE id = ?", txt, commentId);
@@ -1409,7 +1417,7 @@ app.post("/api/day-comments/:id/delete", async (req, res) => {
     const offDay = await isYmdOffDayServer(String(row.target_date ?? ""));
     const canManage = offDay
       ? await canManageHolidayDutyDayCommentServer(actor, row.user_id)
-      : actor.role === "ADMIN" || row.user_id === actorUserId;
+      : isOrLeaveAdminRoleServer(actor.role) || row.user_id === actorUserId;
     if (!canManage) return res.status(403).json({ error: "삭제 권한이 없습니다." });
 
     await execute("DELETE FROM day_comments WHERE id = ?", commentId);
@@ -1424,7 +1432,7 @@ app.post("/api/notices", async (req, res) => {
   try {
     const { actorUserId, title, content } = req.body ?? {};
     const actor = await queryOne(
-      "SELECT id FROM users WHERE id = ? AND role IN ('ADMIN', 'ADMIN2', 'NURSE', 'ANESTHESIA', 'CHIEF')",
+      "SELECT id FROM users WHERE id = ? AND role IN ('ADMIN', 'DEPT_HEAD', 'ADMIN2', 'NURSE', 'ANESTHESIA', 'CHIEF')",
       actorUserId
     );
     if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
@@ -1458,14 +1466,14 @@ app.post("/api/notices/:id/update", async (req, res) => {
     if (!noticeId) return res.status(400).json({ error: "notice id가 필요합니다." });
     const { actorUserId, title, content } = req.body ?? {};
     const actor = await queryOne(
-      "SELECT id, role FROM users WHERE id = ? AND role IN ('ADMIN', 'ADMIN2', 'NURSE', 'ANESTHESIA', 'CHIEF')",
+      "SELECT id, role FROM users WHERE id = ? AND role IN ('ADMIN', 'DEPT_HEAD', 'ADMIN2', 'NURSE', 'ANESTHESIA', 'CHIEF')",
       actorUserId
     );
     if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
     const row = await queryOne("SELECT id, user_id FROM notices WHERE id = ?", noticeId);
     if (!row) return res.status(404).json({ error: "공지사항을 찾을 수 없습니다." });
     const canManage =
-      actor.role === "ADMIN" ||
+      isOrLeaveAdminRoleServer(actor.role) ||
       actor.role === "ADMIN2" ||
       String(row.user_id) === String(actorUserId);
     if (!canManage) return res.status(403).json({ error: "작성자 또는 관리자만 수정할 수 있습니다." });
@@ -1489,14 +1497,14 @@ app.post("/api/notices/:id/delete", async (req, res) => {
     if (!noticeId) return res.status(400).json({ error: "notice id가 필요합니다." });
     const { actorUserId } = req.body ?? {};
     const actor = await queryOne(
-      "SELECT id, role FROM users WHERE id = ? AND role IN ('ADMIN', 'ADMIN2', 'NURSE', 'ANESTHESIA', 'CHIEF')",
+      "SELECT id, role FROM users WHERE id = ? AND role IN ('ADMIN', 'DEPT_HEAD', 'ADMIN2', 'NURSE', 'ANESTHESIA', 'CHIEF')",
       actorUserId
     );
     if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
     const row = await queryOne("SELECT id, user_id FROM notices WHERE id = ?", noticeId);
     if (!row) return res.status(404).json({ error: "공지사항을 찾을 수 없습니다." });
     const canManage =
-      actor.role === "ADMIN" ||
+      isOrLeaveAdminRoleServer(actor.role) ||
       actor.role === "ADMIN2" ||
       String(row.user_id) === String(actorUserId);
     if (!canManage) return res.status(403).json({ error: "작성자 또는 관리자만 삭제할 수 있습니다." });
@@ -1513,7 +1521,7 @@ app.post("/api/notice-comments", async (req, res) => {
   try {
     const { actorUserId, noticeId, content } = req.body ?? {};
     const actor = await queryOne(
-      "SELECT id FROM users WHERE id = ? AND role IN ('ADMIN', 'ADMIN2', 'NURSE', 'ANESTHESIA', 'CHIEF')",
+      "SELECT id FROM users WHERE id = ? AND role IN ('ADMIN', 'DEPT_HEAD', 'ADMIN2', 'NURSE', 'ANESTHESIA', 'CHIEF')",
       actorUserId
     );
     if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
@@ -1556,7 +1564,7 @@ app.post("/api/notice-comments/:id/update", async (req, res) => {
     const row = await queryOne("SELECT id, user_id FROM notice_comments WHERE id = ?", commentId);
     if (!row) return res.status(404).json({ error: "댓글을 찾을 수 없습니다." });
 
-    const canManage = actor.role === "ADMIN" || String(row.user_id) === String(actorUserId);
+    const canManage = isOrLeaveAdminRoleServer(actor.role) || String(row.user_id) === String(actorUserId);
     if (!canManage) return res.status(403).json({ error: "작성자 또는 관리자만 수정할 수 있습니다." });
 
     await execute(
@@ -1583,7 +1591,7 @@ app.post("/api/notice-comments/:id/delete", async (req, res) => {
     const row = await queryOne("SELECT id, user_id FROM notice_comments WHERE id = ?", commentId);
     if (!row) return res.status(404).json({ error: "댓글을 찾을 수 없습니다." });
 
-    const canManage = actor.role === "ADMIN" || String(row.user_id) === String(actorUserId);
+    const canManage = isOrLeaveAdminRoleServer(actor.role) || String(row.user_id) === String(actorUserId);
     if (!canManage) return res.status(403).json({ error: "작성자 또는 관리자만 삭제할 수 있습니다." });
 
     await execute("DELETE FROM notice_comments WHERE id = ?", commentId);
@@ -1684,7 +1692,7 @@ app.post("/api/admin/holiday-duties", async (req, res) => {
     const { actorUserId, holidayDate, nurse1UserId, nurse2UserId, anesthesiaUserId } = req.body ?? {};
 
     const actor = await queryOne(
-      "SELECT id, role FROM users WHERE id = ? AND role IN ('ADMIN', 'NURSE', 'ANESTHESIA')",
+      "SELECT id, role FROM users WHERE id = ? AND role IN ('ADMIN', 'DEPT_HEAD', 'NURSE', 'ANESTHESIA')",
       actorUserId
     );
     if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
@@ -1774,8 +1782,8 @@ app.post("/api/substitute-assignments/:requestId/upsert", async (req, res) => {
         if (actor.role !== "CHIEF") {
           return res.status(403).json({ error: "주임 대체 근무(휴가 없음)는 주임 계정으로만 지정할 수 있습니다." });
         }
-      } else if (actor.role !== "ADMIN") {
-        return res.status(403).json({ error: "수술실 대체 근무는 관리자만 지정할 수 있습니다." });
+      } else if (!isOrLeaveAdminRoleServer(actor.role)) {
+        return res.status(403).json({ error: "수술실 대체 근무는 관리자·부서파트장만 지정할 수 있습니다." });
       }
     } else {
       const reqRow = await queryOne(
@@ -1798,8 +1806,8 @@ app.post("/api/substitute-assignments/:requestId/upsert", async (req, res) => {
           return res.status(403).json({ error: "주임 대체 근무는 주임 계정으로만 지정할 수 있습니다." });
         }
       } else if (leaveRole === "NURSE") {
-        if (actor.role !== "ADMIN") {
-          return res.status(403).json({ error: "수술실 대체 근무는 관리자만 지정할 수 있습니다." });
+        if (!isOrLeaveAdminRoleServer(actor.role)) {
+          return res.status(403).json({ error: "수술실 대체 근무는 관리자·부서파트장만 지정할 수 있습니다." });
         }
       } else {
         return res.status(403).json({ error: "권한이 없습니다." });
@@ -2378,7 +2386,10 @@ app.post("/api/requests/:id/uncancel", async (req, res) => {
     const actorUserId = String(req.body?.actorUserId ?? "").trim();
     if (!actorUserId) return res.status(400).json({ error: "actorUserId가 필요합니다." });
     const actor = await queryOne("SELECT id, role FROM users WHERE id = ?", actorUserId);
-    if (!actor || (actor.role !== "ADMIN" && actor.role !== "ADMIN2" && actor.role !== "CHIEF")) {
+    if (
+      !actor ||
+      (actor.role !== "ADMIN" && actor.role !== "DEPT_HEAD" && actor.role !== "ADMIN2" && actor.role !== "CHIEF")
+    ) {
       return res.status(403).json({ error: "관리자만 복원할 수 있습니다." });
     }
 
@@ -2688,7 +2699,7 @@ app.post("/api/admin/goldkeys/usage-bulk", async (req, res) => {
   try {
     const { actorUserId, usages } = req.body ?? {};
     const actor = await queryOne(
-      "SELECT id FROM users WHERE id = ? AND role IN ('ADMIN', 'NURSE')",
+      "SELECT id FROM users WHERE id = ? AND role IN ('ADMIN', 'DEPT_HEAD', 'NURSE')",
       actorUserId
     );
     if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
@@ -2736,7 +2747,7 @@ app.post("/api/admin/holidays/upsert", async (req, res) => {
   try {
     const { actorUserId, holidays, removeHolidayDates, officialYear } = req.body ?? {};
     const actor = await queryOne(
-      "SELECT id FROM users WHERE id = ? AND role IN ('ADMIN', 'NURSE')",
+      "SELECT id FROM users WHERE id = ? AND role IN ('ADMIN', 'DEPT_HEAD', 'NURSE')",
       actorUserId
     );
     if (!actor) return res.status(403).json({ error: "권한이 없습니다." });

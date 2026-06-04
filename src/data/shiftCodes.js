@@ -86,15 +86,15 @@ export function mergeWorkScheduleRows(saved, templateRows) {
 export function canEditMonthlyScheduleCell(viewerRole, rowName) {
   const role = String(viewerRole ?? "").trim();
   const sec = monthlyRowSection(rowName);
-  if (role === "ADMIN") return true;
+  if (role === "ADMIN" || role === "DEPT_HEAD") return true;
   if (sec === "anesthesia") return role === "ANESTHESIA" || role === "ADMIN2";
   if (sec === "chief") return role === "CHIEF";
-  return role === "ADMIN";
+  return role === "ADMIN" || role === "DEPT_HEAD";
 }
 
 export function canSaveMonthlyWorkSchedule(viewerRole) {
   const role = String(viewerRole ?? "").trim();
-  return ["ADMIN", "ANESTHESIA", "ADMIN2", "CHIEF"].includes(role);
+  return ["ADMIN", "DEPT_HEAD", "ANESTHESIA", "ADMIN2", "CHIEF"].includes(role);
 }
 
 /** 주간 번표 셀 선택박스 편집 (역할·본인 행 기준) */
@@ -103,17 +103,17 @@ export function canEditWeeklyScheduleCell(viewerRole, staffUser, viewerUserId) {
   const tr = String(staffUser?.role ?? "").trim();
   const sid = String(staffUser?.id ?? "");
   const vid = String(viewerUserId ?? "");
-  if (vr === "ADMIN") return true;
+  if (vr === "ADMIN" || vr === "DEPT_HEAD") return true;
   if (sid && vid && sid === vid) return true;
   if (tr === "ANESTHESIA") return vr === "ANESTHESIA" || vr === "ADMIN2";
   if (tr === "CHIEF") return vr === "CHIEF";
-  if (tr === "NURSE") return vr === "NURSE" || vr === "ADMIN";
+  if (tr === "NURSE") return vr === "NURSE" || vr === "ADMIN" || vr === "DEPT_HEAD";
   return false;
 }
 
 export function canUseWeeklyScheduleEditor(viewerRole) {
   const role = String(viewerRole ?? "").trim();
-  return ["ADMIN", "NURSE", "ANESTHESIA", "ADMIN2", "CHIEF"].includes(role);
+  return ["ADMIN", "DEPT_HEAD", "NURSE", "ANESTHESIA", "ADMIN2", "CHIEF"].includes(role);
 }
 
 /** 역할별 저장 시 다른 섹션 행은 기존 값 유지 */

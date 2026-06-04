@@ -92,7 +92,7 @@ import {
   isOrLeaveAdminRole,
   isEmergencyOrRole,
   isHolidayDutyContactViewer,
-  isJinGisukAdminUser,
+  isDeptHeadRole,
   isCalendarOffDaysOnlyRole,
   canUseHolidayDutyDayMemo,
   canManageHolidayDutyDayComment,
@@ -1583,7 +1583,7 @@ function App() {
 
     const priorityMonthStart = new Date(nowForValidation.getFullYear(), nowForValidation.getMonth(), 1, 0, 0, 0, 0);
     const priorityMonth2At0900 = new Date(nowForValidation.getFullYear(), nowForValidation.getMonth(), 2, 9, 0, 0, 0);
-    const useOrLeaveTypeSplit = viewerRole === "NURSE" || viewerRole === "ADMIN";
+    const useOrLeaveTypeSplit = viewerRole === "NURSE" || viewerRole === "ADMIN" || viewerRole === "DEPT_HEAD";
     const normalizedLeaveType = useOrLeaveTypeSplit
       ? leaveType === "GENERAL_PRIORITY" && nowForValidation > priorityMonth2At0900
         ? "GENERAL_NORMAL"
@@ -2103,7 +2103,7 @@ function App() {
           }));
         }
         notifyDone("저장되었습니다.");
-        if (currentUser?.role === "ADMIN") {
+        if (currentUser?.role === "ADMIN" || currentUser?.role === "DEPT_HEAD") {
           createNotificationForNurses(`${ymd} 메모 등록`, { type: "ADMIN_MEMO", targetDate: ymd });
         }
         return;
@@ -2121,7 +2121,7 @@ function App() {
       [ymd]: txt,
     }));
     notifyDone("저장되었습니다.");
-    if (currentUser?.role === "ADMIN") {
+    if (currentUser?.role === "ADMIN" || currentUser?.role === "DEPT_HEAD") {
       createNotificationForNurses(`${ymd} 메모 등록`, { type: "ADMIN_MEMO", targetDate: ymd });
     }
   }
@@ -2152,7 +2152,7 @@ function App() {
       createdAt: new Date().toISOString(),
     };
     setDayComments((prev) => [newRow, ...(Array.isArray(prev) ? prev : [])]);
-    if (currentUser?.role === "ADMIN") {
+    if (currentUser?.role === "ADMIN" || currentUser?.role === "DEPT_HEAD") {
       createNotificationForNurses(`${ymd} 새 댓글 등록`, { type: "DAY_COMMENT", targetDate: ymd });
     }
     notifyDone("댓글이 등록되었습니다.");
@@ -2484,7 +2484,9 @@ function App() {
               {currentUser?.name}
               {viewerRole === "ADMIN"
                 ? " · 관리자"
-                : viewerRole === "ADMIN2"
+                : viewerRole === "DEPT_HEAD"
+                  ? " · 부서파트장"
+                  : viewerRole === "ADMIN2"
                   ? " · 관리자2"
                   : viewerRole === "NURSE"
                       ? " · 간호사"
@@ -5215,7 +5217,7 @@ function DashboardPage({
           ) : null}
         </div>
       )}
-      {dashTab === "summary" && (currentRole === "NURSE" || currentRole === "ADMIN" || currentRole === "ANESTHESIA" || currentRole === "ADMIN2") ? (
+      {dashTab === "summary" && (currentRole === "NURSE" || currentRole === "ADMIN" || currentRole === "DEPT_HEAD" || currentRole === "ANESTHESIA" || currentRole === "ADMIN2") ? (
         <section className="card">
           <h2 className="screen-title">골드키{currentRole === "ANESTHESIA" || currentRole === "ADMIN2" ? " (마취과)" : ""}</h2>
           <p className="help page-lead goldkey-policy-note">
@@ -5664,6 +5666,7 @@ function AppBottomNav({ isOrLeaveAdmin, isAnesthesiaLeaveAdmin, isChiefLeaveAdmi
     role === "ANESTHESIA" ||
     role === "CHIEF" ||
     role === "ADMIN" ||
+    role === "DEPT_HEAD" ||
     role === "ADMIN2";
 
   if (isEmergencyOrViewer) {
@@ -5891,6 +5894,7 @@ function NoticeBoardPage({
   );
   const canWriteNoticeComments =
     currentRole === "ADMIN" ||
+    currentRole === "DEPT_HEAD" ||
     currentRole === "ADMIN2" ||
     currentRole === "NURSE" ||
     currentRole === "ANESTHESIA" ||
@@ -6968,10 +6972,10 @@ function CalendarPage({
   const calendarSwipeRef = useRef({ startX: 0, startY: 0, tracking: false, triggered: false });
   const skipNextCalendarTapRef = useRef(false);
   const calendarTopRef = useRef(null);
-  const jinHolidayDutyViewer = isJinGisukAdminUser(currentUserId, users);
-  const holidayDutyContactViewer = isHolidayDutyContactViewer(viewerRole, currentUserId, users);
+  const deptHeadHolidayViewer = isDeptHeadRole(viewerRole);
+  const holidayDutyContactViewer = isHolidayDutyContactViewer(viewerRole);
   const useHolidayDutyModalOnly =
-    isEmergencyOrViewer || (jinHolidayDutyViewer && Boolean(selectedCell?.isOffDay));
+    isEmergencyOrViewer || (deptHeadHolidayViewer && Boolean(selectedCell?.isOffDay));
   const showCalendarDetailPanel = useHolidayDutyModalOnly ? detailModalOpen : true;
   const closeCalendarDetailModal = useCallback(() => {
     setDetailModalOpen(false);
@@ -7567,7 +7571,7 @@ function CalendarPage({
                 )
               ) : null}
               {!isEmergencyOrRole(viewerRole) &&
-              !jinHolidayDutyViewer &&
+              !deptHeadHolidayViewer &&
               canEditHolidayDuty &&
               selectedCell?.isOffDay ? (
                 <section className="holiday-duty-panel">
@@ -7962,7 +7966,7 @@ function CalendarPage({
       {selectedYmd &&
       selectedCell?.inMonth &&
       !isEmergencyOrViewer &&
-      !(jinHolidayDutyViewer && selectedIsOffDay) &&
+      !(deptHeadHolidayViewer && selectedIsOffDay) &&
       !hideCalendarAllDeptPanelOnOffDay(viewerRole, selectedIsOffDay) &&
       calendarShowsAllDepartmentsLeaveAndSubstitute(viewerRole) &&
       (!detailModalOpen || detailTab === "list") ? (
@@ -8323,11 +8327,11 @@ function RegistrationApprovalRow({ row, onApprove, onReject }) {
         </span>
       </div>
       <div className="registration-approval-row__actions row wrap">
-        <select value={role} onChange={(e) => setRole(e.target.value)} disabled={busy} aria-label="부서·역할">
-          <option value="NURSE">수술실</option>
-          <option value="ANESTHESIA">마취과</option>
+        <select value={role} onChange={(e) => setRole(e.target.value)} disabled={busy} aria-label="역할군">
+          <option value="NURSE">수술실 간호사</option>
+          <option value="ANESTHESIA">마취과 간호사</option>
           <option value="CHIEF">주임</option>
-          <option value="ADMIN">관리자급 (수술실 관리)</option>
+          <option value="DEPT_HEAD">부서파트장</option>
         </select>
         <input
           type="text"

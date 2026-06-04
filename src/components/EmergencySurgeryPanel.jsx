@@ -46,8 +46,8 @@ export default function EmergencySurgeryPanel({
       { label: "수술실 당직 2", user: userById.get(duty?.nurse2UserId) },
       { label: "마취과 당직", user: userById.get(duty?.anesthesiaUserId) },
       {
-        label: "관리자",
-        user: (users ?? []).find((u) => u.role === "ADMIN" && u.name === "진기숙"),
+        label: "부서파트장",
+        user: (users ?? []).find((u) => u.role === "DEPT_HEAD"),
       },
     ],
     [duty, userById, users]
@@ -83,7 +83,7 @@ export default function EmergencySurgeryPanel({
         startTime: time,
         anesthesiaType,
       });
-      setLocalMsg("당직자·진기숙에게 알림을 보냈습니다.");
+      setLocalMsg("당직자·부서파트장에게 알림을 보냈습니다.");
     } catch (e) {
       setLocalMsg(e?.message || "알림 전송에 실패했습니다.");
     } finally {
@@ -153,7 +153,7 @@ export default function EmergencySurgeryPanel({
 
       <div className="row wrap" style={{ marginTop: 10 }}>
         <button type="button" disabled={busy || !dutyComplete} onClick={() => void submitNotify()}>
-          당직·진기숙에게 알림 보내기
+          당직·부서파트장에게 알림 보내기
         </button>
       </div>
       {localMsg ? <p className="msg">{localMsg}</p> : null}

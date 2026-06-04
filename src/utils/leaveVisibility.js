@@ -42,7 +42,7 @@ export function isConfirmedLeaveStatus(status) {
 function viewerOwnDepartmentRoles(viewerRole) {
   if (viewerRole === "ANESTHESIA" || viewerRole === "ADMIN2") return new Set(["ANESTHESIA"]);
   if (viewerRole === "CHIEF") return new Set(["CHIEF"]);
-  if (viewerRole === "NURSE" || viewerRole === "ADMIN") return new Set(["NURSE"]);
+  if (viewerRole === "NURSE" || viewerRole === "ADMIN" || viewerRole === "DEPT_HEAD") return new Set(["NURSE"]);
   return null;
 }
 
@@ -151,7 +151,7 @@ export function filterChiefPublishedForOrView(requests, users, isWinnerStatus) {
 export function canViewerApproveRequest(viewerRole, requestUserId, users) {
   if (isAnesthesiaStaffUserId(requestUserId, users)) return viewerRole === "ADMIN2";
   if (isChiefStaffUserId(requestUserId, users)) return viewerRole === "CHIEF";
-  if (isOrNurseUserId(requestUserId, users)) return viewerRole === "ADMIN";
+  if (isOrNurseUserId(requestUserId, users)) return viewerRole === "ADMIN" || viewerRole === "DEPT_HEAD";
   return false;
 }
 
@@ -159,8 +159,13 @@ export function canViewerRejectRequest(viewerRole, requestUserId, users) {
   return canViewerApproveRequest(viewerRole, requestUserId, users);
 }
 
+export function isDeptHeadRole(role) {
+  return role === "DEPT_HEAD";
+}
+
+/** 수술실 휴가 관리(관리자) + 부서파트장(진기숙 동급 화면·권한) */
 export function isOrLeaveAdminRole(role) {
-  return role === "ADMIN";
+  return role === "ADMIN" || role === "DEPT_HEAD";
 }
 
 export function isAnesthesiaLeaveAdminRole(role) {
@@ -176,19 +181,9 @@ export function isEmergencyOrRole(role) {
   return role === "EMERGENCY_OR";
 }
 
-export function findJinGisukAdminUser(users) {
-  return (Array.isArray(users) ? users : []).find((u) => u.name === "진기숙" && u.role === "ADMIN") ?? null;
-}
-
-/** 진기숙(ADMIN) — 휴일 당직 연락·응급알림 UI */
-export function isJinGisukAdminUser(viewerUserId, users) {
-  const jin = findJinGisukAdminUser(users);
-  return Boolean(jin && String(viewerUserId) === String(jin.id));
-}
-
-/** 의국 또는 진기숙: 휴일 당직 전화·응급수술 알림 패널 */
-export function isHolidayDutyContactViewer(role, viewerUserId, users) {
-  return isEmergencyOrRole(role) || isJinGisukAdminUser(viewerUserId, users);
+/** 의국 또는 부서파트장: 휴일 당직 전화·응급수술 알림 패널 */
+export function isHolidayDutyContactViewer(role) {
+  return isEmergencyOrRole(role) || isDeptHeadRole(role);
 }
 
 /** 캘린더에서 주말·공휴·명절·대체공휴일만 열람 */
@@ -218,8 +213,7 @@ export function canUseHolidayDutyDayMemo({ viewerUserId, viewerRole, ymd, holida
   const ld = String(ymd ?? "").slice(0, 10);
   if (!ld || !isYmdOffDay(ld, holidaysCache)) return false;
   if (isEmergencyOrRole(viewerRole)) return true;
-  const jin = (Array.isArray(users) ? users : []).find((u) => u.name === "진기숙" && u.role === "ADMIN");
-  if (jin && String(viewerUserId) === String(jin.id)) return true;
+  if (isDeptHeadRole(viewerRole)) return true;
   const duty = holidayDuties?.[ld];
   if (!duty) return false;
   const dutyIds = [duty.nurse1UserId, duty.nurse2UserId, duty.anesthesiaUserId]
@@ -230,8 +224,7 @@ export function canUseHolidayDutyDayMemo({ viewerUserId, viewerRole, ymd, holida
 
 export function canManageHolidayDutyDayComment({ viewerUserId, users, commentUserId }) {
   if (String(viewerUserId) === String(commentUserId)) return true;
-  const jin = (Array.isArray(users) ? users : []).find((u) => u.name === "진기숙" && u.role === "ADMIN");
-  return Boolean(jin && String(viewerUserId) === String(jin.id));
+  return isDeptHeadRole(userById(users, viewerUserId)?.role);
 }
 
 /** 캘린더 대체 입력 UI 담당 부서 (ADMIN→수술실, ADMIN2→마취, CHIEF→주임) */
@@ -470,6 +463,7 @@ export function calendarShowsAllDepartmentsLeaveAndSubstitute(viewerRole) {
     viewerRole === "ANESTHESIA" ||
     viewerRole === "CHIEF" ||
     viewerRole === "ADMIN" ||
+    viewerRole === "DEPT_HEAD" ||
     viewerRole === "ADMIN2"
   );
 }

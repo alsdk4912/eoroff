@@ -411,6 +411,7 @@ export async function initDb() {
   await ensureEmergencyOrUser();
   await removeLegacyAdmin3Users();
   await ensureKnownEmployeeNos();
+  await ensureDeptHeadRoleMigration();
   await ensureUserPhones();
   await ensureKoreanHolidaysSynced();
   await ensureHolidayDutyAnchors2026();
@@ -593,7 +594,7 @@ async function seedDefaultsIfEmpty() {
     "허정숙",
     "이현숙",
   ];
-  const admins = ["관리자", "진기숙"];
+  const admins = ["관리자"];
   const anesthesiaNames = ["김인자", "박현정", "이지현", "윤지민"];
 
   for (let idx = 0; idx < names.length; idx++) {
@@ -618,6 +619,14 @@ async function seedDefaultsIfEmpty() {
       "1234"
     );
   }
+  await execute(
+    "INSERT INTO users (id, name, employee_no, role, password) VALUES (?, ?, ?, ?, ?)",
+    "u_admin_dept_head",
+    "진기숙",
+    resolveEmployeeNo("진기숙", "A0002"),
+    "DEPT_HEAD",
+    "1234"
+  );
 
   for (let idx = 0; idx < anesthesiaNames.length; idx++) {
     const name = anesthesiaNames[idx];
@@ -767,6 +776,25 @@ async function ensureKnownEmployeeNos() {
   for (const [name, employeeNo] of Object.entries(EMPLOYEE_NO_BY_NAME)) {
     await execute("UPDATE users SET employee_no = ? WHERE name = ?", employeeNo, name);
   }
+}
+
+/** 진기숙 등 기존 ADMIN 부서파트장 → DEPT_HEAD 역할 */
+async function ensureDeptHeadRoleMigration() {
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", "users_dept_head_role_v1");
+  if (done) return;
+  await execute("UPDATE users SET role = 'DEPT_HEAD' WHERE name = '진기숙' AND role = 'ADMIN'");
+  const jinExists = await queryOne("SELECT id FROM users WHERE name = ? AND role = 'DEPT_HEAD'", "진기숙");
+  if (!jinExists) {
+    await execute(
+      "INSERT INTO users (id, name, employee_no, role, password) VALUES (?, ?, ?, ?, ?)",
+      "u_admin_dept_head",
+      "진기숙",
+      resolveEmployeeNo("진기숙", "A0002"),
+      "DEPT_HEAD",
+      "1234"
+    );
+  }
+  await execute("INSERT INTO app_migrations (id) VALUES (?)", "users_dept_head_role_v1");
 }
 
 /** 2026~현재+3년 공휴일(설·추석·대체공휴일 포함) DB 반영 */
