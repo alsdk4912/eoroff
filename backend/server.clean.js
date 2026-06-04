@@ -822,7 +822,7 @@ function employeeNoFromPhone(phoneDigits) {
   return `P${tail.padStart(7, "0")}`;
 }
 
-const REGISTRATION_STAFF_ROLES = new Set(["NURSE", "ANESTHESIA", "CHIEF"]);
+const REGISTRATION_APPROVE_ROLES = new Set(["NURSE", "ANESTHESIA", "CHIEF", "ADMIN"]);
 
 app.post("/api/register", async (req, res) => {
   try {
@@ -943,8 +943,10 @@ app.post("/api/admin/registration-requests/:id/approve", async (req, res) => {
     const admin = await requireAdminUser(adminUserId);
     if (!admin) return res.status(403).json({ error: "관리자 권한이 필요합니다." });
     if (!requestId) return res.status(400).json({ error: "요청 id가 필요합니다." });
-    if (!REGISTRATION_STAFF_ROLES.has(role)) {
-      return res.status(400).json({ error: "역할은 수술실(NURSE), 마취(ANESTHESIA), 주임(CHIEF) 중 하나여야 합니다." });
+    if (!REGISTRATION_APPROVE_ROLES.has(role)) {
+      return res.status(400).json({
+        error: "부서는 수술실, 마취과, 주임, 관리자급(ADMIN) 중 하나여야 합니다.",
+      });
     }
 
     const reg = await queryOne("SELECT * FROM registration_requests WHERE id = ?", requestId);

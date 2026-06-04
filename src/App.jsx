@@ -8192,10 +8192,11 @@ function RegistrationApprovalRow({ row, onApprove, onReject }) {
         </span>
       </div>
       <div className="registration-approval-row__actions row wrap">
-        <select value={role} onChange={(e) => setRole(e.target.value)} disabled={busy} aria-label="역할">
+        <select value={role} onChange={(e) => setRole(e.target.value)} disabled={busy} aria-label="부서·역할">
           <option value="NURSE">수술실</option>
           <option value="ANESTHESIA">마취과</option>
           <option value="CHIEF">주임</option>
+          <option value="ADMIN">관리자급 (수술실 관리)</option>
         </select>
         <input
           type="text"
