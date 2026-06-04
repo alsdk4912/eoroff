@@ -24,6 +24,7 @@ import {
   isGeneralNormalLadderTimeLocked,
   isLeaveDateBeforeTodayKst,
 } from "../src/utils/rules.clean.js";
+import { defaultGoldkeyQuotaForName } from "../src/data/goldkeyQuotas.js";
 
 const app = express();
 app.use(cors());
@@ -531,13 +532,22 @@ async function applyWeeklyOverridesToSubstitutes(overridesMap, actorUserId) {
     if (!subUser?.id) continue;
     const subRole = String(subUser.role ?? "");
 
+    const standaloneRequestId = standaloneSubstituteRequestIdForStaffRole(subRole, leaveDate);
     const existing = await queryAll(
-      "SELECT id FROM substitute_assignments WHERE substitute_user_id = ? AND leave_date = ?",
+      "SELECT id, request_id FROM substitute_assignments WHERE substitute_user_id = ? AND leave_date = ?",
       substituteUserId,
       leaveDate
     );
     for (const row of existing) {
-      await execute("UPDATE substitute_assignments SET shift_code = ?, updated_at = ? WHERE id = ?", main, now, row.id);
+      const curReq = String(row.request_id ?? "");
+      const nextReqId = isStandaloneSubstituteRequestId(curReq) ? standaloneRequestId : curReq;
+      await execute(
+        "UPDATE substitute_assignments SET shift_code = ?, request_id = ?, updated_at = ? WHERE id = ?",
+        main,
+        nextReqId,
+        now,
+        row.id
+      );
     }
     if (existing.length > 0) continue;
 
@@ -553,9 +563,9 @@ async function applyWeeklyOverridesToSubstitutes(overridesMap, actorUserId) {
       subRole
     );
     if (approvedLeaves.length !== 1) {
-      // 확정 휴가 1건과 매칭되지 않아도, 캘린더 대체자 현황에서 보이도록 독립 대체 배정으로 저장
-      const requestId = `standalone_sub:${leaveDate}`;
-      const leaveUserId = "__none__";
+      // 확정 휴가 1건과 매칭되지 않아도, 캘린더 대체자 현황에서 보이도록 부서별 standalone으로 저장
+      const requestId = standaloneRequestId;
+      const leaveUserId = STANDALONE_SUBSTITUTE_LEAVE_USER_ID;
       const newId = `sub_wk_standalone_${substituteUserId.replace(/[^a-z0-9_]/gi, "").slice(0, 12)}_${leaveDate.replace(/-/g, "")}_${Date.now().toString(36)}`;
       await execute(
         `INSERT INTO substitute_assignments (id, request_id, leave_date, leave_user_id, substitute_user_id, shift_code, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -799,6 +809,76 @@ app.post("/api/notifications/:id/read", async (req, res) => {
   }
 });
 
+function normalizeRegistrationName(name) {
+  return String(name ?? "").trim().replace(/\s+/g, " ");
+}
+
+function normalizeRegistrationPhone(phone) {
+  return String(phone ?? "").replace(/\D/g, "");
+}
+
+function employeeNoFromPhone(phoneDigits) {
+  const tail = String(phoneDigits ?? "").slice(-7);
+  return `P${tail.padStart(7, "0")}`;
+}
+
+const REGISTRATION_STAFF_ROLES = new Set(["NURSE", "ANESTHESIA", "CHIEF"]);
+
+app.post("/api/register", async (req, res) => {
+  try {
+    const name = normalizeRegistrationName(req.body?.name);
+    const phone = normalizeRegistrationPhone(req.body?.phone);
+    const password = String(req.body?.password ?? "");
+    if (!name || name.length < 2) {
+      return res.status(400).json({ error: "실명을 2자 이상 입력해주세요." });
+    }
+    if (!phone || phone.length < 10 || phone.length > 11) {
+      return res.status(400).json({ error: "전화번호를 10~11자리로 입력해주세요." });
+    }
+    if (!password || password.length < 4) {
+      return res.status(400).json({ error: "비밀번호는 4자 이상이어야 합니다." });
+    }
+    if (/^[A-Za-z]?\d+$/.test(name.replace(/\s/g, ""))) {
+      return res.status(400).json({ error: "이름으로 가입해주세요. 사번만으로는 가입할 수 없습니다." });
+    }
+
+    const existingUser = await queryAll(
+      "SELECT id FROM users WHERE REPLACE(name, ' ', '') = REPLACE(?, ' ', '')",
+      name
+    );
+    if (existingUser.length > 0) {
+      return res.status(409).json({ error: "이미 등록된 이름입니다. 로그인하거나 관리자에게 문의해주세요." });
+    }
+
+    const pendingDup = await queryOne(
+      `SELECT id FROM registration_requests
+       WHERE status = 'PENDING'
+         AND (REPLACE(name, ' ', '') = REPLACE(?, ' ', '') OR phone = ?)`,
+      name,
+      phone
+    );
+    if (pendingDup?.id) {
+      return res.status(409).json({ error: "동일한 이름 또는 전화번호로 승인 대기 중인 요청이 있습니다." });
+    }
+
+    const now = new Date().toISOString();
+    const id = `reg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    await execute(
+      `INSERT INTO registration_requests (id, name, phone, password, status, created_at)
+       VALUES (?, ?, ?, ?, 'PENDING', ?)`,
+      id,
+      name,
+      phone,
+      password,
+      now
+    );
+    return res.json({ ok: true, requestId: id, message: "가입 요청이 접수되었습니다. 관리자 승인 후 로그인할 수 있습니다." });
+  } catch (err) {
+    console.error("POST /api/register", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
 app.post("/api/login", async (req, res) => {
   const { loginName, password } = req.body ?? {};
   const name = String(loginName ?? "").trim();
@@ -813,9 +893,153 @@ app.post("/api/login", async (req, res) => {
     name,
     password
   );
-  if (rows.length === 0) return res.status(401).json({ error: "이름 또는 비밀번호가 올바르지 않습니다." });
+  if (rows.length === 0) {
+    const pending = await queryOne(
+      `SELECT id FROM registration_requests
+       WHERE status = 'PENDING' AND REPLACE(name, ' ', '') = REPLACE(?, ' ', '')`,
+      name
+    );
+    if (pending?.id) {
+      return res.status(403).json({
+        error: "가입 승인 대기 중입니다. 관리자 승인 후 로그인해주세요.",
+      });
+    }
+    return res.status(401).json({ error: "이름 또는 비밀번호가 올바르지 않습니다." });
+  }
   if (rows.length > 1) return res.status(409).json({ error: "동명이인이 있어 로그인할 수 없습니다." });
   return res.json({ ok: true, user: rows[0] });
+});
+
+app.get("/api/admin/registration-requests", async (req, res) => {
+  try {
+    const adminUserId = String(req.query?.adminUserId ?? "").trim();
+    const admin = await requireAdminUser(adminUserId);
+    if (!admin) return res.status(403).json({ error: "관리자 권한이 필요합니다." });
+    const status = String(req.query?.status ?? "PENDING").trim().toUpperCase();
+    const allowed = new Set(["PENDING", "APPROVED", "REJECTED", "ALL"]);
+    const st = allowed.has(status) ? status : "PENDING";
+    const rows =
+      st === "ALL"
+        ? await queryAll(
+            "SELECT * FROM registration_requests ORDER BY created_at DESC LIMIT 200"
+          )
+        : await queryAll(
+            "SELECT * FROM registration_requests WHERE status = ? ORDER BY created_at ASC",
+            st
+          );
+    return res.json({ requests: rows });
+  } catch (err) {
+    console.error("GET /api/admin/registration-requests", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
+app.post("/api/admin/registration-requests/:id/approve", async (req, res) => {
+  try {
+    const requestId = decodeURIComponent(String(req.params.id ?? "").trim());
+    const adminUserId = String(req.body?.adminUserId ?? "").trim();
+    const role = String(req.body?.role ?? "NURSE").trim().toUpperCase();
+    const employeeNoRaw = String(req.body?.employeeNo ?? "").trim();
+    const admin = await requireAdminUser(adminUserId);
+    if (!admin) return res.status(403).json({ error: "관리자 권한이 필요합니다." });
+    if (!requestId) return res.status(400).json({ error: "요청 id가 필요합니다." });
+    if (!REGISTRATION_STAFF_ROLES.has(role)) {
+      return res.status(400).json({ error: "역할은 수술실(NURSE), 마취(ANESTHESIA), 주임(CHIEF) 중 하나여야 합니다." });
+    }
+
+    const reg = await queryOne("SELECT * FROM registration_requests WHERE id = ?", requestId);
+    if (!reg) return res.status(404).json({ error: "가입 요청을 찾을 수 없습니다." });
+    if (String(reg.status) !== "PENDING") {
+      return res.status(409).json({ error: "이미 처리된 요청입니다." });
+    }
+
+    const name = normalizeRegistrationName(reg.name);
+    const phone = normalizeRegistrationPhone(reg.phone);
+    const dupUser = await queryAll(
+      "SELECT id FROM users WHERE REPLACE(name, ' ', '') = REPLACE(?, ' ', '')",
+      name
+    );
+    if (dupUser.length > 0) {
+      return res.status(409).json({ error: "동일한 이름의 사용자가 이미 있습니다." });
+    }
+
+    const employeeNo = employeeNoRaw || employeeNoFromPhone(phone);
+    const userId = `u_reg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    const now = new Date().toISOString();
+
+    await runTransaction(async (tx) => {
+      await tx.execute(
+        "INSERT INTO users (id, name, employee_no, role, password) VALUES (?, ?, ?, ?, ?)",
+        userId,
+        name,
+        employeeNo,
+        role,
+        String(reg.password ?? "")
+      );
+      if (role === "NURSE" || role === "ANESTHESIA") {
+        const q = defaultGoldkeyQuotaForName(name);
+        await tx.execute(
+          "INSERT INTO goldkeys (user_id, quota_total, used_count, remaining_count) VALUES (?, ?, 0, ?)",
+          userId,
+          q,
+          q
+        );
+      }
+      await tx.execute(
+        `UPDATE registration_requests
+         SET status = 'APPROVED', created_user_id = ?, employee_no = ?, approved_role = ?,
+             reviewed_at = ?, reviewed_by = ?
+         WHERE id = ?`,
+        userId,
+        employeeNo,
+        role,
+        now,
+        adminUserId,
+        requestId
+      );
+    });
+
+    const user = await queryOne(
+      "SELECT id, name, employee_no, role FROM users WHERE id = ?",
+      userId
+    );
+    return res.json({ ok: true, user });
+  } catch (err) {
+    console.error("POST /api/admin/registration-requests/:id/approve", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
+app.post("/api/admin/registration-requests/:id/reject", async (req, res) => {
+  try {
+    const requestId = decodeURIComponent(String(req.params.id ?? "").trim());
+    const adminUserId = String(req.body?.adminUserId ?? "").trim();
+    const reason = String(req.body?.reason ?? "").trim();
+    const admin = await requireAdminUser(adminUserId);
+    if (!admin) return res.status(403).json({ error: "관리자 권한이 필요합니다." });
+    if (!requestId) return res.status(400).json({ error: "요청 id가 필요합니다." });
+
+    const reg = await queryOne("SELECT * FROM registration_requests WHERE id = ?", requestId);
+    if (!reg) return res.status(404).json({ error: "가입 요청을 찾을 수 없습니다." });
+    if (String(reg.status) !== "PENDING") {
+      return res.status(409).json({ error: "이미 처리된 요청입니다." });
+    }
+
+    const now = new Date().toISOString();
+    await execute(
+      `UPDATE registration_requests
+       SET status = 'REJECTED', reviewed_at = ?, reviewed_by = ?, reject_reason = ?
+       WHERE id = ?`,
+      now,
+      adminUserId,
+      reason || null,
+      requestId
+    );
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /api/admin/registration-requests/:id/reject", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
 });
 
 app.post("/api/change-password", async (req, res) => {
@@ -1325,6 +1549,17 @@ app.post("/api/admin/holiday-duties", async (req, res) => {
 });
 
 const STANDALONE_SUBSTITUTE_LEAVE_USER_ID = "__none__";
+
+/** 캘린더·대체 저장과 동일: 수술실 / 마취과 standalone requestId */
+function standaloneSubstituteRequestIdForStaffRole(role, leaveDate) {
+  const d = String(leaveDate ?? "").slice(0, 10);
+  if (String(role ?? "") === "ANESTHESIA") return `standalone_sub_anesthesia:${d}`;
+  return `standalone_sub:${d}`;
+}
+
+function isStandaloneSubstituteRequestId(reqId) {
+  return /^standalone_sub(?:_anesthesia)?:\d{4}-\d{2}-\d{2}$/.test(String(reqId ?? ""));
+}
 
 /**
  * 확정(APPROVED) 휴가 건의 대체 근무를 요청 단위로 교체 저장.

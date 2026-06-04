@@ -199,6 +199,103 @@ export function parseStandaloneSubstituteLeaveDate(requestId) {
   return m ? m[1] : "";
 }
 
+/** 동일 requestId·대체자·번표 중복 제거 */
+export function getSubstituteRecordsForRequest(substituteAssignments, requestId) {
+  const rows = (Array.isArray(substituteAssignments) ? substituteAssignments : []).filter(
+    (x) => x.requestId === requestId
+  );
+  const seen = new Set();
+  return rows.filter((x) => {
+    const key = `${String(x?.requestId ?? "")}|${String(x?.substituteUserId ?? "")}|${String(x?.shiftCode ?? "")}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * 캘린더 대체 입력란 행 구성.
+ * standalone(날짜 버킷)에 저장된 대체가 있으면 해당 scope는 버킷만 표시하고
+ * 휴가 신청별 빈 칸·per-request 복원은 생략한다(수술실 6명→6칸 중복 방지).
+ */
+export function buildCalendarSubstituteEditorRows({
+  selectedYmd,
+  substituteScope,
+  targets,
+  substituteAssignments,
+  users,
+  allowStandaloneSubstitute,
+  resolveShiftCode,
+}) {
+  if (!selectedYmd || !substituteScope) return [];
+  const targetList = Array.isArray(targets) ? targets : [];
+  const sid = standaloneSubstituteRequestId(selectedYmd, substituteScope);
+  const orphanRecs = allowStandaloneSubstitute
+    ? getSubstituteRecordsForRequest(substituteAssignments, sid)
+    : [];
+  const useStandaloneOnly = orphanRecs.length > 0;
+  const defaultSubRole = substituteScope;
+  const shiftCell = (s, requestId) => {
+    let role = defaultSubRole;
+    if (requestId && requestId !== sid) {
+      const req = targetList.find((t) => t.id === requestId);
+      role = userById(users, req?.userId)?.role ?? defaultSubRole;
+    }
+    const raw = s?.shiftCode;
+    if (typeof resolveShiftCode === "function") return resolveShiftCode(raw, role);
+    return String(raw ?? "").trim();
+  };
+
+  const restored = [];
+  if (!useStandaloneOnly) {
+    for (const t of targetList) {
+      const recs = getSubstituteRecordsForRequest(substituteAssignments, t.id);
+      if (!Array.isArray(recs) || recs.length === 0) continue;
+      for (let idx = 0; idx < recs.length; idx += 1) {
+        const s = recs[idx];
+        restored.push({
+          rowId: `cal_sub_${t.id}_${idx}`,
+          requestId: t.id,
+          substituteUserId: String(s?.substituteUserId ?? ""),
+          shiftCode: shiftCell(s, t.id),
+        });
+      }
+    }
+  }
+  for (let idx = 0; idx < orphanRecs.length; idx += 1) {
+    const s = orphanRecs[idx];
+    restored.push({
+      rowId: `cal_standalone_${sid}_${idx}`,
+      requestId: sid,
+      substituteUserId: String(s?.substituteUserId ?? ""),
+      shiftCode: shiftCell(s, sid),
+    });
+  }
+  if (!useStandaloneOnly) {
+    const pendingTargets = targetList.filter(
+      (t) => getSubstituteRecordsForRequest(substituteAssignments, t.id).length === 0
+    );
+    for (const t of pendingTargets) {
+      restored.push({
+        rowId: `cal_sub_${t.id}_pending`,
+        requestId: t.id,
+        substituteUserId: "",
+        shiftCode: "",
+      });
+    }
+  }
+
+  if (targetList.length === 0) {
+    if (orphanRecs.length > 0) return restored;
+    if (allowStandaloneSubstitute) {
+      return [{ rowId: `cal_sub_empty_${selectedYmd}`, requestId: sid, substituteUserId: "", shiftCode: "" }];
+    }
+    return [];
+  }
+
+  return restored;
+}
+
 export function requestSubjectStaffRole(requestRow, users) {
   return userById(users, requestRow?.userId)?.role ?? "";
 }

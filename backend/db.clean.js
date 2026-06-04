@@ -338,6 +338,25 @@ CREATE TABLE IF NOT EXISTS weekly_cell_overrides (
   updated_at TEXT NOT NULL,
   PRIMARY KEY (user_id, ymd)
 );
+
+-- 회원가입 요청(관리자 승인 전)
+CREATE TABLE IF NOT EXISTS registration_requests (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  password TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'PENDING',
+  created_user_id TEXT,
+  employee_no TEXT,
+  approved_role TEXT,
+  created_at TEXT NOT NULL,
+  reviewed_at TEXT,
+  reviewed_by TEXT,
+  reject_reason TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_registration_requests_status
+  ON registration_requests(status, created_at);
 `;
 
 export async function initDb() {
@@ -380,6 +399,7 @@ export async function initDb() {
   await ensureCancellationsRevokedColumns();
   await ensureRequestsSoftDeleteColumns();
   await ensureWeeklyCellOverridesTable();
+  await ensureRegistrationRequestsTable();
 
   await seedDefaultsIfEmpty();
   await ensureAnesthesiaUsers();
@@ -481,6 +501,28 @@ async function ensureWeeklyCellOverridesTable() {
       PRIMARY KEY (user_id, ymd)
     )
   `);
+}
+
+async function ensureRegistrationRequestsTable() {
+  await execute(`
+    CREATE TABLE IF NOT EXISTS registration_requests (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      password TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'PENDING',
+      created_user_id TEXT,
+      employee_no TEXT,
+      approved_role TEXT,
+      created_at TEXT NOT NULL,
+      reviewed_at TEXT,
+      reviewed_by TEXT,
+      reject_reason TEXT
+    )
+  `);
+  await execute(
+    "CREATE INDEX IF NOT EXISTS idx_registration_requests_status ON registration_requests(status, created_at)"
+  );
 }
 
 /**

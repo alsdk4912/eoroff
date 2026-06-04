@@ -93,6 +93,8 @@ import {
   standaloneSubstituteRequestId,
   isStandaloneSubstituteRequestId,
   parseStandaloneSubstituteLeaveDate,
+  getSubstituteRecordsForRequest,
+  buildCalendarSubstituteEditorRows,
 } from "./utils/leaveVisibility.js";
 import {
   FORCE_GOLDKEY_NEGOTIATION_KEYS,
@@ -572,6 +574,8 @@ function App() {
     `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
   );
   const [managedUsers, setManagedUsers] = useState([]);
+  const [pendingRegistrations, setPendingRegistrations] = useState([]);
+  const [registrationAdminMessage, setRegistrationAdminMessage] = useState("");
   /** 달력에서 선택한 날짜(YYYY-MM-DD) — 상세 패널·신청 탭에 사용 */
   const [calendarSelectedYmd, setCalendarSelectedYmd] = useState(null);
 
@@ -950,24 +954,40 @@ function App() {
     };
   }, [isLoggedIn, auth?.userId]);
 
+  async function reloadAdminUserManagement() {
+    if (!serverMode || !auth?.userId) return;
+    try {
+      const userList = await api.listUsers();
+      setManagedUsers(
+        userList.users.map((u) => ({
+          id: u.id,
+          name: u.name,
+          employeeNo: u.employee_no,
+          role: u.role,
+        }))
+      );
+    } catch {
+      setManagedUsers([]);
+    }
+    try {
+      const regList = await api.listRegistrationRequests({ adminUserId: auth.userId, status: "PENDING" });
+      setPendingRegistrations(
+        (regList.requests || []).map((r) => ({
+          id: r.id,
+          name: r.name,
+          phone: r.phone,
+          createdAt: r.created_at ?? r.createdAt,
+        }))
+      );
+    } catch {
+      setPendingRegistrations([]);
+    }
+  }
+
   useEffect(() => {
-    if (!isLoggedIn || !isAdmin) return;
-    (async () => {
-      try {
-        const userList = await api.listUsers();
-        setManagedUsers(
-          userList.users.map((u) => ({
-            id: u.id,
-            name: u.name,
-            employeeNo: u.employee_no,
-            role: u.role,
-          }))
-        );
-      } catch {
-        setManagedUsers([]);
-      }
-    })();
-  }, [isLoggedIn, isAdmin]);
+    if (!isLoggedIn || !isAdmin || !serverMode) return;
+    void reloadAdminUserManagement();
+  }, [isLoggedIn, isAdmin, serverMode, auth?.userId]);
 
   useEffect(() => {
     if (!isLoggedIn || currentUser?.role !== "NURSE" || !serverMode) {
@@ -2306,13 +2326,49 @@ function App() {
     await api.resetPasswordByIdentity({ loginName, employeeNo });
   }
 
+  async function handleRegister({ name, phone, password }) {
+    if (!serverMode) {
+      throw new Error("회원가입은 서버에 연결된 경우에만 가능합니다. 관리자에게 문의해주세요.");
+    }
+    const data = await api.register({ name, phone, password });
+    return data?.message || "가입 요청이 접수되었습니다.";
+  }
+
+  async function handleApproveRegistration(requestId, role, employeeNo) {
+    await api.approveRegistrationRequest(requestId, {
+      adminUserId: auth.userId,
+      role,
+      employeeNo: employeeNo || undefined,
+    });
+    const data = await api.bootstrap();
+    applyBootstrapPayload(data);
+    await reloadAdminUserManagement();
+    setRegistrationAdminMessage("가입 요청을 승인했습니다.");
+  }
+
+  async function handleRejectRegistration(requestId, reason) {
+    await api.rejectRegistrationRequest(requestId, {
+      adminUserId: auth.userId,
+      reason,
+    });
+    await reloadAdminUserManagement();
+    setRegistrationAdminMessage("가입 요청을 거절했습니다.");
+  }
+
   async function handleResetPassword(targetUserId) {
     await api.resetUserPassword(targetUserId, { adminUserId: auth.userId, nextPassword: "1234" });
     setAccountMessage("선택한 사용자의 비밀번호를 1234로 초기화했습니다.");
   }
 
   if (!isLoggedIn) {
-    return <LoginPage onLogin={handleLogin} onResetPassword={handleSelfPasswordReset} />;
+    return (
+      <LoginPage
+        onLogin={handleLogin}
+        onResetPassword={handleSelfPasswordReset}
+        onRegister={handleRegister}
+        serverMode={serverMode}
+      />
+    );
   }
 
   return (
@@ -2572,6 +2628,11 @@ function App() {
                 accountMessage={accountMessage}
                 onResetLeaveData={handleResetLeaveData}
                 resetDataMessage={resetDataMessage}
+                pendingRegistrations={pendingRegistrations}
+                onApproveRegistration={handleApproveRegistration}
+                onRejectRegistration={handleRejectRegistration}
+                registrationAdminMessage={registrationAdminMessage}
+                serverMode={serverMode}
               />
             ) : (
               <Navigate to="/calendar" />
@@ -2608,14 +2669,39 @@ function App() {
   );
 }
 
-function LoginPage({ onLogin, onResetPassword }) {
+const LOGIN_ICON_URL = `${import.meta.env.BASE_URL}icon.svg`;
+
+function LoginBrandHeader() {
+  return (
+    <header className="login-brand" aria-label="EOROFF 이오알오프">
+      <img className="login-brand__logo" src={LOGIN_ICON_URL} width={80} height={80} alt="" decoding="async" />
+      <p className="login-brand__eyebrow">수술실 휴가·근무 관리</p>
+      <h1 className="login-brand__title">EOROFF</h1>
+      <p className="login-brand__kr" lang="ko">
+        이오알오프
+      </p>
+      <p className="login-brand__tag">수술실 · 마취 · 주임 휴가를 한곳에서</p>
+    </header>
+  );
+}
+
+function LoginPage({ onLogin, onResetPassword, onRegister, serverMode }) {
   const [loginName, setLoginName] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [showReset, setShowReset] = useState(false);
+  const [showRegister, setShowRegister] = useState(false);
   const [resetName, setResetName] = useState("");
   const [resetEmployeeNo, setResetEmployeeNo] = useState("");
   const [resetMsg, setResetMsg] = useState("");
+  const [regName, setRegName] = useState("");
+  const [regPhone, setRegPhone] = useState("");
+  const [regPassword, setRegPassword] = useState("");
+  const [regPassword2, setRegPassword2] = useState("");
+  const [registerMsg, setRegisterMsg] = useState("");
+
+  const panelMode = showRegister ? "register" : showReset ? "reset" : "login";
+
   async function submit(e) {
     e.preventDefault();
     setError("");
@@ -2632,36 +2718,242 @@ function LoginPage({ onLogin, onResetPassword }) {
       await onResetPassword(resetName, resetEmployeeNo);
       setResetMsg("비밀번호가 기본값 1234로 초기화되었습니다. 다시 로그인해 주세요.");
       setShowReset(false);
+      setShowRegister(false);
       setLoginName(resetName);
       setPassword("1234");
     } catch (e2) {
       setResetMsg(e2.message || "비밀번호 재설정에 실패했습니다.");
     }
   }
+  async function submitRegister(e) {
+    e.preventDefault();
+    setRegisterMsg("");
+    setError("");
+    if (regPassword !== regPassword2) {
+      setError("비밀번호 확인이 일치하지 않습니다.");
+      return;
+    }
+    try {
+      const msg = await onRegister({
+        name: regName,
+        phone: regPhone,
+        password: regPassword,
+      });
+      setRegisterMsg(msg || "가입 요청이 접수되었습니다. 관리자 승인 후 로그인할 수 있습니다.");
+      setShowRegister(false);
+      setLoginName(regName);
+      setRegPassword("");
+      setRegPassword2("");
+    } catch (e2) {
+      setError(e2.message || "회원가입 요청에 실패했습니다.");
+    }
+  }
+
+  function openRegister() {
+    setShowRegister(true);
+    setShowReset(false);
+    setError("");
+    setRegisterMsg("");
+  }
+
+  function goLoginMode() {
+    setShowRegister(false);
+    setShowReset(false);
+    setError("");
+    setRegisterMsg("");
+  }
+
   return (
-    <div className="app login-wrap">
-      <section className="card login-card">
-        <h2>로그인</h2>
-        <form className="login-form" onSubmit={submit}>
-          <input placeholder="이름만 입력 (예: 김간호)" value={loginName} onChange={(e) => setLoginName(e.target.value)} />
-          <input type="password" placeholder="비밀번호 (기본: 1234)" value={password} onChange={(e) => setPassword(e.target.value)} />
-          <button type="submit">로그인</button>
-        </form>
-        <div style={{ marginTop: 8 }}>
-          <button type="button" className="login-secondary-button" onClick={() => setShowReset((v) => !v)}>
-            {showReset ? "초기화 닫기" : "비밀번호 초기화"}
-          </button>
-        </div>
-        {showReset ? (
-          <form className="login-form" style={{ marginTop: 10 }} onSubmit={submitReset}>
-            <input placeholder="이름" value={resetName} onChange={(e) => setResetName(e.target.value)} />
-            <input placeholder="관리자는 A0001" value={resetEmployeeNo} onChange={(e) => setResetEmployeeNo(e.target.value)} />
-            <button type="submit">초기화 실행</button>
-          </form>
-        ) : null}
-        {error ? <p className="msg">{error}</p> : null}
-        {resetMsg ? <p className="help">{resetMsg}</p> : null}
-      </section>
+    <div className="login-scene">
+      <div className="login-scene__sky" aria-hidden="true">
+        <span className="login-scene__orb login-scene__orb--1" />
+        <span className="login-scene__orb login-scene__orb--2" />
+        <span className="login-scene__orb login-scene__orb--3" />
+        <svg className="login-scene__palm login-scene__palm--left" viewBox="0 0 120 200" aria-hidden="true">
+          <path
+            d="M60 200V95M48 200V115M72 200V125M60 92c-18-32-14-62 6-82M72 98c10-38 4-66-14-84M88 104c22-36 18-64-4-80M42 88c-28-6-40 8-44 28"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="5"
+            strokeLinecap="round"
+          />
+        </svg>
+        <svg className="login-scene__palm login-scene__palm--right" viewBox="0 0 120 200" aria-hidden="true">
+          <path
+            d="M60 200V95M48 200V115M72 200V125M60 92c-18-32-14-62 6-82M72 98c10-38 4-66-14-84M88 104c22-36 18-64-4-80M42 88c-28-6-40 8-44 28"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="5"
+            strokeLinecap="round"
+          />
+        </svg>
+      </div>
+
+      <div className="login-scene__content">
+        <LoginBrandHeader />
+
+        <section className="login-panel" aria-labelledby="login-panel-title">
+          {panelMode !== "reset" ? (
+            <div className="login-mode-tabs" role="tablist" aria-label="로그인 방식">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={panelMode === "login"}
+                className={`login-mode-tab${panelMode === "login" ? " login-mode-tab--active" : ""}`}
+                onClick={goLoginMode}
+              >
+                로그인
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={panelMode === "register"}
+                className={`login-mode-tab${panelMode === "register" ? " login-mode-tab--active" : ""}`}
+                onClick={openRegister}
+              >
+                회원가입
+              </button>
+            </div>
+          ) : (
+            <button type="button" className="login-panel__back" onClick={goLoginMode}>
+              ← 로그인으로
+            </button>
+          )}
+
+          <h2 id="login-panel-title" className="login-panel__title">
+            {panelMode === "register" ? "회원가입 요청" : panelMode === "reset" ? "비밀번호 초기화" : "로그인"}
+          </h2>
+
+          {panelMode === "register" ? (
+            <>
+              <p className="login-panel__lead">실명·전화번호·비밀번호를 입력하면 관리자 승인 후 이용할 수 있습니다.</p>
+              {!serverMode ? (
+                <p className="login-feedback login-feedback--warn">서버에 연결되지 않아 회원가입을 할 수 없습니다.</p>
+              ) : (
+                <form className="login-form" onSubmit={submitRegister}>
+                  <label className="login-field">
+                    <span className="login-field__label">실명</span>
+                    <input
+                      className="login-field__input"
+                      placeholder="예: 홍길동"
+                      value={regName}
+                      onChange={(e) => setRegName(e.target.value)}
+                      autoComplete="name"
+                    />
+                  </label>
+                  <label className="login-field">
+                    <span className="login-field__label">전화번호</span>
+                    <input
+                      className="login-field__input"
+                      type="tel"
+                      placeholder="10~11자리 숫자"
+                      value={regPhone}
+                      onChange={(e) => setRegPhone(e.target.value)}
+                      autoComplete="tel"
+                    />
+                  </label>
+                  <label className="login-field">
+                    <span className="login-field__label">비밀번호</span>
+                    <input
+                      className="login-field__input"
+                      type="password"
+                      placeholder="4자 이상"
+                      value={regPassword}
+                      onChange={(e) => setRegPassword(e.target.value)}
+                      autoComplete="new-password"
+                    />
+                  </label>
+                  <label className="login-field">
+                    <span className="login-field__label">비밀번호 확인</span>
+                    <input
+                      className="login-field__input"
+                      type="password"
+                      placeholder="다시 입력"
+                      value={regPassword2}
+                      onChange={(e) => setRegPassword2(e.target.value)}
+                      autoComplete="new-password"
+                    />
+                  </label>
+                  <button type="submit" className="login-submit">
+                    가입 요청하기
+                  </button>
+                </form>
+              )}
+            </>
+          ) : panelMode === "reset" ? (
+            <>
+              <p className="login-panel__lead">이름과 사번이 일치하면 비밀번호가 기본값(1234)으로 초기화됩니다.</p>
+              <form className="login-form" onSubmit={submitReset}>
+                <label className="login-field">
+                  <span className="login-field__label">이름</span>
+                  <input
+                    className="login-field__input"
+                    placeholder="가입 시 실명"
+                    value={resetName}
+                    onChange={(e) => setResetName(e.target.value)}
+                  />
+                </label>
+                <label className="login-field">
+                  <span className="login-field__label">사번</span>
+                  <input
+                    className="login-field__input"
+                    placeholder="관리자는 A0001"
+                    value={resetEmployeeNo}
+                    onChange={(e) => setResetEmployeeNo(e.target.value)}
+                  />
+                </label>
+                <button type="submit" className="login-submit login-submit--secondary">
+                  초기화 실행
+                </button>
+              </form>
+            </>
+          ) : (
+            <>
+              <form className="login-form" onSubmit={submit}>
+                <label className="login-field">
+                  <span className="login-field__label">이름</span>
+                  <input
+                    className="login-field__input"
+                    placeholder="예: 김해림"
+                    value={loginName}
+                    onChange={(e) => setLoginName(e.target.value)}
+                    autoComplete="username"
+                  />
+                </label>
+                <label className="login-field">
+                  <span className="login-field__label">비밀번호</span>
+                  <input
+                    className="login-field__input"
+                    type="password"
+                    placeholder="기본 1234"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="current-password"
+                  />
+                </label>
+                <button type="submit" className="login-submit">
+                  로그인
+                </button>
+              </form>
+              <div className="login-panel__links">
+                <button type="button" className="login-link-button" onClick={() => setShowReset(true)}>
+                  비밀번호 초기화
+                </button>
+              </div>
+            </>
+          )}
+
+          {error ? (
+            <p className="login-feedback login-feedback--error" role="alert">
+              {error}
+            </p>
+          ) : null}
+          {resetMsg ? <p className="login-feedback login-feedback--ok">{resetMsg}</p> : null}
+          {registerMsg ? <p className="login-feedback login-feedback--ok">{registerMsg}</p> : null}
+        </section>
+
+        <p className="login-scene__foot">EOROFF · 이오알오프 휴가시스템</p>
+      </div>
     </div>
   );
 }
@@ -3171,14 +3463,15 @@ function baseMonthCodeForNurseName(name, ymd, workScheduleByYear) {
   return String(raw).trim();
 }
 
-/** 하단 대체자 표: ADMIN2는 수술실·마취·주임 전체, 그 외는 담당 부서만 */
+/** 하단 대체자 표: ADMIN·ADMIN2는 수술실·마취·주임 전체, 그 외는 담당 부서만 */
 function renderAdminDaySubstituteGridCells(selectedYmd, selectedCell, substituteAssignments, users, viewerRole) {
   const cells = [];
   const pushSubs = (subs, keyPrefix) => {
     for (let i = 0; i < subs.length; i += 1) {
       const s = subs[i];
       const subName = users.find((u) => u.id === s.substituteUserId)?.name ?? s.substituteUserId;
-      const code = String(s.shiftCode ?? "").trim() || "-";
+      const rawCode = String(s.shiftCode ?? "").trim();
+      const code = isCustomShiftCodeValue(rawCode) ? customShiftText(rawCode).trim() || "-" : rawCode || "-";
       cells.push(
         <span key={`${keyPrefix}_${i}_code`} className="admin-day-substitute-grid__cell">
           {code}
@@ -3205,7 +3498,7 @@ function renderAdminDaySubstituteGridCells(selectedYmd, selectedCell, substitute
     );
   };
 
-  const showAllDepts = viewerRole === "ADMIN2";
+  const showAllDepts = viewerRole === "ADMIN2" || viewerRole === "ADMIN";
   if (showAllDepts) {
     for (const item of Array.isArray(selectedCell?.approvedApplicants) ? selectedCell.approvedApplicants : []) {
       pushApplicant(item);
@@ -3250,17 +3543,6 @@ function renderAdminDaySubstituteGridCells(selectedYmd, selectedCell, substitute
     );
   }
   return cells;
-}
-
-function getSubstituteRecordsForRequest(substituteAssignments, requestId) {
-  const rows = (Array.isArray(substituteAssignments) ? substituteAssignments : []).filter((x) => x.requestId === requestId);
-  const seen = new Set();
-  return rows.filter((x) => {
-    const key = `${String(x?.requestId ?? "")}|${String(x?.substituteUserId ?? "")}|${String(x?.shiftCode ?? "")}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
 }
 
 /**
@@ -6571,74 +6853,17 @@ function CalendarPage({
   }, [selectedYmd, dayRequests, substituteAssignments, substituteScope, users, viewerRole]);
 
   useEffect(() => {
-    if (!selectedYmd || !substituteScope) {
-      setCalendarSubRows([]);
-      return;
-    }
-    const targets = calendarSubTargetRequests;
-    const sid = standaloneSubstituteRequestId(selectedYmd, substituteScope);
-    const orphanRecs = allowStandaloneSubstitute ? getSubstituteRecordsForRequest(substituteAssignments, sid) : [];
-
-    const defaultSubRole = substituteScope;
-    const shiftCell = (s, requestId) => {
-      let role = defaultSubRole;
-      if (requestId && requestId !== sid) {
-        const req = targets.find((t) => t.id === requestId);
-        role = users.find((u) => u.id === req?.userId)?.role ?? defaultSubRole;
-      }
-      return resolveShiftCodeFromStored(s?.shiftCode, role);
-    };
-
-    const restored = [];
-    for (const t of targets) {
-      const recs = getSubstituteRecordsForRequest(substituteAssignments, t.id);
-      if (!Array.isArray(recs) || recs.length === 0) continue;
-      for (let idx = 0; idx < recs.length; idx += 1) {
-        const s = recs[idx];
-        restored.push({
-          rowId: `cal_sub_${t.id}_${idx}`,
-          requestId: t.id,
-          substituteUserId: String(s?.substituteUserId ?? ""),
-          shiftCode: shiftCell(s, t.id),
-        });
-      }
-    }
-    for (let idx = 0; idx < orphanRecs.length; idx += 1) {
-      const s = orphanRecs[idx];
-      restored.push({
-        rowId: `cal_standalone_${sid}_${idx}`,
-        requestId: sid,
-        substituteUserId: String(s?.substituteUserId ?? ""),
-        shiftCode: shiftCell(s, sid),
-      });
-    }
-
-    const pendingTargets = targets.filter(
-      (t) => getSubstituteRecordsForRequest(substituteAssignments, t.id).length === 0
+    setCalendarSubRows(
+      buildCalendarSubstituteEditorRows({
+        selectedYmd,
+        substituteScope,
+        targets: calendarSubTargetRequests,
+        substituteAssignments,
+        users,
+        allowStandaloneSubstitute,
+        resolveShiftCode: (raw, role) => resolveShiftCodeFromStored(raw, role),
+      })
     );
-    for (const t of pendingTargets) {
-      restored.push({
-        rowId: `cal_sub_${t.id}_pending`,
-        requestId: t.id,
-        substituteUserId: "",
-        shiftCode: "",
-      });
-    }
-
-    if (targets.length === 0) {
-      if (orphanRecs.length > 0) {
-        setCalendarSubRows(restored);
-        return;
-      }
-      if (allowStandaloneSubstitute) {
-        setCalendarSubRows([{ rowId: `cal_sub_empty_${selectedYmd}`, requestId: sid, substituteUserId: "", shiftCode: "" }]);
-        return;
-      }
-      setCalendarSubRows([]);
-      return;
-    }
-
-    setCalendarSubRows(restored);
   }, [
     selectedYmd,
     calendarSubTargetRequests,
@@ -6785,19 +7010,25 @@ function CalendarPage({
   function addCalendarSubRow() {
     const targets = calendarSubTargetRequests;
     const sid = selectedYmd ? standaloneSubstituteRequestId(selectedYmd, substituteScope) : "";
+    const orphanRecs =
+      allowStandaloneSubstitute && sid ? getSubstituteRecordsForRequest(substituteAssignments, sid) : [];
+    const useStandaloneBucket =
+      allowStandaloneSubstitute &&
+      (orphanRecs.length > 0 || (Array.isArray(calendarSubRows) ? calendarSubRows : []).some((r) => String(r.requestId) === sid));
+
     if (!Array.isArray(calendarSubRows) || calendarSubRows.length === 0) {
       if (targets.length === 0 && !allowStandaloneSubstitute) return;
       setCalendarSubRows([
         {
           rowId: `cal_sub_empty_${Date.now()}`,
-          requestId: targets.length > 0 ? targets[0].id : sid,
+          requestId: useStandaloneBucket || targets.length === 0 ? sid : targets[0].id,
           substituteUserId: "",
           shiftCode: "",
         },
       ]);
       return;
     }
-    if (targets.length === 0) {
+    if (useStandaloneBucket || targets.length === 0) {
       if (!allowStandaloneSubstitute) return;
       setCalendarSubRows((prev) => [
         ...(Array.isArray(prev) ? prev : []),
@@ -7890,10 +8121,107 @@ function AdminPage({ allRequests, users, notes, goldkeys, cancellations, serverM
   );
 }
 
-function SettingsPage({ managedUsers, onResetPassword, accountMessage }) {
+function RegistrationApprovalRow({ row, onApprove, onReject }) {
+  const [role, setRole] = useState("NURSE");
+  const [employeeNo, setEmployeeNo] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [localMsg, setLocalMsg] = useState("");
+
+  async function approve() {
+    setBusy(true);
+    setLocalMsg("");
+    try {
+      await onApprove(row.id, role, employeeNo.trim());
+    } catch (e) {
+      setLocalMsg(e?.message || "승인 실패");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reject() {
+    const reason = window.prompt?.("거절 사유(선택)") ?? "";
+    if (reason === null) return;
+    setBusy(true);
+    setLocalMsg("");
+    try {
+      await onReject(row.id, reason);
+    } catch (e) {
+      setLocalMsg(e?.message || "거절 실패");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const phoneDisplay = String(row.phone ?? "").replace(/(\d{3})(\d{3,4})(\d{4})/, "$1-$2-$3");
+
+  return (
+    <li className="registration-approval-row">
+      <div className="registration-approval-row__meta">
+        <strong>{row.name}</strong>
+        <span>{phoneDisplay || row.phone}</span>
+        <span className="registration-approval-row__time">
+          {row.createdAt ? new Date(row.createdAt).toLocaleString("ko-KR") : ""}
+        </span>
+      </div>
+      <div className="registration-approval-row__actions row wrap">
+        <select value={role} onChange={(e) => setRole(e.target.value)} disabled={busy} aria-label="역할">
+          <option value="NURSE">수술실</option>
+          <option value="ANESTHESIA">마취과</option>
+          <option value="CHIEF">주임</option>
+        </select>
+        <input
+          type="text"
+          placeholder="사번(비우면 자동)"
+          value={employeeNo}
+          onChange={(e) => setEmployeeNo(e.target.value)}
+          disabled={busy}
+        />
+        <button type="button" disabled={busy} onClick={() => void approve()}>
+          승인
+        </button>
+        <button type="button" className="registration-reject-btn" disabled={busy} onClick={() => void reject()}>
+          거절
+        </button>
+      </div>
+      {localMsg ? <p className="msg">{localMsg}</p> : null}
+    </li>
+  );
+}
+
+function SettingsPage({
+  managedUsers,
+  onResetPassword,
+  accountMessage,
+  pendingRegistrations,
+  onApproveRegistration,
+  onRejectRegistration,
+  registrationAdminMessage,
+  serverMode,
+}) {
   return (
     <section className="card">
       <h2 className="screen-title">설정</h2>
+
+      <h3 className="settings-subheading">회원가입 승인</h3>
+      {!serverMode ? (
+        <p className="help">서버 연결 시에만 가입 요청을 확인할 수 있습니다.</p>
+      ) : pendingRegistrations.length === 0 ? (
+        <p className="help">대기 중인 가입 요청이 없습니다.</p>
+      ) : (
+        <ul className="registration-approval-list">
+          {pendingRegistrations.map((row) => (
+            <RegistrationApprovalRow
+              key={row.id}
+              row={row}
+              onApprove={onApproveRegistration}
+              onReject={onRejectRegistration}
+            />
+          ))}
+        </ul>
+      )}
+      {registrationAdminMessage ? <p className="help">{registrationAdminMessage}</p> : null}
+
       <h3 className="settings-subheading">사용자 비밀번호 초기화</h3>
       <ul className="settings-password-reset-list">
         {managedUsers.map((u) => (

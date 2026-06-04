@@ -68,6 +68,7 @@ async function requestJson(path, options = {}) {
 
 export const api = {
   login: (payload) => requestJson("/login", { method: "POST", body: JSON.stringify(payload) }),
+  register: (payload) => requestJson("/register", { method: "POST", body: JSON.stringify(payload) }),
   bootstrap: () => requestJson("/bootstrap"),
   createRequest: (payload) =>
     requestJson("/requests", { method: "POST", body: JSON.stringify(payload) }),
@@ -103,6 +104,20 @@ export const api = {
   resetPasswordByIdentity: (payload) =>
     requestJson("/password-reset", { method: "POST", body: JSON.stringify(payload) }),
   listUsers: () => requestJson("/admin/users"),
+  listRegistrationRequests: ({ adminUserId, status = "PENDING" }) =>
+    requestJson(
+      `/admin/registration-requests?adminUserId=${encodeURIComponent(String(adminUserId ?? ""))}&status=${encodeURIComponent(status)}`
+    ),
+  approveRegistrationRequest: (requestId, payload) =>
+    requestJson(`/admin/registration-requests/${encodeURIComponent(requestId)}/approve`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  rejectRegistrationRequest: (requestId, payload) =>
+    requestJson(`/admin/registration-requests/${encodeURIComponent(requestId)}/reject`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   resetUserPassword: (targetUserId, payload) =>
     requestJson(`/admin/users/${targetUserId}/reset-password`, {
       method: "POST",
