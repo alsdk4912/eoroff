@@ -384,10 +384,14 @@ export function buildCalendarSubstituteEditorRows({
     const pendingTargets = targetList.filter(
       (t) => getSubstituteRecordsForRequest(substituteAssignments, t.id).length === 0
     );
-    for (const t of pendingTargets) {
+    const hasEmptyRow = restored.some(
+      (r) => !String(r?.substituteUserId ?? "").trim() && !String(r?.shiftCode ?? "").trim()
+    );
+    if (!hasEmptyRow && pendingTargets.length > 0) {
+      const defaultRequestId = allowStandaloneSubstitute ? sid : pendingTargets[0].id;
       restored.push({
-        rowId: `cal_sub_${t.id}_pending`,
-        requestId: t.id,
+        rowId: allowStandaloneSubstitute ? `cal_sub_${sid}_pending` : `cal_sub_${pendingTargets[0].id}_pending`,
+        requestId: defaultRequestId,
         substituteUserId: "",
         shiftCode: "",
       });
