@@ -2726,17 +2726,18 @@ const LOGIN_APP_LOGO_URL = `${import.meta.env.BASE_URL}app-logo.png`;
 
 function LoginBrandHeader() {
   return (
-    <header className="login-brand" aria-label="EOROFF 이오알오프">
-      <img
-        className="login-brand__logo"
-        src={LOGIN_APP_LOGO_URL}
-        width={112}
-        height={112}
-        alt="eoroff 휴가·근무 관리"
-        decoding="async"
-      />
-      <p className="login-brand__eyebrow">수술실 휴가·근무 관리</p>
-      <p className="login-brand__tag">수술실 · 마취 · 주임 휴가를 한곳에서</p>
+    <header className="login-hero" aria-label="eoroff">
+      <div className="login-hero__logo-wrap">
+        <img
+          className="login-hero__logo"
+          src={LOGIN_APP_LOGO_URL}
+          width={104}
+          height={110}
+          alt=""
+          decoding="async"
+        />
+      </div>
+      <p className="login-hero__caption">수술실 · 마취 · 주임 휴가를 한곳에서</p>
     </header>
   );
 }
