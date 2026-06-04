@@ -4243,8 +4243,8 @@ tr.request-cancelled-row td button {
   bottom: auto;
   transform: translate3d(-50%, -50%, 0);
   width: min(560px, calc(100vw - 28px));
-  max-height: min(62dvh, 500px);
-  min-height: min(320px, 52dvh);
+  max-height: min(62dvh, 520px);
+  min-height: min(340px, 52dvh);
   z-index: 90;
 }
 
@@ -4261,8 +4261,8 @@ tr.request-cancelled-row td button {
     top: 50%;
     bottom: auto;
     width: calc(100vw - 24px);
-    max-height: min(58dvh, 460px);
-    min-height: min(300px, 50dvh);
+    max-height: min(58dvh, 480px);
+    min-height: min(320px, 50dvh);
     transform: translate3d(-50%, -50%, 0);
     border-radius: 12px;
     padding-bottom: 0;
