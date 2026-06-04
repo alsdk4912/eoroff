@@ -98,6 +98,8 @@ import {
   getSubstituteRecordsForRequest,
   buildCalendarSubstituteEditorRows,
   buildCalendarSubstituteDisplayRows,
+  getStandaloneSubstituteRecordsForScope,
+  staffRoleFromStandaloneRequestId,
   userById,
   isStaffLeaveRole,
   isConfirmedLeaveStatus,
@@ -3531,6 +3533,7 @@ function renderDaySubstituteGridCells(selectedYmd, selectedCell, substituteAssig
       staffRole,
       approvedApplicants: applicants,
       substituteAssignments,
+      users,
     });
     for (let i = 0; i < rows.length; i += 1) {
       const s = rows[i];
@@ -6763,8 +6766,8 @@ function CalendarPage({
       return {
         sectionClass: "admin-calendar-substitute-section--chief",
         title: "대체 근무 지정 (주임)",
-        lead: "확정된 주임 휴가에 대체 인력·번표를 지정합니다.",
-        emptyLead: "이 날짜에 확정·신청 중인 주임 휴가가 없습니다.",
+        lead: "휴가자 선택 없이 주임 대체 인력·번표만 입력 후 저장합니다.",
+        emptyLead: "이 날짜에 주임 휴가가 없어도 대체 인력·번표만 지정해 저장할 수 있습니다.",
         pool: chiefUsers,
         shiftOptions: CHIEF_SHIFT_OPTIONS,
         customPlaceholder: "예: D1",
@@ -6971,7 +6974,7 @@ function CalendarPage({
 
     if (isStandaloneSubstituteRequestId(requestId)) {
       const leaveDate = parseStandaloneSubstituteLeaveDate(requestId);
-      const staffRole = String(requestId).startsWith("standalone_sub_anesthesia:") ? "ANESTHESIA" : "NURSE";
+      const staffRole = staffRoleFromStandaloneRequestId(requestId) ?? "NURSE";
       await saveStandaloneSubstituteAssignments(leaveDate, items, staffRole);
       return;
     }
@@ -7016,7 +7019,9 @@ function CalendarPage({
     const targets = calendarSubTargetRequests;
     const sid = selectedYmd ? standaloneSubstituteRequestId(selectedYmd, substituteScope) : "";
     const orphanRecs =
-      allowStandaloneSubstitute && sid ? getSubstituteRecordsForRequest(substituteAssignments, sid) : [];
+      allowStandaloneSubstitute && sid && substituteScope
+        ? getStandaloneSubstituteRecordsForScope(selectedYmd, substituteScope, substituteAssignments, users)
+        : [];
     const useStandaloneBucket =
       allowStandaloneSubstitute &&
       (orphanRecs.length > 0 || (Array.isArray(calendarSubRows) ? calendarSubRows : []).some((r) => String(r.requestId) === sid));
@@ -7070,7 +7075,7 @@ function CalendarPage({
         window.alert?.("대체자와 번표를 모두 선택(또는 직접입력)한 뒤 저장해 주세요.");
         return;
       }
-      const staffRole = String(requestId).startsWith("standalone_sub_anesthesia:") ? "ANESTHESIA" : "NURSE";
+      const staffRole = staffRoleFromStandaloneRequestId(requestId) ?? "NURSE";
       await saveStandaloneSubstituteAssignments(leaveDate, items, staffRole);
       return;
     }

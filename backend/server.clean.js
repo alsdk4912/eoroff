@@ -1556,11 +1556,12 @@ const STANDALONE_SUBSTITUTE_LEAVE_USER_ID = "__none__";
 function standaloneSubstituteRequestIdForStaffRole(role, leaveDate) {
   const d = String(leaveDate ?? "").slice(0, 10);
   if (String(role ?? "") === "ANESTHESIA") return `standalone_sub_anesthesia:${d}`;
+  if (String(role ?? "") === "CHIEF") return `standalone_sub_chief:${d}`;
   return `standalone_sub:${d}`;
 }
 
 function isStandaloneSubstituteRequestId(reqId) {
-  return /^standalone_sub(?:_anesthesia)?:\d{4}-\d{2}-\d{2}$/.test(String(reqId ?? ""));
+  return /^standalone_sub(?:_(?:anesthesia|chief))?:(\d{4}-\d{2}-\d{2})$/.test(String(reqId ?? ""));
 }
 
 /**
@@ -1580,14 +1581,19 @@ app.post("/api/substitute-assignments/:requestId/upsert", async (req, res) => {
 
     const standaloneNurseM = /^standalone_sub:(\d{4}-\d{2}-\d{2})$/.exec(requestId);
     const standaloneAnesM = /^standalone_sub_anesthesia:(\d{4}-\d{2}-\d{2})$/.exec(requestId);
+    const standaloneChiefM = /^standalone_sub_chief:(\d{4}-\d{2}-\d{2})$/.exec(requestId);
     let leaveDateFromRequest = "";
     let leaveUserIdForSub = "";
-    if (standaloneNurseM || standaloneAnesM) {
-      leaveDateFromRequest = (standaloneNurseM || standaloneAnesM)[1];
+    if (standaloneNurseM || standaloneAnesM || standaloneChiefM) {
+      leaveDateFromRequest = (standaloneNurseM || standaloneAnesM || standaloneChiefM)[1];
       leaveUserIdForSub = STANDALONE_SUBSTITUTE_LEAVE_USER_ID;
       if (standaloneAnesM) {
         if (actor.role !== "ADMIN2") {
           return res.status(403).json({ error: "마취과 대체 근무(휴가 없음)는 관리자2만 지정할 수 있습니다." });
+        }
+      } else if (standaloneChiefM) {
+        if (actor.role !== "CHIEF") {
+          return res.status(403).json({ error: "주임 대체 근무(휴가 없음)는 주임 계정으로만 지정할 수 있습니다." });
         }
       } else if (actor.role !== "ADMIN") {
         return res.status(403).json({ error: "수술실 대체 근무는 관리자만 지정할 수 있습니다." });
@@ -1630,7 +1636,7 @@ app.post("/api/substitute-assignments/:requestId/upsert", async (req, res) => {
       if (!substituteUserId || !shiftCode) {
         return res.status(400).json({ error: "대체 인력과 근무 코드를 모두 입력해야 합니다." });
       }
-      const isStandalone = Boolean(standaloneNurseM || standaloneAnesM);
+      const isStandalone = Boolean(standaloneNurseM || standaloneAnesM || standaloneChiefM);
       if (!isStandalone && substituteUserId === leaveUserIdForSub) {
         return res.status(400).json({ error: "휴가자 본인을 대체 인력으로 지정할 수 없습니다." });
       }
@@ -1650,6 +1656,8 @@ app.post("/api/substitute-assignments/:requestId/upsert", async (req, res) => {
       let subRole = "NURSE";
       if (standaloneAnesM) {
         subRole = "ANESTHESIA";
+      } else if (standaloneChiefM) {
+        subRole = "CHIEF";
       } else if (standaloneNurseM) {
         subRole = "NURSE";
       } else {

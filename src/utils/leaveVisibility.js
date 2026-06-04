@@ -179,24 +179,77 @@ export function substituteScopeStaffRole(viewerRole) {
   return null;
 }
 
-/** 휴가 신청 없이 날짜만 대체 번표 저장 (ADMIN→수술실, ADMIN2→마취과) */
+/** 휴가 신청 없이 날짜만 대체 번표 저장 (ADMIN→수술실, ADMIN2→마취, CHIEF→주임) */
 export function canUseStandaloneSubstituteForViewer(viewerRole) {
-  return isOrLeaveAdminRole(viewerRole) || isAnesthesiaLeaveAdminRole(viewerRole);
+  return (
+    isOrLeaveAdminRole(viewerRole) ||
+    isAnesthesiaLeaveAdminRole(viewerRole) ||
+    isChiefLeaveAdminRole(viewerRole)
+  );
 }
 
 export function standaloneSubstituteRequestId(ymd, staffRole = "NURSE") {
   const d = String(ymd ?? "").slice(0, 10);
   if (staffRole === "ANESTHESIA") return `standalone_sub_anesthesia:${d}`;
+  if (staffRole === "CHIEF") return `standalone_sub_chief:${d}`;
   return `standalone_sub:${d}`;
 }
 
 export function isStandaloneSubstituteRequestId(id) {
-  return /^standalone_sub(?:_anesthesia)?:\d{4}-\d{2}-\d{2}$/.test(String(id ?? ""));
+  return /^standalone_sub(?:_(?:anesthesia|chief))?:(\d{4}-\d{2}-\d{2})$/.test(String(id ?? ""));
 }
 
 export function parseStandaloneSubstituteLeaveDate(requestId) {
-  const m = /^standalone_sub(?:_anesthesia)?:(\d{4}-\d{2}-\d{2})$/.exec(String(requestId ?? ""));
+  const m = /^standalone_sub(?:_(?:anesthesia|chief))?:(\d{4}-\d{2}-\d{2})$/.exec(String(requestId ?? ""));
   return m ? m[1] : "";
+}
+
+export function staffRoleFromStandaloneRequestId(requestId) {
+  const id = String(requestId ?? "");
+  if (id.startsWith("standalone_sub_anesthesia:")) return "ANESTHESIA";
+  if (id.startsWith("standalone_sub_chief:")) return "CHIEF";
+  if (id.startsWith("standalone_sub:")) return "NURSE";
+  return null;
+}
+
+const CHIEF_STANDALONE_SHIFT_HINTS = new Set(["D0", "D1", "E"]);
+
+/** legacy `standalone_sub:` 버킷에 섞인 주임 대체 행 구분 */
+export function substituteRecordStaffScope(record, users) {
+  const reqId = String(record?.requestId ?? "");
+  if (reqId.startsWith("standalone_sub_anesthesia:")) return "ANESTHESIA";
+  if (reqId.startsWith("standalone_sub_chief:")) return "CHIEF";
+  const subRole = userById(users, record?.substituteUserId)?.role ?? "";
+  if (subRole === "CHIEF" || subRole === "ANESTHESIA" || subRole === "NURSE") return subRole;
+  if (reqId.startsWith("standalone_sub:")) {
+    const code = String(record?.shiftCode ?? "").trim();
+    if (CHIEF_STANDALONE_SHIFT_HINTS.has(code)) return "CHIEF";
+    return "NURSE";
+  }
+  return "NURSE";
+}
+
+/** 부서별 standalone·legacy 버킷에서 해당 scope 대체만 */
+export function getStandaloneSubstituteRecordsForScope(ymd, scope, substituteAssignments, users) {
+  const sid = standaloneSubstituteRequestId(ymd, scope);
+  let recs = getSubstituteRecordsForRequest(substituteAssignments, sid);
+  if (scope === "CHIEF") {
+    const legacyNurseBucket = standaloneSubstituteRequestId(ymd, "NURSE");
+    const legacyChief = getSubstituteRecordsForRequest(substituteAssignments, legacyNurseBucket).filter(
+      (r) => substituteRecordStaffScope(r, users) === "CHIEF"
+    );
+    const seen = new Set(recs.map((r) => `${r.substituteUserId}|${r.shiftCode}`));
+    for (const r of legacyChief) {
+      const key = `${r.substituteUserId}|${r.shiftCode}`;
+      if (!seen.has(key)) {
+        recs.push(r);
+        seen.add(key);
+      }
+    }
+  } else if (scope === "NURSE") {
+    recs = recs.filter((r) => substituteRecordStaffScope(r, users) !== "CHIEF");
+  }
+  return recs;
 }
 
 /** 동일 requestId·대체자·번표 중복 제거 */
@@ -231,7 +284,7 @@ export function buildCalendarSubstituteEditorRows({
   const targetList = Array.isArray(targets) ? targets : [];
   const sid = standaloneSubstituteRequestId(selectedYmd, substituteScope);
   const orphanRecs = allowStandaloneSubstitute
-    ? getSubstituteRecordsForRequest(substituteAssignments, sid)
+    ? getStandaloneSubstituteRecordsForScope(selectedYmd, substituteScope, substituteAssignments, users)
     : [];
   const useStandaloneOnly = orphanRecs.length > 0;
   const defaultSubRole = substituteScope;
@@ -305,12 +358,15 @@ export function buildCalendarSubstituteDisplayRows({
   staffRole,
   approvedApplicants,
   substituteAssignments,
+  users,
 }) {
   const applicants = Array.isArray(approvedApplicants) ? approvedApplicants : [];
-  const scopeForStandalone = staffRole === "ANESTHESIA" ? "ANESTHESIA" : "NURSE";
-  const sid =
-    staffRole === "CHIEF" ? null : standaloneSubstituteRequestId(selectedYmd, scopeForStandalone);
-  const orphanRecs = sid ? getSubstituteRecordsForRequest(substituteAssignments, sid) : [];
+  const orphanRecs = getStandaloneSubstituteRecordsForScope(
+    selectedYmd,
+    staffRole,
+    substituteAssignments,
+    users
+  );
   const useStandaloneOnly = orphanRecs.length > 0;
   const rows = [];
 
