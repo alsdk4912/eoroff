@@ -7566,7 +7566,10 @@ function CalendarPage({
                   <p className="help">주말·공휴일·명절·대체공휴일만 조회할 수 있습니다.</p>
                 )
               ) : null}
-              {!isEmergencyOrRole(viewerRole) && canEditHolidayDuty && selectedCell?.isOffDay ? (
+              {!isEmergencyOrRole(viewerRole) &&
+              !jinHolidayDutyViewer &&
+              canEditHolidayDuty &&
+              selectedCell?.isOffDay ? (
                 <section className="holiday-duty-panel">
                   <h4 className="holiday-duty-title">휴일 당직자 기록 (주말·공휴·대체공휴일·명절)</h4>
                   <div className="row wrap holiday-duty-grid">
