@@ -304,6 +304,17 @@ export function isLeaveManagerRole(role) {
   return isOrLeaveAdminRole(role) || isAnesthesiaLeaveAdminRole(role) || isChiefLeaveAdminRole(role);
 }
 
+/** 캘린더 하단 휴가자·대체자: 수술실·마취·주임 전원 열람(간호사·관리자·주임 포함) */
+export function calendarShowsAllDepartmentsLeaveAndSubstitute(viewerRole) {
+  return (
+    viewerRole === "NURSE" ||
+    viewerRole === "ANESTHESIA" ||
+    viewerRole === "CHIEF" ||
+    viewerRole === "ADMIN" ||
+    viewerRole === "ADMIN2"
+  );
+}
+
 /** @deprecated 확정 휴가는 filterRequestsForViewerRole에 통합 — 중복 칩 방지 */
 export function showDepartmentPublishedOverlay(_viewerRole) {
   return false;

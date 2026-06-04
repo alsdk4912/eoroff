@@ -86,6 +86,7 @@ import {
   isAnesthesiaLeaveAdminRole,
   isChiefLeaveAdminRole,
   isLeaveManagerRole,
+  calendarShowsAllDepartmentsLeaveAndSubstitute,
   isOrLeaveAdminRole,
   isScheduleOnlyDashboardRole,
   showHolidayDutyEditorRole,
@@ -95,6 +96,9 @@ import {
   parseStandaloneSubstituteLeaveDate,
   getSubstituteRecordsForRequest,
   buildCalendarSubstituteEditorRows,
+  userById,
+  isStaffLeaveRole,
+  isConfirmedLeaveStatus,
 } from "./utils/leaveVisibility.js";
 import {
   FORCE_GOLDKEY_NEGOTIATION_KEYS,
@@ -1478,6 +1482,15 @@ function App() {
     () => filterRequestsForCalendarGrid(requestsVisibleInUi, users, viewerRole),
     [requestsVisibleInUi, users, viewerRole]
   );
+  /** 캘린더 하단 확정 휴가자: 역할 필터 없이 전 부서 확정 건만 */
+  const requestsForCalendarSharedConfirmed = useMemo(
+    () =>
+      requestsRawVisible.filter((r) => {
+        const role = userById(users, r.userId)?.role;
+        return isStaffLeaveRole(role) && isConfirmedLeaveStatus(r.status);
+      }),
+    [requestsRawVisible, users]
+  );
   const requestsForWeeklyRoster = useMemo(
     () => filterRequestsForWeeklyRoster(requestsRawVisible, users),
     [requestsRawVisible, users]
@@ -1505,8 +1518,23 @@ function App() {
   const ladderDoneKeySet = useMemo(() => buildLadderDoneKeySet(ladderResults), [ladderResults]);
   const calendarData = useMemo(() => {
     const [year, month] = calendarMonth.split("-").map(Number);
-    return buildMonthMatrix(year, month, requestsForCalendarGrid, users, holidays, ladderDoneKeySet);
-  }, [calendarMonth, requestsForCalendarGrid, users, holidays, ladderDoneKeySet]);
+    return buildMonthMatrix(
+      year,
+      month,
+      requestsForCalendarGrid,
+      users,
+      holidays,
+      ladderDoneKeySet,
+      requestsForCalendarSharedConfirmed
+    );
+  }, [
+    calendarMonth,
+    requestsForCalendarGrid,
+    requestsForCalendarSharedConfirmed,
+    users,
+    holidays,
+    ladderDoneKeySet,
+  ]);
 
   const calendarDayRequests = useMemo(() => {
     if (!calendarSelectedYmd) return [];
@@ -3495,8 +3523,8 @@ function baseMonthCodeForNurseName(name, ymd, workScheduleByYear) {
   return String(raw).trim();
 }
 
-/** 하단 대체자 표: ADMIN·ADMIN2는 수술실·마취·주임 전체, 그 외는 담당 부서만 */
-function renderAdminDaySubstituteGridCells(selectedYmd, selectedCell, substituteAssignments, users, viewerRole) {
+/** 캘린더 하단 대체자 표: 수술실·마취·주임 전체(모든 로그인 사용자 공유) */
+function renderDaySubstituteGridCells(selectedYmd, selectedCell, substituteAssignments, users) {
   const cells = [];
   const pushSubs = (subs, keyPrefix) => {
     for (let i = 0; i < subs.length; i += 1) {
@@ -3530,49 +3558,24 @@ function renderAdminDaySubstituteGridCells(selectedYmd, selectedCell, substitute
     );
   };
 
-  const showAllDepts = viewerRole === "ADMIN2" || viewerRole === "ADMIN";
-  if (showAllDepts) {
-    for (const item of Array.isArray(selectedCell?.approvedApplicants) ? selectedCell.approvedApplicants : []) {
-      pushApplicant(item);
-    }
-    pushSubs(
-      getSubstituteRecordsForRequest(substituteAssignments, standaloneSubstituteRequestId(selectedYmd, "NURSE")),
-      `orphan_n_${selectedYmd}`
-    );
-    for (const item of Array.isArray(selectedCell?.anesthesiaApprovedApplicants)
-      ? selectedCell.anesthesiaApprovedApplicants
-      : []) {
-      pushApplicant(item);
-    }
-    pushSubs(
-      getSubstituteRecordsForRequest(substituteAssignments, standaloneSubstituteRequestId(selectedYmd, "ANESTHESIA")),
-      `orphan_a_${selectedYmd}`
-    );
-    for (const item of Array.isArray(selectedCell?.chiefApprovedApplicants) ? selectedCell.chiefApprovedApplicants : []) {
-      pushApplicant(item);
-    }
-    return cells;
+  for (const item of Array.isArray(selectedCell?.approvedApplicants) ? selectedCell.approvedApplicants : []) {
+    pushApplicant(item);
   }
-
-  const scope = substituteScopeStaffRole(viewerRole);
-  const approved =
-    scope === "ANESTHESIA"
-      ? [...(Array.isArray(selectedCell?.anesthesiaApprovedApplicants) ? selectedCell.anesthesiaApprovedApplicants : [])]
-      : scope === "CHIEF"
-        ? [...(Array.isArray(selectedCell?.chiefApprovedApplicants) ? selectedCell.chiefApprovedApplicants : [])]
-        : [...(Array.isArray(selectedCell?.approvedApplicants) ? selectedCell.approvedApplicants : [])];
-  for (const item of approved) pushApplicant(item);
-  if (scope === "NURSE") {
-    pushSubs(
-      getSubstituteRecordsForRequest(substituteAssignments, standaloneSubstituteRequestId(selectedYmd, "NURSE")),
-      `orphan_${selectedYmd}`
-    );
+  pushSubs(
+    getSubstituteRecordsForRequest(substituteAssignments, standaloneSubstituteRequestId(selectedYmd, "NURSE")),
+    `orphan_n_${selectedYmd}`
+  );
+  for (const item of Array.isArray(selectedCell?.anesthesiaApprovedApplicants)
+    ? selectedCell.anesthesiaApprovedApplicants
+    : []) {
+    pushApplicant(item);
   }
-  if (scope === "ANESTHESIA") {
-    pushSubs(
-      getSubstituteRecordsForRequest(substituteAssignments, standaloneSubstituteRequestId(selectedYmd, "ANESTHESIA")),
-      `orphan_a_${selectedYmd}`
-    );
+  pushSubs(
+    getSubstituteRecordsForRequest(substituteAssignments, standaloneSubstituteRequestId(selectedYmd, "ANESTHESIA")),
+    `orphan_a_${selectedYmd}`
+  );
+  for (const item of Array.isArray(selectedCell?.chiefApprovedApplicants) ? selectedCell.chiefApprovedApplicants : []) {
+    pushApplicant(item);
   }
   return cells;
 }
@@ -7722,7 +7725,7 @@ function CalendarPage({
 
       {selectedYmd &&
       selectedCell?.inMonth &&
-      (isOrLeaveAdmin || isAnesthesiaLeaveAdmin || isChiefLeaveAdmin || !selectedCell?.isOffDay) &&
+      calendarShowsAllDepartmentsLeaveAndSubstitute(viewerRole) &&
       (!detailModalOpen || detailTab === "list") ? (
         <section className="admin-day-panel">
           <h3>{selectedYmd} 휴가자 (수술실)</h3>
@@ -7737,48 +7740,47 @@ function CalendarPage({
               ))
             )}
           </ul>
-          {Array.isArray(selectedCell.anesthesiaApprovedApplicants) && selectedCell.anesthesiaApprovedApplicants.length > 0 ? (
-            <>
-              <div className="calendar-applicant-divider admin-day-panel__divider" role="separator">
-                <span>마취과</span>
-              </div>
-              <h3 className="admin-day-panel__anes-title">{selectedYmd} 휴가자 (마취과)</h3>
-              <ul>
-                {selectedCell.anesthesiaApprovedApplicants.map((item) => (
-                  <li key={`anes_ap_${item.id}`}>
-                    {item.name} ({typeFullLabel(item.leaveType)})
-                  </li>
-                ))}
-              </ul>
-            </>
-          ) : null}
-          {Array.isArray(selectedCell.chiefApprovedApplicants) && selectedCell.chiefApprovedApplicants.length > 0 ? (
-            <>
-              <div className="calendar-applicant-divider admin-day-panel__divider" role="separator">
-                <span>주임</span>
-              </div>
-              <h3 className="admin-day-panel__anes-title">{selectedYmd} 휴가자 (주임)</h3>
-              <ul>
-                {selectedCell.chiefApprovedApplicants.map((item) => (
-                  <li key={`chief_ap_${item.id}`}>
-                    {item.name} ({typeFullLabel(item.leaveType)})
-                  </li>
-                ))}
-              </ul>
-            </>
-          ) : null}
+          <div className="calendar-applicant-divider admin-day-panel__divider" role="separator">
+            <span>마취과</span>
+          </div>
+          <h3 className="admin-day-panel__anes-title">{selectedYmd} 휴가자 (마취과)</h3>
+          <ul>
+            {!(Array.isArray(selectedCell.anesthesiaApprovedApplicants) && selectedCell.anesthesiaApprovedApplicants.length) ? (
+              <li className="help admin-day-empty">없음</li>
+            ) : (
+              selectedCell.anesthesiaApprovedApplicants.map((item) => (
+                <li key={`anes_ap_${item.id}`}>
+                  {item.name} ({typeFullLabel(item.leaveType)})
+                </li>
+              ))
+            )}
+          </ul>
+          <div className="calendar-applicant-divider admin-day-panel__divider" role="separator">
+            <span>주임</span>
+          </div>
+          <h3 className="admin-day-panel__anes-title">{selectedYmd} 휴가자 (주임)</h3>
+          <ul>
+            {!(Array.isArray(selectedCell.chiefApprovedApplicants) && selectedCell.chiefApprovedApplicants.length) ? (
+              <li className="help admin-day-empty">없음</li>
+            ) : (
+              selectedCell.chiefApprovedApplicants.map((item) => (
+                <li key={`chief_ap_${item.id}`}>
+                  {item.name} ({typeFullLabel(item.leaveType)})
+                </li>
+              ))
+            )}
+          </ul>
           <div className="admin-day-substitute-grid-wrap">
-            <h4>{selectedYmd} 대체자</h4>
+            <h4>{selectedYmd} 대체자 (전 부서)</h4>
             <div className="admin-day-substitute-grid">
               <div className="admin-day-substitute-grid__head">번표</div>
               <div className="admin-day-substitute-grid__head">대체자</div>
               {(() => {
-                const cells = renderAdminDaySubstituteGridCells(
+                const cells = renderDaySubstituteGridCells(
                   selectedYmd,
                   selectedCell,
                   substituteAssignments,
-                  users,
-                  viewerRole
+                  users
                 );
                 if (cells.length === 0) {
                   return <div className="help" style={{ gridColumn: "1 / -1" }}>없음</div>;
@@ -8353,7 +8355,15 @@ function mapRequestsToCalendarApplicants(roleReqs, users, negotiationMetaByReque
   });
 }
 
-function buildMonthMatrix(year, month, confirmedRequests, users, holidaysCache, ladderDoneKeys) {
+function buildMonthMatrix(
+  year,
+  month,
+  confirmedRequests,
+  users,
+  holidaysCache,
+  ladderDoneKeys,
+  sharedConfirmedRequests = null
+) {
   const first = new Date(year, month - 1, 1);
   const start = new Date(first);
   start.setDate(first.getDate() - first.getDay());
@@ -8376,12 +8386,14 @@ function buildMonthMatrix(year, month, confirmedRequests, users, holidaysCache, 
     const isOffDay = isHoliday || isWeekend;
     const holidayName = holidayByDate.get(iso) ?? "";
     const dayAll = (Array.isArray(confirmedRequests) ? confirmedRequests : []).filter((r) => r.leaveDate === iso);
+    const sharedDayAll = (Array.isArray(sharedConfirmedRequests) ? sharedConfirmedRequests : dayAll).filter(
+      (r) => r.leaveDate === iso
+    );
     const byRole = splitRequestsByStaffRole(dayAll, users);
     const nurseReqs = byRole.NURSE;
     const anesReqs = byRole.ANESTHESIA;
     const chiefReqs = byRole.CHIEF;
-    const confirmedDayAll = dayAll.filter((r) => isWinnerStatus(r.status));
-    const confirmedByRole = splitRequestsByStaffRole(confirmedDayAll, users);
+    const confirmedByRole = splitRequestsByStaffRole(sharedDayAll, users);
     const confirmedNurseReqs = confirmedByRole.NURSE;
     const confirmedAnesReqs = confirmedByRole.ANESTHESIA;
     const confirmedChiefReqs = confirmedByRole.CHIEF;
