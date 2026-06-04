@@ -459,6 +459,12 @@ export function calendarShowsAllDepartmentsLeaveAndSubstitute(viewerRole) {
   );
 }
 
+/** 수술실·마취 간호사: 휴일(공휴·대체공휴·명절·주말) 상세에서 휴가자·대체자·듀티메모 패널 숨김 */
+export function hideCalendarAllDeptPanelOnOffDay(viewerRole, isOffDay) {
+  if (!isOffDay) return false;
+  return viewerRole === "NURSE" || viewerRole === "ANESTHESIA";
+}
+
 /** @deprecated 확정 휴가는 filterRequestsForViewerRole에 통합 — 중복 칩 방지 */
 export function showDepartmentPublishedOverlay(_viewerRole) {
   return false;

@@ -4216,34 +4216,48 @@ tr.request-cancelled-row td button {
   pointer-events: none;
 }
 
-/* 의국: 휴일·당직일 한눈에 — 연한 파스텔 */
+/* 의국: 휴일·당직일 — 테두리·문구 없이 연한 파스텔만 */
 .calendar-cell--emergency-holiday {
   background: #e8f2fc;
-  border: 1px solid #c5ddf5;
+  border: none;
+  box-shadow: none;
   border-radius: 8px;
 }
 
-.calendar-cell--emergency-holiday--duty {
-  background: #dceeff;
-  border-color: #9ec5ef;
-  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.12);
-}
-
 .calendar-cell--emergency-holiday.calendar-cell--selected {
-  background: #cfe4fb;
-  border-color: #5b9bd5;
+  background: #dceeff;
+  border: none;
+  box-shadow: none;
 }
 
 .calendar-cell--emergency-holiday .calendar-date--holiday {
-  color: #1d4ed8;
-  font-weight: 700;
+  color: inherit;
+  font-weight: inherit;
 }
 
-.calendar-cell-duty-hint {
-  font-size: 10px;
-  font-weight: 600;
-  color: #1d4ed8;
-  margin-top: 2px;
+/* 의국: 상세 팝업 여백 — 달력이 살짝 보이도록 */
+.calendar-page__detail--modal-emergency {
+  top: 50%;
+  left: 50%;
+  right: auto;
+  bottom: auto;
+  transform: translate3d(-50%, -50%, 0);
+  width: min(560px, calc(100vw - 28px));
+  max-height: min(68dvh, 520px);
+}
+
+@media (max-width: 768px) {
+  .calendar-page__detail--modal-emergency {
+    left: 50%;
+    right: auto;
+    top: 50%;
+    bottom: auto;
+    width: calc(100vw - 24px);
+    max-height: min(72dvh, 560px);
+    transform: translate3d(-50%, -50%, 0);
+    border-radius: 16px;
+    padding-bottom: 0;
+  }
 }
 
 .emergency-surgery-panel {

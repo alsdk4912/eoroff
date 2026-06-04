@@ -88,6 +88,7 @@ import {
   isChiefLeaveAdminRole,
   isLeaveManagerRole,
   calendarShowsAllDepartmentsLeaveAndSubstitute,
+  hideCalendarAllDeptPanelOnOffDay,
   isOrLeaveAdminRole,
   isEmergencyOrRole,
   isCalendarOffDaysOnlyRole,
@@ -7356,16 +7357,12 @@ function CalendarPage({
             Boolean(currentUserId) &&
             hasDuty &&
             (duty?.nurse1UserId === currentUserId || duty?.nurse2UserId === currentUserId || duty?.anesthesiaUserId === currentUserId);
-          const myDutyClass = isMyDuty ? " calendar-cell--my-duty" : "";
+          const myDutyClass = !offDaysOnlyViewer && isMyDuty ? " calendar-cell--my-duty" : "";
           const canOpenCell = cell.inMonth && (!offDaysOnlyViewer || cell.isOffDay);
           const nonInteractiveClass =
             offDaysOnlyViewer && cell.inMonth && !cell.isOffDay ? " calendar-cell--noninteractive" : "";
           const emergencyHolidayClass =
-            offDaysOnlyViewer && cell.inMonth && cell.isOffDay
-              ? hasDuty
-                ? " calendar-cell--emergency-holiday calendar-cell--emergency-holiday--duty"
-                : " calendar-cell--emergency-holiday"
-              : "";
+            offDaysOnlyViewer && cell.inMonth && cell.isOffDay ? " calendar-cell--emergency-holiday" : "";
           return (
             <div
               key={`${cell.date}-${idx}`}
@@ -7395,11 +7392,6 @@ function CalendarPage({
               }}
             >
               <div className={`calendar-date${cell.isOffDay ? " calendar-date--holiday" : ""}`}>{cell.day}</div>
-              {offDaysOnlyViewer && cell.inMonth && cell.isOffDay ? (
-                <div className="calendar-cell-duty-hint" title={cell.holidayName || "휴일"}>
-                  {hasDuty ? "당직" : "휴일"}
-                </div>
-              ) : null}
               {cell.inMonth && !offDaysOnlyViewer && calendarCellHasConfirmedChips(cell) ? (
                 <div className="calendar-cell-events">
                   {(() => {
@@ -7474,7 +7466,11 @@ function CalendarPage({
             }}
           />
         ) : null}
-        <div className={`calendar-page__detail${detailModalOpen ? " calendar-page__detail--modal" : ""}`}>
+        <div
+          className={`calendar-page__detail${detailModalOpen ? " calendar-page__detail--modal" : ""}${
+            detailModalOpen && isEmergencyOrViewer ? " calendar-page__detail--modal-emergency" : ""
+          }`}
+        >
       <div className={detailModalOpen ? "calendar-detail-modal-body" : undefined}>
       <div className="calendar-detail">
         {!selectedYmd ? null : (
@@ -7892,6 +7888,7 @@ function CalendarPage({
       {selectedYmd &&
       selectedCell?.inMonth &&
       !isEmergencyOrViewer &&
+      !hideCalendarAllDeptPanelOnOffDay(viewerRole, selectedIsOffDay) &&
       calendarShowsAllDepartmentsLeaveAndSubstitute(viewerRole) &&
       (!detailModalOpen || detailTab === "list") ? (
         <section className="admin-day-panel">
