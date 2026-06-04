@@ -4243,7 +4243,8 @@ tr.request-cancelled-row td button {
   bottom: auto;
   transform: translate3d(-50%, -50%, 0);
   width: min(560px, calc(100vw - 28px));
-  max-height: min(62dvh, 480px);
+  max-height: min(62dvh, 500px);
+  min-height: min(320px, 52dvh);
   z-index: 90;
 }
 
@@ -4260,7 +4261,8 @@ tr.request-cancelled-row td button {
     top: 50%;
     bottom: auto;
     width: calc(100vw - 24px);
-    max-height: min(58dvh, 440px);
+    max-height: min(58dvh, 460px);
+    min-height: min(300px, 50dvh);
     transform: translate3d(-50%, -50%, 0);
     border-radius: 12px;
     padding-bottom: 0;
@@ -4350,6 +4352,16 @@ tr.request-cancelled-row td button {
 .app-bottom-nav--emergency .app-bottom-nav__link {
   flex: 1;
   max-width: none;
+}
+
+.account-page__section-title {
+  margin: 16px 0 8px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.account-page__phone-form {
+  margin-bottom: 8px;
 }
 
 .calendar-day-memo-section {

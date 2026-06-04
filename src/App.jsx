@@ -91,6 +91,8 @@ import {
   hideCalendarAllDeptPanelOnOffDay,
   isOrLeaveAdminRole,
   isEmergencyOrRole,
+  isHolidayDutyContactViewer,
+  isJinGisukAdminUser,
   isCalendarOffDaysOnlyRole,
   canUseHolidayDutyDayMemo,
   canManageHolidayDutyDayComment,
@@ -2391,6 +2393,20 @@ function App() {
     setAccountMessage("비밀번호가 변경되었습니다.");
   }
 
+  async function handleUpdatePhone(phone) {
+    const digits = String(phone ?? "").replace(/\D/g, "");
+    if (digits.length < 9 || digits.length > 11) {
+      throw new Error("전화번호는 9~11자리 숫자로 입력해 주세요.");
+    }
+    if (serverMode && isApiConfigured()) {
+      await api.updateMyPhone({ userId: auth.userId, phone: digits });
+    }
+    setUsers((prev) =>
+      (Array.isArray(prev) ? prev : []).map((u) => (u.id === auth.userId ? { ...u, phone: digits } : u))
+    );
+    setAccountMessage("전화번호가 저장되었습니다.");
+  }
+
   async function handleSelfPasswordReset(loginName, employeeNo) {
     await api.resetPasswordByIdentity({ loginName, employeeNo });
   }
@@ -2698,7 +2714,18 @@ function App() {
             />
           }
         />
-        <Route path="/account" element={<AccountPage onChangePassword={handleChangePassword} message={accountMessage} />} />
+        <Route
+          path="/account"
+          element={
+            <AccountPage
+              userName={currentUser?.name}
+              phone={currentUser?.phone ?? ""}
+              onChangePassword={handleChangePassword}
+              onSavePhone={handleUpdatePhone}
+              message={accountMessage}
+            />
+          }
+        />
         <Route
           path="/admin"
           element={
@@ -5562,11 +5589,17 @@ function DashboardPage({
   );
 }
 
-function AccountPage({ onChangePassword, message }) {
+function AccountPage({ userName, phone, onChangePassword, onSavePhone, message }) {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [phoneInput, setPhoneInput] = useState(String(phone ?? ""));
   const [localMsg, setLocalMsg] = useState("");
-  async function submit(e) {
+
+  useEffect(() => {
+    setPhoneInput(String(phone ?? ""));
+  }, [phone]);
+
+  async function submitPassword(e) {
     e.preventDefault();
     setLocalMsg("");
     try {
@@ -5578,11 +5611,37 @@ function AccountPage({ onChangePassword, message }) {
       setLocalMsg("비밀번호 변경 실패: 현재 비밀번호를 확인하세요.");
     }
   }
+
+  async function submitPhone(e) {
+    e.preventDefault();
+    setLocalMsg("");
+    try {
+      await onSavePhone(phoneInput);
+      setLocalMsg("전화번호 저장 완료");
+    } catch (e2) {
+      setLocalMsg(e2?.message || "전화번호 저장에 실패했습니다.");
+    }
+  }
+
   return (
-    <section className="card">
+    <section className="card account-page">
       <h2>계정</h2>
-      <p className="help page-lead">비밀번호를 바꿀 수 있습니다.</p>
-      <form className="login-form" onSubmit={submit}>
+      {userName ? <p className="help page-lead">{userName}님의 연락처·비밀번호를 관리합니다.</p> : null}
+      <form className="login-form account-page__phone-form" onSubmit={submitPhone}>
+        <label className="field-label">전화번호</label>
+        <input
+          type="tel"
+          inputMode="numeric"
+          autoComplete="tel"
+          placeholder="01012345678"
+          value={phoneInput}
+          onChange={(e) => setPhoneInput(e.target.value)}
+        />
+        <p className="help">숫자만 입력 (9~11자리). 전화걸기·응급 알림에 사용됩니다.</p>
+        <button type="submit">전화번호 저장</button>
+      </form>
+      <form className="login-form" onSubmit={submitPassword}>
+        <h3 className="account-page__section-title">비밀번호 변경</h3>
         <input type="password" placeholder="현재 비밀번호" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
         <input type="password" placeholder="새 비밀번호 (4자 이상)" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
         <button type="submit">비밀번호 저장</button>
@@ -6909,18 +6968,22 @@ function CalendarPage({
   const calendarSwipeRef = useRef({ startX: 0, startY: 0, tracking: false, triggered: false });
   const skipNextCalendarTapRef = useRef(false);
   const calendarTopRef = useRef(null);
-  const showCalendarDetailPanel = !isEmergencyOrViewer || detailModalOpen;
+  const jinHolidayDutyViewer = isJinGisukAdminUser(currentUserId, users);
+  const holidayDutyContactViewer = isHolidayDutyContactViewer(viewerRole, currentUserId, users);
+  const useHolidayDutyModalOnly =
+    isEmergencyOrViewer || (jinHolidayDutyViewer && Boolean(selectedCell?.isOffDay));
+  const showCalendarDetailPanel = useHolidayDutyModalOnly ? detailModalOpen : true;
   const closeCalendarDetailModal = useCallback(() => {
     setDetailModalOpen(false);
     setSelectedYmd("");
-    if (isEmergencyOrViewer) {
+    if (useHolidayDutyModalOnly) {
       requestAnimationFrame(() => {
         calendarTopRef.current?.scrollIntoView({ block: "nearest", behavior: "auto" });
         const main = document.querySelector(".app-main");
         if (main) main.scrollTo({ top: 0, behavior: "auto" });
       });
     }
-  }, [isEmergencyOrViewer, setSelectedYmd]);
+  }, [useHolidayDutyModalOnly, setSelectedYmd]);
 
   useEffect(() => {
     if (!selectedYmd || !selectedCell?.isOffDay) {
@@ -7476,7 +7539,7 @@ function CalendarPage({
         ) : null}
         <div
           className={`calendar-page__detail${detailModalOpen ? " calendar-page__detail--modal" : ""}${
-            detailModalOpen && isEmergencyOrViewer ? " calendar-page__detail--modal-emergency" : ""
+            detailModalOpen && useHolidayDutyModalOnly ? " calendar-page__detail--modal-emergency" : ""
           }`}
         >
       <div className={detailModalOpen ? "calendar-detail-modal-body" : undefined}>
@@ -7484,7 +7547,7 @@ function CalendarPage({
         {!selectedYmd ? null : (
           <>
             <h3 className="calendar-detail-title">{selectedYmd} 상세</h3>
-              {isEmergencyOrViewer ? (
+              {holidayDutyContactViewer ? (
                 selectedCell?.isOffDay ? (
                   <>
                     <EmergencySurgeryPanel
@@ -7503,7 +7566,7 @@ function CalendarPage({
                   <p className="help">주말·공휴일·명절·대체공휴일만 조회할 수 있습니다.</p>
                 )
               ) : null}
-              {!isEmergencyOrViewer && canEditHolidayDuty && selectedCell?.isOffDay ? (
+              {!isEmergencyOrRole(viewerRole) && canEditHolidayDuty && selectedCell?.isOffDay ? (
                 <section className="holiday-duty-panel">
                   <h4 className="holiday-duty-title">휴일 당직자 기록 (주말·공휴·대체공휴일·명절)</h4>
                   <div className="row wrap holiday-duty-grid">
@@ -7567,11 +7630,11 @@ function CalendarPage({
                   )}
                 </section>
               ) : null}
-              {!isEmergencyOrViewer && selectedCell?.isOffDay && !isChiefViewer ? (
+              {!holidayDutyContactViewer && selectedCell?.isOffDay && !isChiefViewer ? (
                 <p className="help" style={{ marginTop: 10 }}>
                   이 날짜는 휴일(공휴일/주말)로 휴가 신청을 받지 않습니다.
                 </p>
-              ) : !isEmergencyOrViewer ? (
+              ) : !holidayDutyContactViewer ? (
                 <>
                   <div className="calendar-detail-tabs" role="tablist">
                     <button

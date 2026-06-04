@@ -176,6 +176,21 @@ export function isEmergencyOrRole(role) {
   return role === "EMERGENCY_OR";
 }
 
+export function findJinGisukAdminUser(users) {
+  return (Array.isArray(users) ? users : []).find((u) => u.name === "진기숙" && u.role === "ADMIN") ?? null;
+}
+
+/** 진기숙(ADMIN) — 휴일 당직 연락·응급알림 UI */
+export function isJinGisukAdminUser(viewerUserId, users) {
+  const jin = findJinGisukAdminUser(users);
+  return Boolean(jin && String(viewerUserId) === String(jin.id));
+}
+
+/** 의국 또는 진기숙: 휴일 당직 전화·응급수술 알림 패널 */
+export function isHolidayDutyContactViewer(role, viewerUserId, users) {
+  return isEmergencyOrRole(role) || isJinGisukAdminUser(viewerUserId, users);
+}
+
 /** 캘린더에서 주말·공휴·명절·대체공휴일만 열람 */
 export function isCalendarOffDaysOnlyRole(role) {
   return isEmergencyOrRole(role);

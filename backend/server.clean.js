@@ -825,9 +825,12 @@ app.post("/api/emergency-surgery/notify", async (req, res) => {
     if (!surgeryName) return res.status(400).json({ error: "수술명이 필요합니다." });
     if (!startTime) return res.status(400).json({ error: "수술 시작 시간이 필요합니다." });
 
-    const actor = await queryOne("SELECT id, role FROM users WHERE id = ?", actorUserId);
-    if (!actor || String(actor.role) !== "EMERGENCY_OR") {
-      return res.status(403).json({ error: "의국 계정만 응급수술 알림을 보낼 수 있습니다." });
+    const actor = await queryOne("SELECT id, role, name FROM users WHERE id = ?", actorUserId);
+    const jinRow = await queryOne("SELECT id FROM users WHERE name = ? AND role = 'ADMIN' LIMIT 1", "진기숙");
+    const fromEmergencyOr = actor && String(actor.role) === "EMERGENCY_OR";
+    const fromJinGisuk = jinRow && actor && String(actor.id) === String(jinRow.id);
+    if (!fromEmergencyOr && !fromJinGisuk) {
+      return res.status(403).json({ error: "의국·진기숙 계정만 응급수술 알림을 보낼 수 있습니다." });
     }
 
     const duty = await queryOne(
@@ -841,12 +844,20 @@ app.post("/api/emergency-surgery/notify", async (req, res) => {
       return res.status(409).json({ error: "해당 날짜 당직자가 등록되지 않았습니다." });
     }
 
-    const chiefRow = await queryOne("SELECT id FROM users WHERE name = ? AND role = 'ADMIN' LIMIT 1", "진기숙");
+    const chiefRow = jinRow;
     const anesLabel = anesthesiaType === "LOCAL" ? "국소(로컬)마취" : "전신마취";
-    const msg = `[응급수술] ${leaveDate} ${startTime} | ${surgeryName} | ${anesLabel} (의국)`;
+    const senderLabel = fromJinGisuk ? "진기숙" : "의국";
+    const msg = `[응급수술] ${leaveDate} ${startTime} | ${surgeryName} | ${anesLabel} (${senderLabel})`;
+
+    const notifyIds = [n1, n2, anes];
+    if (fromEmergencyOr && chiefRow?.id) notifyIds.push(chiefRow.id);
+    if (fromJinGisuk) {
+      const emergencyOr = await queryOne("SELECT id FROM users WHERE role = 'EMERGENCY_OR' LIMIT 1");
+      if (emergencyOr?.id) notifyIds.push(emergencyOr.id);
+    }
 
     await createNotificationsForUserIds({
-      userIds: [n1, n2, anes, chiefRow?.id].filter(Boolean),
+      userIds: [...new Set(notifyIds.filter(Boolean))],
       type: "EMERGENCY_SURGERY",
       message: msg,
       targetDate: leaveDate,
@@ -1125,6 +1136,19 @@ app.post("/api/change-password", async (req, res) => {
   if (!user) return res.status(401).json({ error: "현재 비밀번호가 올바르지 않습니다." });
   await execute("UPDATE users SET password = ? WHERE id = ?", newPassword, userId);
   return res.json({ ok: true });
+});
+
+app.patch("/api/me/phone", async (req, res) => {
+  const userId = String(req.body?.userId ?? "").trim();
+  const digits = String(req.body?.phone ?? "").replace(/\D/g, "");
+  if (!userId) return res.status(400).json({ error: "userId가 필요합니다." });
+  if (digits.length < 9 || digits.length > 11) {
+    return res.status(400).json({ error: "전화번호는 9~11자리 숫자로 입력해 주세요." });
+  }
+  const user = await queryOne("SELECT id FROM users WHERE id = ?", userId);
+  if (!user) return res.status(404).json({ error: "사용자를 찾을 수 없습니다." });
+  await execute("UPDATE users SET phone = ? WHERE id = ?", digits, userId);
+  return res.json({ ok: true, phone: digits });
 });
 
 app.post("/api/password-reset", async (req, res) => {
