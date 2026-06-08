@@ -234,8 +234,8 @@ export function buildAutoHolidayDutyPlan({ year, users, holidays, holidayDuties 
 /** 마취과 휴일 당직 순환 (주말 단위) */
 export const ANESTHESIA_DUTY_ROTATION_NAMES = ["김인자", "이지현", "박현정", "윤지민"];
 
-/** 2027-10-31(일) 주말=김인자 → 다음 주말(11/6~7)=이지현 기준 */
-export const ANESTHESIA_DUTY_ANCHOR_WEEKEND_SAT = "2027-10-30";
+/** 2026-10-31(토) 주말=김인자 → 11/7~8=이지현, 11/14~15=박현정 … 4인 순환 */
+export const ANESTHESIA_DUTY_ANCHOR_WEEKEND_SAT = "2026-10-31";
 export const ANESTHESIA_DUTY_ANCHOR_NAME = "김인자";
 
 export function buildAnesthesiaDutyOrder(users) {
@@ -287,8 +287,9 @@ export function buildOffDaySlotsForYear(year, holidays) {
 }
 
 /**
- * 앵커 주말(2027-10-30=김인자) 기준 슬롯별 마취 당직 자동 배정.
- * 기존 DB 값이 있으면 덮어쓰지 않는다.
+ * 앵커 주말(2026-10-31=김인자) 기준 슬롯별 마취 당직 자동 배정.
+ * @param {string|null} [assignFromYmd] 이 날짜(포함) 이후만 배정
+ * @param {boolean} [overwriteExisting] true면 기존 마취 당직도 교체
  */
 export function buildAutoAnesthesiaDutyPlan({
   startYear,
@@ -298,6 +299,8 @@ export function buildAutoAnesthesiaDutyPlan({
   holidayDuties,
   anchorWeekendSat = ANESTHESIA_DUTY_ANCHOR_WEEKEND_SAT,
   anchorName = ANESTHESIA_DUTY_ANCHOR_NAME,
+  assignFromYmd = null,
+  overwriteExisting = false,
 }) {
   const order = buildAnesthesiaDutyOrder(users);
   if (order.length === 0) return [];
@@ -317,25 +320,30 @@ export function buildAutoAnesthesiaDutyPlan({
   const dutyByDate = holidayDuties ?? {};
   const plan = [];
 
+  const assignFrom = String(assignFromYmd ?? "").slice(0, 10);
+
   for (let i = 0; i < allSlots.length; i += 1) {
     const slot = allSlots[i];
     if (slot.key < `${startYear}-01-01`) continue;
+    if (assignFrom && slot.dates.every((dt) => dt < assignFrom)) continue;
 
-    let existingId = "";
-    for (const dt of slot.dates) {
-      const id = anesthesiaUserId(dutyByDate[dt]);
-      if (id) existingId = id;
+    if (!overwriteExisting) {
+      let existingId = "";
+      for (const dt of slot.dates) {
+        const id = anesthesiaUserId(dutyByDate[dt]);
+        if (id) existingId = id;
+      }
+      if (existingId) continue;
     }
-    if (existingId) continue;
 
     const rotIdx = (anchorRotIdx + (i - anchorSlotIdx) + order.length * 100) % order.length;
     const picked = order[rotIdx];
     if (!picked) continue;
 
     for (const dt of slot.dates) {
-      if (!hasAnesthesiaDuty(dutyByDate[dt])) {
-        plan.push({ holidayDate: dt, anesthesiaUserId: picked.id });
-      }
+      if (assignFrom && dt < assignFrom) continue;
+      if (!overwriteExisting && hasAnesthesiaDuty(dutyByDate[dt])) continue;
+      plan.push({ holidayDate: dt, anesthesiaUserId: picked.id });
     }
   }
 
