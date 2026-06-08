@@ -4257,15 +4257,13 @@ tr.request-cancelled-row td button {
 
 .calendar-page__detail--modal-duty-day.calendar-page__detail--modal-emergency {
   width: min(440px, calc(100vw - 48px));
-  max-height: min(66dvh, 480px);
+  max-height: min(78dvh, 560px);
   min-height: 0;
   padding: 6px 8px 0;
 }
 
 .calendar-page__detail--modal-duty-day .calendar-detail-modal-body {
-  overflow-x: hidden;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  overflow: hidden;
   padding-bottom: 2px;
 }
 
@@ -4290,7 +4288,7 @@ tr.request-cancelled-row td button {
 
   .calendar-page__detail--modal-duty-day.calendar-page__detail--modal-emergency {
     width: calc(100vw - 36px);
-    max-height: min(66dvh, 460px);
+    max-height: min(78dvh, 540px);
   }
 
   .app-shell--emergency .calendar-page__detail:not(.calendar-page__detail--modal) {
@@ -4351,32 +4349,22 @@ tr.request-cancelled-row td button {
   overflow: hidden;
 }
 
-.emergency-duty-day__field input[type="datetime-local"] {
-  padding: 4px 4px;
-  font-size: 11px;
-  -webkit-appearance: none;
-  appearance: none;
-}
-
-.emergency-duty-day__field input[type="datetime-local"]::-webkit-datetime-edit,
-.emergency-duty-day__field input[type="datetime-local"]::-webkit-datetime-edit-fields-wrapper {
-  padding: 0;
-  min-width: 0;
-}
-
-.emergency-duty-day__field input[type="datetime-local"]::-webkit-date-and-time-value {
-  min-width: 0;
-  text-align: left;
+.emergency-duty-day__field input[type="time"],
+.emergency-duty-day__time-input {
+  padding: 4px 6px;
+  font-size: 12px;
+  text-align: center;
 }
 
 @media (max-width: 768px) {
-  .emergency-duty-day__field input {
+  .emergency-duty-day__field input:not([type="radio"]) {
     font-size: 16px;
     height: 36px;
     min-height: 36px;
   }
 
-  .emergency-duty-day__field input[type="datetime-local"] {
+  .emergency-duty-day__field input[type="time"],
+  .emergency-duty-day__time-input {
     font-size: 16px;
     padding: 6px 4px;
   }

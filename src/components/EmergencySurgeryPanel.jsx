@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   SURGERY_START_TOO_SOON_MSG,
-  isSurgeryStartTimeAllowed,
-  minSurgeryStartDatetimeLocal,
+  combineSurgeryStartDatetime,
+  isSurgeryStartTimeAllowedForDate,
+  minSurgeryStartTimeForYmd,
 } from "../utils/emergencySurgeryTime.js";
 
 function dialHref(user) {
@@ -45,7 +46,9 @@ export default function EmergencySurgeryPanel({
   const [anesthesiaType, setAnesthesiaType] = useState("GENERAL");
   const [busy, setBusy] = useState(false);
   const [localMsg, setLocalMsg] = useState("");
-  const [minStartLocal, setMinStartLocal] = useState(minSurgeryStartDatetimeLocal);
+  const [startTimeGuideAck, setStartTimeGuideAck] = useState(false);
+  const startTimeGuideAckRef = useRef(false);
+  const [minStartTime, setMinStartTime] = useState(() => minSurgeryStartTimeForYmd(selectedYmd));
 
   const duty = holidayDuties?.[selectedYmd];
   const userById = useMemo(() => new Map((users ?? []).map((u) => [u.id, u])), [users]);
@@ -70,15 +73,25 @@ export default function EmergencySurgeryPanel({
     setStartTime("");
     setAnesthesiaType("GENERAL");
     setLocalMsg("");
-    setMinStartLocal(minSurgeryStartDatetimeLocal());
+    setStartTimeGuideAck(false);
+    startTimeGuideAckRef.current = false;
+    setMinStartTime(minSurgeryStartTimeForYmd(selectedYmd));
   }, [selectedYmd]);
 
   useEffect(() => {
-    const tick = () => setMinStartLocal(minSurgeryStartDatetimeLocal());
+    const tick = () => setMinStartTime(minSurgeryStartTimeForYmd(selectedYmd));
     tick();
     const id = window.setInterval(tick, 60_000);
     return () => window.clearInterval(id);
-  }, []);
+  }, [selectedYmd]);
+
+  function handleStartTimePointerDown(e) {
+    if (startTimeGuideAckRef.current) return;
+    e.preventDefault();
+    window.alert?.(SURGERY_START_TOO_SOON_MSG);
+    setStartTimeGuideAck(true);
+    startTimeGuideAckRef.current = true;
+  }
 
   function handleStartTimeChange(next) {
     const value = String(next ?? "").trim();
@@ -86,7 +99,7 @@ export default function EmergencySurgeryPanel({
       setStartTime("");
       return;
     }
-    if (!isSurgeryStartTimeAllowed(value)) {
+    if (!isSurgeryStartTimeAllowedForDate(selectedYmd, value)) {
       window.alert?.(SURGERY_START_TOO_SOON_MSG);
       return;
     }
@@ -98,7 +111,8 @@ export default function EmergencySurgeryPanel({
     const attending = String(attendingPhysician ?? "").trim();
     const specialist = String(specialistPhysician ?? "").trim();
     const contact = String(emergencyContact ?? "").replace(/\D/g, "").trim();
-    const time = String(startTime ?? "").trim();
+    const timeHm = String(startTime ?? "").trim();
+    const time = combineSurgeryStartDatetime(selectedYmd, timeHm);
 
     if (!name) {
       setLocalMsg("수술명을 입력해 주세요.");
@@ -112,11 +126,11 @@ export default function EmergencySurgeryPanel({
       setLocalMsg("담당전공의를 입력해 주세요.");
       return;
     }
-    if (!time) {
+    if (!timeHm || !time) {
       setLocalMsg("수술 시작 시간을 입력해 주세요.");
       return;
     }
-    if (!isSurgeryStartTimeAllowed(time)) {
+    if (!isSurgeryStartTimeAllowedForDate(selectedYmd, timeHm)) {
       window.alert?.(SURGERY_START_TOO_SOON_MSG);
       return;
     }
@@ -223,11 +237,15 @@ export default function EmergencySurgeryPanel({
         <label className="emergency-duty-day__field emergency-duty-day__field--start">
           <span className="field-label">수술 시작</span>
           <input
-            type="datetime-local"
+            type="time"
+            className="emergency-duty-day__time-input"
             value={startTime}
-            min={minStartLocal}
+            min={minStartTime || undefined}
+            onPointerDown={handleStartTimePointerDown}
             onChange={(e) => handleStartTimeChange(e.target.value)}
             disabled={busy}
+            readOnly={!startTimeGuideAck}
+            aria-label={`${selectedYmd} 수술 시작 시각`}
           />
         </label>
         <label className="emergency-duty-day__field emergency-duty-day__field--contact">
