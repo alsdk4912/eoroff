@@ -15,13 +15,11 @@ function DutyCallChip({ label, user }) {
   const href = user ? dialHref(user) : null;
   return (
     <div className="emergency-duty-chip">
-      <span className="emergency-duty-chip__meta">
-        <span className="emergency-duty-chip__label">{label}</span>
-        <span className="emergency-duty-chip__name">{user?.name ?? "미지정"}</span>
-      </span>
+      <span className="emergency-duty-chip__label">{label}</span>
+      <span className="emergency-duty-chip__name">{user?.name ?? "미지정"}</span>
       {href ? (
         <a className="emergency-duty-chip__call" href={href}>
-          전화
+          전화걸기
         </a>
       ) : (
         <span className="help emergency-duty-chip__call--disabled">없음</span>
