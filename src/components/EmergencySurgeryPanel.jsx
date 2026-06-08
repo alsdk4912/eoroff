@@ -15,14 +15,16 @@ function DutyCallChip({ label, user }) {
   const href = user ? dialHref(user) : null;
   return (
     <div className="emergency-duty-chip">
-      <span className="emergency-duty-chip__label">{label}</span>
-      <span className="emergency-duty-chip__name">{user?.name ?? "미지정"}</span>
+      <span className="emergency-duty-chip__meta">
+        <span className="emergency-duty-chip__label">{label}</span>
+        <span className="emergency-duty-chip__name">{user?.name ?? "미지정"}</span>
+      </span>
       {href ? (
         <a className="emergency-duty-chip__call" href={href}>
           전화
         </a>
       ) : (
-        <span className="help emergency-duty-chip__call--disabled">번호 없음</span>
+        <span className="help emergency-duty-chip__call--disabled">없음</span>
       )}
     </div>
   );
@@ -193,18 +195,8 @@ export default function EmergencySurgeryPanel({
             disabled={busy}
           />
         </label>
-        <label className="emergency-duty-day__field">
-          <span className="field-label">수술 시작</span>
-          <input
-            type="datetime-local"
-            value={startTime}
-            min={minStartLocal}
-            onChange={(e) => handleStartTimeChange(e.target.value)}
-            disabled={busy}
-          />
-        </label>
         <div className="emergency-duty-day__field emergency-duty-day__field--anes">
-          <span className="field-label">마취 구분</span>
+          <span className="field-label">마취</span>
           <div className="emergency-anesthesia-type emergency-anesthesia-type--inline">
             <label>
               <input
@@ -230,7 +222,17 @@ export default function EmergencySurgeryPanel({
             </label>
           </div>
         </div>
-        <label className="emergency-duty-day__field">
+        <label className="emergency-duty-day__field emergency-duty-day__field--start">
+          <span className="field-label">수술 시작</span>
+          <input
+            type="datetime-local"
+            value={startTime}
+            min={minStartLocal}
+            onChange={(e) => handleStartTimeChange(e.target.value)}
+            disabled={busy}
+          />
+        </label>
+        <label className="emergency-duty-day__field emergency-duty-day__field--contact">
           <span className="field-label">응급연락처</span>
           <input
             type="tel"
@@ -243,7 +245,7 @@ export default function EmergencySurgeryPanel({
         </label>
         <div className="emergency-duty-day__notify">
           <button type="button" disabled={busy || !dutyComplete} onClick={() => void submitNotify()}>
-            알림 보내기
+            알림
           </button>
         </div>
       </div>

@@ -7543,7 +7543,12 @@ function CalendarPage({
         {showCalendarDetailPanel ? (
           <>
         {detailModalOpen ? (
-          <div className="calendar-detail-modal-backdrop" onClick={closeCalendarDetailModal} />
+          <div
+            className={`calendar-detail-modal-backdrop${
+              holidayDutyContactViewer && selectedCell?.isOffDay ? " calendar-detail-modal-backdrop--duty-day" : ""
+            }`}
+            onClick={closeCalendarDetailModal}
+          />
         ) : null}
         <div
           className={`calendar-page__detail${detailModalOpen ? " calendar-page__detail--modal" : ""}${

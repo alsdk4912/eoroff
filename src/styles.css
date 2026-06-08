@@ -4254,20 +4254,21 @@ tr.request-cancelled-row td button {
   border-top: none;
 }
 
-.calendar-page__detail--modal-duty-day {
-  max-height: min(92dvh, 720px);
-  min-height: auto;
-  padding: 8px 10px 0;
+.calendar-page__detail--modal-duty-day.calendar-page__detail--modal-emergency {
+  width: min(440px, calc(100vw - 48px));
+  max-height: min(68dvh, 460px);
+  min-height: 0;
+  padding: 6px 8px 0;
 }
 
 .calendar-page__detail--modal-duty-day .calendar-detail-modal-body {
   overflow: hidden;
-  padding-bottom: 4px;
+  padding-bottom: 2px;
 }
 
 .calendar-page__detail--modal-duty-day .calendar-detail-modal-footer {
-  padding-top: 4px;
-  padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  padding-top: 2px;
+  padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
 }
 
 @media (max-width: 768px) {
@@ -4284,10 +4285,9 @@ tr.request-cancelled-row td button {
     padding-bottom: 0;
   }
 
-  .calendar-page__detail--modal-duty-day {
-    width: calc(100vw - 12px);
-    max-height: min(92dvh, 680px);
-    min-height: auto;
+  .calendar-page__detail--modal-duty-day.calendar-page__detail--modal-emergency {
+    width: calc(100vw - 36px);
+    max-height: min(64dvh, 440px);
   }
 
   .app-shell--emergency .calendar-page__detail:not(.calendar-page__detail--modal) {
@@ -4299,13 +4299,13 @@ tr.request-cancelled-row td button {
 .emergency-duty-day {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   margin: 0;
 }
 
 .emergency-duty-day__date {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--text-secondary, #475569);
 }
@@ -4313,9 +4313,9 @@ tr.request-cancelled-row td button {
 .emergency-duty-day__form {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px 8px;
-  padding: 8px;
-  border-radius: 10px;
+  gap: 4px 6px;
+  padding: 6px;
+  border-radius: 8px;
   border: 1px solid var(--separator);
   background: var(--surface-elevated, #f8fafc);
 }
@@ -4334,13 +4334,18 @@ tr.request-cancelled-row td button {
 }
 
 .emergency-duty-day__field input {
-  font-size: 13px;
-  padding: 6px 8px;
-  min-height: 32px;
+  font-size: 12px;
+  padding: 4px 6px;
+  min-height: 28px;
 }
 
 .emergency-duty-day__field--anes {
-  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.emergency-duty-day__field--start,
+.emergency-duty-day__field--contact {
+  grid-column: span 1;
 }
 
 .emergency-anesthesia-type--inline {
@@ -4352,7 +4357,7 @@ tr.request-cancelled-row td button {
 
 .emergency-anesthesia-type--inline label {
   margin: 0;
-  font-size: 13px;
+  font-size: 11px;
 }
 
 .emergency-duty-day__notify {
@@ -4362,56 +4367,72 @@ tr.request-cancelled-row td button {
 }
 
 .emergency-duty-day__notify button {
-  padding: 7px 12px !important;
-  font-size: 13px !important;
+  padding: 4px 10px !important;
+  font-size: 12px !important;
+  min-height: 28px;
 }
 
 .emergency-duty-day__calls {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
 }
 
 .emergency-duty-chip {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 3px;
-  padding: 6px 4px;
-  border-radius: 8px;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: 6px;
   border: 1px solid var(--separator);
   background: #fff;
-  text-align: center;
+  min-height: 30px;
+}
+
+.emergency-duty-chip__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  flex: 1;
 }
 
 .emergency-duty-chip__label {
-  font-size: 10px;
+  font-size: 9px;
+  line-height: 1.1;
   color: var(--text-secondary, #64748b);
 }
 
 .emergency-duty-chip__name {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 1.15;
   word-break: keep-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .emergency-duty-chip__call {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 44px;
-  padding: 4px 8px;
-  border-radius: 999px;
+  flex-shrink: 0;
+  min-width: 36px;
+  padding: 3px 6px;
+  border-radius: 6px;
   background: var(--accent, #2563eb);
   color: #fff;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   text-decoration: none;
 }
 
 .emergency-duty-chip__call--disabled {
-  font-size: 10px;
+  font-size: 9px;
+  flex-shrink: 0;
 }
 
 .emergency-duty-day__duty-hint {
@@ -4436,8 +4457,8 @@ tr.request-cancelled-row td button {
 
 .calendar-day-memo-section--compact.calendar-day-memo-section--holiday-duty {
   margin-top: 0;
-  padding: 6px 8px;
-  border-radius: 8px;
+  padding: 4px 6px;
+  border-radius: 6px;
   background: #f5f9ff;
   border: 1px solid #d6e6f8;
 }
@@ -4448,20 +4469,18 @@ tr.request-cancelled-row td button {
 }
 
 .calendar-day-memo-section--compact .calendar-day-memo-section__compose textarea {
-  min-height: 32px;
-  font-size: 13px;
-  padding: 6px 8px;
+  min-height: 26px;
+  font-size: 12px;
+  padding: 4px 6px;
 }
 
 .calendar-day-memo-section--compact .calendar-day-memo-section__compose button {
-  padding: 5px 10px !important;
-  font-size: 12px !important;
+  padding: 3px 8px !important;
+  font-size: 11px !important;
 }
 
-@media (max-width: 420px) {
-  .emergency-duty-day__calls {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+.calendar-detail-modal-backdrop--duty-day {
+  background: rgba(15, 23, 42, 0.12);
 }
 
 .app-shell--emergency .app-main {
