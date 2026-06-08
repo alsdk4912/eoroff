@@ -574,6 +574,27 @@ app.get("/api/bootstrap", async (_, res) => {
  * 주간 번표 수동 셀을 서버에 동기화(전 간호사·관리자 화면 공통).
  * 저장 후: 해당 간호사·날짜의 대체 번표가 있으면 shift_code 갱신, 없고 당일 확정 휴가가 1건뿐이면 대체 배정 생성.
  */
+/** 주간 번표 휴가 표시(병가·공가 등) → 해당일 확정 휴가 leave_nature 동기화 */
+async function applyWeeklyLeaveOverridesToRequestNature(overridesMap) {
+  for (const [key, raw] of Object.entries(overridesMap || {})) {
+    const val = raw && typeof raw === "object" ? raw : null;
+    if (!val || String(val.mode ?? "") !== "manual" || String(val.kind ?? "") !== "leave") continue;
+    const main = String(val.main ?? "").trim();
+    const leaveNature = WEEKLY_LEAVE_MARK_TO_NATURE[main];
+    if (!leaveNature) continue;
+    const mk = /^(.+)\|(\d{4}-\d{2}-\d{2})$/.exec(String(key));
+    if (!mk) continue;
+    const userId = mk[1];
+    const leaveDate = mk[2];
+    await execute(
+      `UPDATE requests SET leave_nature = ? WHERE user_id = ? AND leave_date = ? AND status = 'APPROVED' AND ${SQL_REQ_ACTIVE}`,
+      leaveNature,
+      userId,
+      leaveDate
+    );
+  }
+}
+
 async function applyWeeklyOverridesToSubstitutes(overridesMap, actorUserId) {
   const now = new Date().toISOString();
   for (const [key, raw] of Object.entries(overridesMap || {})) {
@@ -704,6 +725,7 @@ app.post("/api/weekly-cell-overrides/sync", async (req, res) => {
     });
 
     await applyWeeklyOverridesToSubstitutes(map, actorUserId);
+    await applyWeeklyLeaveOverridesToRequestNature(map);
     return res.json({ ok: true });
   } catch (err) {
     console.error("POST /api/weekly-cell-overrides/sync", err);
@@ -2040,7 +2062,15 @@ function leaveTypesForUserRole(role) {
   if (r === "CHIEF") return new Set(["CHIEF_LEAVE"]);
   return new Set(["GOLDKEY", "GENERAL_PRIORITY", "GENERAL_NORMAL", "HALF_DAY"]);
 }
-const ALLOWED_LEAVE_NATURE = new Set(["PERSONAL", "PAID_TRAINING", "REQUIRED_TRAINING"]);
+const ALLOWED_LEAVE_NATURE = new Set(["PERSONAL", "SICK_LEAVE", "PAID_TRAINING", "REQUIRED_TRAINING"]);
+
+const WEEKLY_LEAVE_MARK_TO_NATURE = {
+  휴가: "PERSONAL",
+  병가: "SICK_LEAVE",
+  공가: "PAID_TRAINING",
+  교육: "REQUIRED_TRAINING",
+  필수교육: "REQUIRED_TRAINING",
+};
 
 app.post("/api/requests", async (req, res) => {
   try {

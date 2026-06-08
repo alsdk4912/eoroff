@@ -21,6 +21,7 @@ export function isLeaveTypeAllowedForRole(role, leaveType) {
 
 const LEAVE_NATURE_LABEL = {
   PERSONAL: "개인휴가",
+  SICK_LEAVE: "병가",
   PAID_TRAINING: "보수교육공가",
   REQUIRED_TRAINING: "필수교육",
 };

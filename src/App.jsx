@@ -3305,6 +3305,7 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
           >
             <option value="ALL">전체(휴가 유형)</option>
             <option value="PERSONAL">{leaveNatureLabel("PERSONAL")}</option>
+            <option value="SICK_LEAVE">{leaveNatureLabel("SICK_LEAVE")}</option>
             <option value="PAID_TRAINING">{leaveNatureLabel("PAID_TRAINING")}</option>
             <option value="REQUIRED_TRAINING">{leaveNatureLabel("REQUIRED_TRAINING")}</option>
           </select>
@@ -3376,9 +3377,10 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
                         value={String(r.leaveNature ?? "PERSONAL")}
                         onChange={(e) => void (onUpdateLeaveNature && onUpdateLeaveNature(r.id, e.target.value))}
                         aria-label="휴가 유형"
-                        title="확정 후 개인휴가·공가·필수교육을 선택합니다. 주간 번표에 반영됩니다."
+                        title="확정 후 개인휴가·병가·공가·필수교육을 선택합니다. 주간 번표·캘린더에 반영됩니다."
                       >
                         <option value="PERSONAL">{leaveNatureLabel("PERSONAL")}</option>
+                        <option value="SICK_LEAVE">{leaveNatureLabel("SICK_LEAVE")}</option>
                         <option value="PAID_TRAINING">{leaveNatureLabel("PAID_TRAINING")}</option>
                         <option value="REQUIRED_TRAINING">{leaveNatureLabel("REQUIRED_TRAINING")}</option>
                       </select>
@@ -3551,7 +3553,7 @@ const CUSTOM_SHIFT_SENTINEL = "__CUSTOM_SHIFT__";
 const WORK_SCHEDULE_OPTION_SET = shiftOptionSetForRole("NURSE");
 const WEEKLY_REQUIRED_TRAINING_MARK = "교육";
 const LEGACY_WEEKLY_REQUIRED_TRAINING_MARK = "필수교육";
-const WEEKLY_LEAVE_MARK_OPTIONS = ["휴가", "공가", "반차", WEEKLY_REQUIRED_TRAINING_MARK, "off"];
+const WEEKLY_LEAVE_MARK_OPTIONS = ["휴가", "병가", "공가", "반차", WEEKLY_REQUIRED_TRAINING_MARK, "off"];
 
 function normalizeWeeklyLeaveMark(mark) {
   const m = String(mark ?? "").trim();
@@ -3714,6 +3716,7 @@ function effectiveScheduleCell(userId, nurseName, ymd, workScheduleByYear, reque
     const lt = String(approvedLeave.leaveType ?? "");
     if (nat === "PAID_TRAINING") return { kind: "leave", main: "공가", sub: typeFullLabel(approvedLeave.leaveType) };
     if (nat === "REQUIRED_TRAINING") return { kind: "leave", main: WEEKLY_REQUIRED_TRAINING_MARK, sub: typeFullLabel(approvedLeave.leaveType) };
+    if (nat === "SICK_LEAVE") return { kind: "leave", main: "병가", sub: typeFullLabel(approvedLeave.leaveType) };
     if (lt === "HALF_DAY") return { kind: "leave", main: "반차", sub: "" };
     return { kind: "leave", main: "휴가", sub: typeFullLabel(approvedLeave.leaveType) };
   }
@@ -3772,6 +3775,7 @@ function effectiveWeeklyCell(
     const leaveType = String(approvedLeave.leaveType ?? "");
     if (leaveNature === "PAID_TRAINING") return { kind: "leave", main: "공가", sub: "" };
     if (leaveNature === "REQUIRED_TRAINING") return { kind: "leave", main: WEEKLY_REQUIRED_TRAINING_MARK, sub: "" };
+    if (leaveNature === "SICK_LEAVE") return { kind: "leave", main: "병가", sub: "" };
     if (leaveType === "HALF_DAY") return { kind: "leave", main: "반차", sub: "" };
     return { kind: "leave", main: "휴가", sub: "" };
   }
@@ -6780,11 +6784,15 @@ function renderCalendarDayChip(applicant, keyPrefix, chipClassExtra, titlePrefix
   const negotiateClass = negotiateGk ? " calendar-day-chip--goldkey-negotiate" : "";
   const chipLabel = applicant.name;
   const statusHint = negotiateGk ? goldkeyNegotiationChipHint(applicant.goldkeyMeta) : "";
+  const natureHint =
+    applicant.leaveNature && String(applicant.leaveNature) !== "PERSONAL"
+      ? ` · ${leaveNatureLabel(applicant.leaveNature)}`
+      : "";
   return (
     <span
       key={`${keyPrefix}${applicant.id}`}
       className={`calendar-day-chip ${chipClassExtra} ${buildLeaveChipClass(applicant.leaveType, applicant.status)}${name3}${negotiateClass}`.trim()}
-      title={`${titlePrefix}${applicant.name} · ${typeFullLabel(applicant.leaveType)} · ${statusLabel(applicant.status)}${statusHint}`}
+      title={`${titlePrefix}${applicant.name} · ${typeFullLabel(applicant.leaveType)}${natureHint} · ${statusLabel(applicant.status)}${statusHint}`}
     >
       <span className="calendar-day-chip__text">{chipLabel}</span>
     </span>
@@ -8499,6 +8507,7 @@ function mapRequestsToCalendarApplicants(roleReqs, users, negotiationMetaByReque
       id: r.id,
       userId: r.userId,
       leaveType: r.leaveType,
+      leaveNature: r.leaveNature ?? "PERSONAL",
       status: r.status,
       name: users.find((u) => u.id === r.userId)?.name ?? r.userId,
       goldkeyMeta,

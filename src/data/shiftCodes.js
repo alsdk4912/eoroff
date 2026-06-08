@@ -18,13 +18,14 @@ export const NURSE_SHIFT_OPTIONS = [
   "수E",
   "9-5",
   "휴가",
+  "병가",
   "공가",
   "반차",
   "교육",
 ];
 
 /** 마취과 간호사 */
-export const ANESTHESIA_SHIFT_OPTIONS = ["", "opd", "r1", "r3", "10시"];
+export const ANESTHESIA_SHIFT_OPTIONS = ["", "opd", "r1", "r3", "10시", "병가"];
 
 /** 주임 */
 export const CHIEF_SHIFT_OPTIONS = ["", "D0", "D1", "9-5", "E"];
