@@ -6865,12 +6865,9 @@ function CalendarPage({
   useEffect(() => {
     if (!detailModalOpen) return undefined;
     const prevOverflow = document.body.style.overflow;
-    const prevTouchAction = document.body.style.touchAction;
     document.body.style.overflow = "hidden";
-    document.body.style.touchAction = "none";
     return () => {
       document.body.style.overflow = prevOverflow;
-      document.body.style.touchAction = prevTouchAction;
     };
   }, [detailModalOpen]);
 
@@ -7544,7 +7541,7 @@ function CalendarPage({
           <>
         {detailModalOpen ? (
           <div
-            className={`calendar-detail-modal-backdrop${
+            className={`calendar-detail-modal-backdrop calendar-detail-modal-backdrop--compact${
               holidayDutyContactViewer && selectedCell?.isOffDay ? " calendar-detail-modal-backdrop--duty-day" : ""
             }`}
             onClick={closeCalendarDetailModal}
@@ -7869,7 +7866,9 @@ function CalendarPage({
                           })}
                         </>
                       )}
-                      {substituteSectionMeta && !isEmergencyOrViewer ? (
+                      {substituteSectionMeta &&
+                      !isEmergencyOrViewer &&
+                      !hideCalendarAllDeptPanelOnOffDay(viewerRole, selectedIsOffDay) ? (
                         <div className={`admin-calendar-substitute-section ${substituteSectionMeta.sectionClass}`.trim()}>
                           <h4 className="admin-calendar-substitute-title">{substituteSectionMeta.title}</h4>
                           <p className="help admin-calendar-substitute-lead">{substituteSectionMeta.lead}</p>
