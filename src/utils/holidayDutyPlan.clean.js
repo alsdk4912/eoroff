@@ -230,3 +230,148 @@ export function buildAutoHolidayDutyPlan({ year, users, holidays, holidayDuties 
   }
   return [...dedup.values()].sort((a, b) => a.holidayDate.localeCompare(b.holidayDate));
 }
+
+/** 마취과 휴일 당직 순환 (주말 단위) */
+export const ANESTHESIA_DUTY_ROTATION_NAMES = ["김인자", "이지현", "박현정", "윤지민"];
+
+/** 2027-10-31(일) 주말=김인자 → 다음 주말(11/6~7)=이지현 기준 */
+export const ANESTHESIA_DUTY_ANCHOR_WEEKEND_SAT = "2027-10-30";
+export const ANESTHESIA_DUTY_ANCHOR_NAME = "김인자";
+
+export function buildAnesthesiaDutyOrder(users) {
+  const anesthesiaUsers = (users ?? []).filter((u) => u.role === "ANESTHESIA");
+  const byName = new Map(anesthesiaUsers.map((u) => [u.name, u]));
+  return ANESTHESIA_DUTY_ROTATION_NAMES.map((name) => byName.get(name)).filter(Boolean);
+}
+
+function anesthesiaUserId(duty) {
+  return String(duty?.anesthesiaUserId ?? duty?.anesthesia_user_id ?? "").trim();
+}
+
+export function hasAnesthesiaDuty(duty) {
+  return Boolean(anesthesiaUserId(duty));
+}
+
+/** 주말 블록 + 평일 공휴·명절(토·일 제외) 슬롯 — 날짜 오름차순 */
+export function buildOffDaySlotsForYear(year, holidays) {
+  const slots = [];
+  for (const block of buildWeekendBlocks(year)) {
+    slots.push({ key: block.key, dates: block.dates, stream: "weekend" });
+  }
+
+  const weekdayHolidayStreams = (holidays ?? [])
+    .filter((h) => h?.isHoliday && typeof h.holidayDate === "string")
+    .map((h) => {
+      const ymd = h.holidayDate;
+      const name = String(h.holidayName ?? "").trim();
+      const stream = isMajorTraditionalFestivalHolidayName(name) ? "festival" : "public";
+      return { ymd, stream };
+    })
+    .filter(({ ymd }) => String(ymd).startsWith(`${year}-`))
+    .filter(({ ymd }) => {
+      const d = parseLocalDateYmd(ymd);
+      if (Number.isNaN(d.getTime())) return false;
+      const day = d.getDay();
+      return day !== 0 && day !== 6;
+    })
+    .sort((a, b) => a.ymd.localeCompare(b.ymd));
+
+  const seenWeekday = new Set();
+  for (const { ymd, stream } of weekdayHolidayStreams) {
+    if (seenWeekday.has(ymd)) continue;
+    seenWeekday.add(ymd);
+    slots.push({ key: ymd, dates: [ymd], stream });
+  }
+
+  return slots.sort((a, b) => a.key.localeCompare(b.key));
+}
+
+/**
+ * 앵커 주말(2027-10-30=김인자) 기준 슬롯별 마취 당직 자동 배정.
+ * 기존 DB 값이 있으면 덮어쓰지 않는다.
+ */
+export function buildAutoAnesthesiaDutyPlan({
+  startYear,
+  endYear,
+  users,
+  holidays,
+  holidayDuties,
+  anchorWeekendSat = ANESTHESIA_DUTY_ANCHOR_WEEKEND_SAT,
+  anchorName = ANESTHESIA_DUTY_ANCHOR_NAME,
+}) {
+  const order = buildAnesthesiaDutyOrder(users);
+  if (order.length === 0) return [];
+
+  const anchorRotIdx = ANESTHESIA_DUTY_ROTATION_NAMES.indexOf(anchorName);
+  if (anchorRotIdx < 0) return [];
+
+  const allSlots = [];
+  for (let y = startYear; y <= endYear; y += 1) {
+    allSlots.push(...buildOffDaySlotsForYear(y, holidays));
+  }
+  allSlots.sort((a, b) => a.key.localeCompare(b.key));
+
+  const anchorSlotIdx = allSlots.findIndex((s) => s.key === anchorWeekendSat);
+  if (anchorSlotIdx < 0) return [];
+
+  const dutyByDate = holidayDuties ?? {};
+  const plan = [];
+
+  for (let i = 0; i < allSlots.length; i += 1) {
+    const slot = allSlots[i];
+    if (slot.key < `${startYear}-01-01`) continue;
+
+    let existingId = "";
+    for (const dt of slot.dates) {
+      const id = anesthesiaUserId(dutyByDate[dt]);
+      if (id) existingId = id;
+    }
+    if (existingId) continue;
+
+    const rotIdx = (anchorRotIdx + (i - anchorSlotIdx) + order.length * 100) % order.length;
+    const picked = order[rotIdx];
+    if (!picked) continue;
+
+    for (const dt of slot.dates) {
+      if (!hasAnesthesiaDuty(dutyByDate[dt])) {
+        plan.push({ holidayDate: dt, anesthesiaUserId: picked.id });
+      }
+    }
+  }
+
+  return plan.sort((a, b) => a.holidayDate.localeCompare(b.holidayDate));
+}
+
+/**
+ * @param {{ startYear: number, endYear: number, users: any[], holidays: any[], holidayDuties: Record<string, any> }} p
+ */
+export function buildFullAutoHolidayDutyPlansForYears({ startYear, endYear, users, holidays, holidayDuties }) {
+  const dutyByDate = { ...(holidayDuties ?? {}) };
+  const merged = new Map();
+
+  for (let year = startYear; year <= endYear; year += 1) {
+    const orPlan = buildAutoHolidayDutyPlan({ year, users, holidays, holidayDuties: dutyByDate });
+    for (const row of orPlan) {
+      const prev = dutyByDate[row.holidayDate] ?? {};
+      dutyByDate[row.holidayDate] = {
+        ...prev,
+        nurse1UserId: row.nurse1UserId,
+        nurse2UserId: row.nurse2UserId,
+      };
+      merged.set(row.holidayDate, { ...(merged.get(row.holidayDate) ?? {}), ...row });
+    }
+  }
+
+  const anesPlan = buildAutoAnesthesiaDutyPlan({
+    startYear,
+    endYear,
+    users,
+    holidays,
+    holidayDuties: dutyByDate,
+  });
+  for (const row of anesPlan) {
+    merged.set(row.holidayDate, { ...(merged.get(row.holidayDate) ?? {}), ...row });
+  }
+
+  return [...merged.values()].sort((a, b) => a.holidayDate.localeCompare(b.holidayDate));
+}

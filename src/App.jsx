@@ -72,7 +72,7 @@ import {
   showLocalNotificationIfAllowed,
   trySilentPushResubscribe,
 } from "./utils/webPush.js";
-import { buildAutoHolidayDutyPlan } from "./utils/holidayDutyPlan.clean.js";
+import { buildFullAutoHolidayDutyPlansForYears } from "./utils/holidayDutyPlan.clean.js";
 import {
   canApplyLeaveRole,
   canViewerApproveRequest,
@@ -1283,8 +1283,9 @@ function App() {
       window.alert?.("자동지정 연도가 올바르지 않습니다.");
       return;
     }
-    const plan = buildAutoHolidayDutyPlan({
-      year: y,
+    const plan = buildFullAutoHolidayDutyPlansForYears({
+      startYear: y,
+      endYear: y,
       users,
       holidays,
       holidayDuties,
@@ -1297,11 +1298,17 @@ function App() {
     if (serverMode) {
       try {
         for (const row of plan) {
+          const existing = holidayDuties?.[row.holidayDate] ?? {};
+          const nurse1UserId = row.nurse1UserId ?? existing.nurse1UserId ?? "";
+          const nurse2UserId = row.nurse2UserId ?? existing.nurse2UserId ?? "";
+          const anesthesiaUserId = row.anesthesiaUserId ?? existing.anesthesiaUserId ?? "";
+          if (!nurse1UserId || !nurse2UserId || !anesthesiaUserId) continue;
           await api.upsertHolidayDuty({
             actorUserId: auth.userId,
             holidayDate: row.holidayDate,
-            nurse1UserId: row.nurse1UserId,
-            nurse2UserId: row.nurse2UserId,
+            nurse1UserId,
+            nurse2UserId,
+            anesthesiaUserId,
           });
         }
         await bootstrap();
@@ -1315,10 +1322,12 @@ function App() {
     setHolidayDuties((prev) => {
       const next = { ...(prev ?? {}) };
       for (const row of plan) {
-        next[row.holidayDate] = {
-          nurse1UserId: row.nurse1UserId,
-          nurse2UserId: row.nurse2UserId,
-        };
+        const existing = next[row.holidayDate] ?? {};
+        const nurse1UserId = row.nurse1UserId ?? existing.nurse1UserId ?? "";
+        const nurse2UserId = row.nurse2UserId ?? existing.nurse2UserId ?? "";
+        const anesthesiaUserId = row.anesthesiaUserId ?? existing.anesthesiaUserId ?? "";
+        if (!nurse1UserId || !nurse2UserId || !anesthesiaUserId) continue;
+        next[row.holidayDate] = { nurse1UserId, nurse2UserId, anesthesiaUserId };
       }
       return next;
     });

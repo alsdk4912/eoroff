@@ -4,6 +4,7 @@ import { createClient } from "@libsql/client";
 import { defaultGoldkeyQuotaForName } from "../src/data/goldkeyQuotas.js";
 import { PHONE_BY_NAME } from "../src/data/userPhones.js";
 import { ensureKoreanHolidaysThroughYear } from "./koreanHolidays.js";
+import { buildFullAutoHolidayDutyPlansForYears } from "../src/utils/holidayDutyPlan.clean.js";
 
 const EMPLOYEE_NO_BY_NAME = {
   양현아: "0534411",
@@ -415,6 +416,7 @@ export async function initDb() {
   await ensureUserPhones();
   await ensureKoreanHolidaysSynced();
   await ensureHolidayDutyAnchors2026();
+  await ensureHolidayDutiesAutoFrom2027();
   await backfillLongTermGoldkeyCancellationExemptions();
   await ensureGoldkeyDefaults();
   await backfillGeneralNormalNegotiationOrderFromAppliedOrder();
@@ -850,6 +852,79 @@ async function ensureHolidayDutyAnchors2026() {
   }
 
   await execute("INSERT INTO app_migrations (id) VALUES (?)", "holiday_duty_anchors_2026_v1");
+}
+
+/** 2027년~ 수술실·마취과 휴일 당직 자동 배정(미기록 일자만) */
+async function ensureHolidayDutiesAutoFrom2027() {
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", "holiday_duty_auto_2027_v1");
+  if (done) return;
+
+  const startYear = 2027;
+  const endYear = new Date().getFullYear() + 3;
+
+  const users = await queryAll("SELECT id, name, role FROM users");
+  const holidayRows = await queryAll(
+    "SELECT holiday_date, holiday_name, is_holiday FROM holidays WHERE holiday_date >= ? AND holiday_date <= ?",
+    `${startYear}-01-01`,
+    `${endYear}-12-31`
+  );
+  const holidays = holidayRows.map((h) => ({
+    holidayDate: String(h.holiday_date ?? "").slice(0, 10),
+    holidayName: h.holiday_name ?? "",
+    isHoliday: Boolean(h.is_holiday),
+  }));
+
+  const dutyRows = await queryAll("SELECT * FROM holiday_duties WHERE holiday_date >= ?", "2026-01-01");
+  const holidayDuties = {};
+  for (const d of dutyRows) {
+    const hd = String(d.holiday_date ?? "").slice(0, 10);
+    if (!hd) continue;
+    holidayDuties[hd] = {
+      nurse1UserId: d.nurse1_user_id ?? "",
+      nurse2UserId: d.nurse2_user_id ?? "",
+      anesthesiaUserId: d.anesthesia_user_id ?? "",
+    };
+  }
+
+  const plan = buildFullAutoHolidayDutyPlansForYears({
+    startYear,
+    endYear,
+    users,
+    holidays,
+    holidayDuties,
+  });
+
+  let upserted = 0;
+  for (const row of plan) {
+    const hd = String(row.holidayDate ?? "").slice(0, 10);
+    if (!hd || hd < `${startYear}-01-01`) continue;
+
+    const existing = await queryOne(
+      "SELECT nurse1_user_id, nurse2_user_id, anesthesia_user_id FROM holiday_duties WHERE holiday_date = ?",
+      hd
+    );
+    const n1 = String(row.nurse1UserId ?? existing?.nurse1_user_id ?? "").trim();
+    const n2 = String(row.nurse2UserId ?? existing?.nurse2_user_id ?? "").trim();
+    const anes = String(row.anesthesiaUserId ?? existing?.anesthesia_user_id ?? "").trim();
+    if (!n1 || !n2 || !anes) continue;
+
+    await execute(
+      `INSERT INTO holiday_duties (holiday_date, nurse1_user_id, nurse2_user_id, anesthesia_user_id)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(holiday_date) DO UPDATE SET
+         nurse1_user_id = COALESCE(NULLIF(excluded.nurse1_user_id, ''), holiday_duties.nurse1_user_id),
+         nurse2_user_id = COALESCE(NULLIF(excluded.nurse2_user_id, ''), holiday_duties.nurse2_user_id),
+         anesthesia_user_id = COALESCE(NULLIF(excluded.anesthesia_user_id, ''), holiday_duties.anesthesia_user_id)`,
+      hd,
+      n1,
+      n2,
+      anes
+    );
+    upserted += 1;
+  }
+
+  await execute("INSERT INTO app_migrations (id) VALUES (?)", "holiday_duty_auto_2027_v1");
+  console.log(`[db] holiday duties auto-filled ${upserted} rows (${startYear}–${endYear})`);
 }
 
 async function backfillLongTermGoldkeyCancellationExemptions() {
