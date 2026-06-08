@@ -62,10 +62,10 @@ export default function CalendarDayMemoSection({
 
       <div className="day-comment-section" data-calendar-scroll-target="comments">
         {showAdminDutyMemo ? null : <h4 className="calendar-day-memo-section__heading">{title}</h4>}
-        {!compact && selectedDayComments.length === 0 ? (
+        {selectedDayComments.length === 0 && !compact ? (
           <p className="help">아직 등록된 메모가 없습니다.</p>
-        ) : !compact && selectedDayComments.length > 0 ? (
-          <ul className="day-comment-list">
+        ) : selectedDayComments.length > 0 ? (
+          <ul className={`day-comment-list${compact ? " day-comment-list--compact" : ""}`}>
             {selectedDayComments.map((row) => {
               const authorName = users.find((u) => u.id === row.userId)?.name ?? row.userId;
               const canManageComment = canManageCommentForRow
@@ -126,7 +126,7 @@ export default function CalendarDayMemoSection({
         {canComposeMemo ? (
           <div className="calendar-day-memo-section__compose">
             <textarea
-              rows={compact ? 1 : isHolidayDuty ? 3 : 2}
+              rows={compact && isHolidayDuty ? 2 : compact ? 1 : isHolidayDuty ? 3 : 2}
               placeholder={isHolidayDuty ? "응급·당직 관련 메모를 입력하세요" : "추가 메모를 입력하세요"}
               value={commentDraft}
               onChange={(e) => onCommentDraftChange(e.target.value)}

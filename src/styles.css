@@ -4263,13 +4263,15 @@ tr.request-cancelled-row td button {
 }
 
 .calendar-page__detail--modal-duty-day .calendar-detail-modal-body {
-  overflow: hidden;
-  padding-bottom: 2px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 8px;
 }
 
 .calendar-page__detail--modal-duty-day .calendar-detail-modal-footer {
-  padding-top: 2px;
-  padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+  padding-top: 6px;
+  padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
 }
 
 @media (max-width: 768px) {
@@ -4288,7 +4290,7 @@ tr.request-cancelled-row td button {
 
   .calendar-page__detail--modal-duty-day.calendar-page__detail--modal-emergency {
     width: calc(100vw - 36px);
-    max-height: min(78dvh, 540px);
+    max-height: min(82dvh, 580px);
   }
 
   .app-shell--emergency .calendar-page__detail:not(.calendar-page__detail--modal) {
@@ -4324,9 +4326,8 @@ tr.request-cancelled-row td button {
 .emergency-duty-day__field {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
-  overflow: hidden;
 }
 
 .emergency-duty-day__field .field-label {
@@ -4335,39 +4336,38 @@ tr.request-cancelled-row td button {
   line-height: 1.2;
 }
 
-.emergency-duty-day__field input {
+.emergency-duty-day__field input:not([type="radio"]) {
   display: block;
   width: 100%;
   max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  font-size: 12px;
-  padding: 4px 6px;
-  height: 28px;
-  min-height: 28px;
-  line-height: 1.2;
-  overflow: hidden;
+  margin: 0;
+  height: 36px;
+  min-height: 36px;
+  max-height: 36px;
+  padding: 0 10px;
+  font-size: 16px;
+  line-height: 1.25;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--fill-secondary);
+  color: var(--text-primary);
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .emergency-duty-day__field input[type="time"],
 .emergency-duty-day__time-input {
-  padding: 4px 6px;
-  font-size: 12px;
-  text-align: center;
+  padding: 0 8px;
+  text-align: left;
 }
 
-@media (max-width: 768px) {
-  .emergency-duty-day__field input:not([type="radio"]) {
-    font-size: 16px;
-    height: 36px;
-    min-height: 36px;
-  }
-
-  .emergency-duty-day__field input[type="time"],
-  .emergency-duty-day__time-input {
-    font-size: 16px;
-    padding: 6px 4px;
-  }
+.emergency-duty-day__field input[type="time"]::-webkit-date-and-time-value {
+  height: 1.25em;
+  line-height: 1.25;
+  margin: 0;
+  padding: 0;
 }
 
 .emergency-duty-day__field--anes {
@@ -4470,6 +4470,8 @@ tr.request-cancelled-row td button {
 
 .emergency-duty-day__memo {
   flex-shrink: 0;
+  padding-bottom: 6px;
+  margin-bottom: 2px;
 }
 
 .emergency-duty-day__msg {
@@ -4485,26 +4487,57 @@ tr.request-cancelled-row td button {
 
 .calendar-day-memo-section--compact.calendar-day-memo-section--holiday-duty {
   margin-top: 0;
-  padding: 4px 6px;
-  border-radius: 6px;
+  padding: 8px 8px 10px;
+  border-radius: 8px;
   background: #f5f9ff;
   border: 1px solid #d6e6f8;
 }
 
 .calendar-day-memo-section--compact .calendar-day-memo-section__heading {
-  margin: 0 0 4px;
-  font-size: 12px;
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.calendar-day-memo-section--compact.calendar-day-memo-section--holiday-duty .day-comment-list--compact {
+  margin: 0 0 8px;
+  padding-left: 16px;
+  max-height: 88px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.calendar-day-memo-section--compact.calendar-day-memo-section--holiday-duty .day-comment-item {
+  font-size: 12px !important;
+  margin-bottom: 8px;
+}
+
+.calendar-day-memo-section--compact.calendar-day-memo-section--holiday-duty .day-comment-actions button {
+  padding: 3px 8px !important;
+  font-size: 11px !important;
 }
 
 .calendar-day-memo-section--compact .calendar-day-memo-section__compose textarea {
-  min-height: 26px;
-  font-size: 12px;
-  padding: 4px 6px;
+  min-height: 36px;
+  font-size: 14px;
+  padding: 8px 10px;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+.calendar-day-memo-section--compact.calendar-day-memo-section--holiday-duty .calendar-day-memo-section__compose textarea {
+  min-height: 56px;
+  font-size: 16px;
 }
 
 .calendar-day-memo-section--compact .calendar-day-memo-section__compose button {
-  padding: 3px 8px !important;
-  font-size: 11px !important;
+  padding: 6px 12px !important;
+  font-size: 12px !important;
+  min-height: 32px;
+}
+
+.calendar-day-memo-section--compact.calendar-day-memo-section--holiday-duty .calendar-day-memo-section__compose {
+  margin-bottom: 4px;
 }
 
 .calendar-detail-modal-backdrop--compact {
