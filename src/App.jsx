@@ -93,6 +93,7 @@ import {
   isEmergencyOrRole,
   isHolidayDutyContactViewer,
   isDeptHeadRole,
+  canUseWebPushRole,
   isCalendarOffDaysOnlyRole,
   canUseHolidayDutyDayMemo,
   canManageHolidayDutyDayComment,
@@ -662,7 +663,7 @@ function App() {
   useEffect(() => {
     let cancelled = false;
     const checkPush = async () => {
-      if (!isLoggedIn || currentUser?.role !== "NURSE") {
+      if (!isLoggedIn || !canUseWebPushRole(currentUser?.role)) {
         if (!cancelled) setPushEnabled(false);
         return;
       }
@@ -697,7 +698,7 @@ function App() {
 
   /** 로그인·재방문 시: 권한이 이미 허용된 간호사는 푸시 구독을 서버에 다시 맞춤 */
   useEffect(() => {
-    if (!isLoggedIn || currentUser?.role !== "NURSE" || !serverMode || !dataHydrated) return;
+    if (!isLoggedIn || !canUseWebPushRole(currentUser?.role) || !serverMode || !dataHydrated) return;
     if (!rememberedPushEnabled) return;
     let cancelled = false;
     void (async () => {
@@ -790,8 +791,8 @@ function App() {
     if (pushBusy) return;
     setPushBusy(true);
     try {
-      if (!isLoggedIn || currentUser?.role !== "NURSE") {
-        window.alert?.("간호사 계정에서만 푸시 알림을 사용할 수 있습니다.");
+      if (!isLoggedIn || !canUseWebPushRole(currentUser?.role)) {
+        window.alert?.("간호사·부서파트장 계정에서만 푸시 알림을 사용할 수 있습니다.");
         return;
       }
       if (!serverMode) {
@@ -1037,7 +1038,7 @@ function App() {
   }, [isLoggedIn, isAdmin, serverMode, auth?.userId]);
 
   useEffect(() => {
-    if (!isLoggedIn || currentUser?.role !== "NURSE" || !serverMode) {
+    if (!isLoggedIn || !canUseWebPushRole(currentUser?.role) || !serverMode) {
       setServerNotifications([]);
       prevUnreadNotificationCountRef.current = null;
       return;
@@ -5780,7 +5781,7 @@ function NotificationsPage({
       <section className="card">
         <h2 className="screen-title">알림</h2>
         <p className="help page-lead">읽지 않은 알림이 상단 종 아이콘에 숫자로 표시됩니다. 휴가·메모·댓글 등 새 소식은 푸시로도 받을 수 있습니다.</p>
-        {currentUser?.role === "NURSE" ? (
+        {canUseWebPushRole(currentUser?.role) ? (
           <div className="notification-head notification-head--page">
             <p className="help notification-push-hint">{pushSetupHintForPlatform()}</p>
             <div className="notification-head-actions">
@@ -5795,8 +5796,8 @@ function NotificationsPage({
             </div>
           </div>
         ) : null}
-        {currentUser?.role !== "NURSE" ? (
-          <p className="help">간호사 계정에서 수신한 알림이 여기에 표시됩니다.</p>
+        {!canUseWebPushRole(currentUser?.role) ? (
+          <p className="help">알림 수신 대상 계정에서 여기에 표시됩니다.</p>
         ) : myNotifications.length === 0 ? (
           <p className="help">새 알림이 없습니다.</p>
         ) : (

@@ -163,6 +163,11 @@ export function isDeptHeadRole(role) {
   return role === "DEPT_HEAD";
 }
 
+/** Web Push 구독·푸시 켜기 (간호사·부서파트장) */
+export function canUseWebPushRole(role) {
+  return role === "NURSE" || role === "DEPT_HEAD";
+}
+
 /** 수술실 휴가 관리(관리자) + 부서파트장(진기숙 동급 화면·권한) */
 export function isOrLeaveAdminRole(role) {
   return role === "ADMIN" || role === "DEPT_HEAD";

@@ -249,6 +249,11 @@ function isDeptHeadRoleServer(role) {
   return String(role ?? "").trim() === "DEPT_HEAD";
 }
 
+function canUseWebPushRoleServer(role) {
+  const r = String(role ?? "").trim();
+  return r === "NURSE" || r === "DEPT_HEAD";
+}
+
 function isOrLeaveAdminRoleServer(role) {
   const r = String(role ?? "").trim();
   return r === "ADMIN" || r === "DEPT_HEAD";
@@ -385,19 +390,9 @@ async function createNotificationsForUserIds({ userIds, type, message, targetDat
   }
 }
 
-async function sendPushToAllNurses({ title, body, url = "#/calendar" }) {
-  if (!PUSH_ENABLED) return;
-  const rows = await queryAll(
-    `SELECT ps.id, ps.endpoint, ps.p256dh, ps.auth
-     FROM push_subscriptions ps
-     JOIN users u ON u.id = ps.user_id
-     WHERE u.role = 'NURSE'`
-  );
-  const payload = JSON.stringify({
-    title: String(title || "EOR 알림"),
-    body: String(body || ""),
-    url: String(url || "#/calendar"),
-  });
+async function deliverPushPayloadToSubscriptions(rows, payloadObj) {
+  if (!PUSH_ENABLED || !Array.isArray(rows) || rows.length === 0) return;
+  const payload = JSON.stringify(payloadObj);
   for (const r of rows) {
     const sub = {
       endpoint: String(r.endpoint || ""),
@@ -416,6 +411,35 @@ async function sendPushToAllNurses({ title, body, url = "#/calendar" }) {
       }
     }
   }
+}
+
+async function sendPushToAllNurses({ title, body, url = "#/calendar" }) {
+  const rows = await queryAll(
+    `SELECT ps.id, ps.endpoint, ps.p256dh, ps.auth
+     FROM push_subscriptions ps
+     JOIN users u ON u.id = ps.user_id
+     WHERE u.role = 'NURSE'`
+  );
+  await deliverPushPayloadToSubscriptions(rows, {
+    title: String(title || "EOR 알림"),
+    body: String(body || ""),
+    url: String(url || "#/calendar"),
+  });
+}
+
+async function sendPushToUserIds({ userIds, title, body, url = "#/calendar" }) {
+  const ids = [...new Set((Array.isArray(userIds) ? userIds : []).map((id) => String(id ?? "").trim()).filter(Boolean))];
+  if (!ids.length) return;
+  const placeholders = ids.map(() => "?").join(", ");
+  const rows = await queryAll(
+    `SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id IN (${placeholders})`,
+    ...ids
+  );
+  await deliverPushPayloadToSubscriptions(rows, {
+    title: String(title || "EOR 알림"),
+    body: String(body || ""),
+    url: String(url || "#/calendar"),
+  });
 }
 
 async function reconcileGoldkeyUsageByPolicy(nowLike = new Date().toISOString()) {
@@ -698,7 +722,9 @@ app.post("/api/push-subscriptions", async (req, res) => {
     const uid = String(userId ?? "").trim();
     if (!uid) return res.status(400).json({ error: "userId가 필요합니다." });
     const user = await queryOne("SELECT id, role FROM users WHERE id = ?", uid);
-    if (!user || user.role !== "NURSE") return res.status(403).json({ error: "간호사만 푸시 구독할 수 있습니다." });
+    if (!user || !canUseWebPushRoleServer(user.role)) {
+      return res.status(403).json({ error: "간호사·부서파트장만 푸시 구독할 수 있습니다." });
+    }
     const endpoint = String(subscription?.endpoint ?? "").trim();
     const p256dh = String(subscription?.keys?.p256dh ?? "").trim();
     const auth = String(subscription?.keys?.auth ?? "").trim();
@@ -751,7 +777,9 @@ app.post("/api/push/test-self", async (req, res) => {
     const userId = String(req.body?.userId ?? "").trim();
     if (!userId) return res.status(400).json({ error: "userId가 필요합니다." });
     const actor = await queryOne("SELECT id, role FROM users WHERE id = ?", userId);
-    if (!actor || actor.role !== "NURSE") return res.status(403).json({ error: "간호사만 테스트할 수 있습니다." });
+    if (!actor || !canUseWebPushRoleServer(actor.role)) {
+      return res.status(403).json({ error: "간호사·부서파트장만 테스트할 수 있습니다." });
+    }
 
     const rows = await queryAll("SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?", userId);
     if (!rows.length) return res.status(404).json({ error: "저장된 푸시 구독이 없습니다." });
@@ -869,11 +897,18 @@ app.post("/api/emergency-surgery/notify", async (req, res) => {
       if (emergencyOr?.id) notifyIds.push(emergencyOr.id);
     }
 
+    const uniqueNotifyIds = [...new Set(notifyIds.filter(Boolean))];
     await createNotificationsForUserIds({
-      userIds: [...new Set(notifyIds.filter(Boolean))],
+      userIds: uniqueNotifyIds,
       type: "EMERGENCY_SURGERY",
       message: msg,
       targetDate: leaveDate,
+    });
+    await sendPushToUserIds({
+      userIds: uniqueNotifyIds,
+      title: "응급수술 알림",
+      body: msg,
+      url: `#/calendar?ymd=${encodeURIComponent(leaveDate)}&detail=1`,
     });
 
     return res.json({ ok: true, message: msg });
@@ -1350,11 +1385,18 @@ app.post("/api/day-comments", async (req, res) => {
     );
     const commentMsg = `${ymd} 의사소통 메모: ${txt.slice(0, 80)}${txt.length > 80 ? "…" : ""}`;
     if (offDay) {
+      const dutyNotifyIds = await holidayDutyNotifyUserIds(ymd);
       await createNotificationsForUserIds({
-        userIds: await holidayDutyNotifyUserIds(ymd),
+        userIds: dutyNotifyIds,
         type: "DAY_COMMENT",
         message: commentMsg,
         targetDate: ymd,
+      });
+      await sendPushToUserIds({
+        userIds: dutyNotifyIds,
+        title: `${ymd} 의사소통 메모`,
+        body: commentMsg,
+        url: `#/calendar?ymd=${encodeURIComponent(ymd)}&detail=1&focus=comments`,
       });
     } else {
       await createNotificationsForAllNurses({
