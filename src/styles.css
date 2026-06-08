@@ -4235,7 +4235,7 @@ tr.request-cancelled-row td button {
   font-weight: inherit;
 }
 
-/* 의국: 상세 팝업 여백 — 달력이 살짝 보이도록 */
+/* 의국·부서파트장: 상세 팝업 — 달력이 살짝 보이도록 */
 .calendar-page__detail--modal-emergency {
   top: 50%;
   left: 50%;
@@ -4254,13 +4254,29 @@ tr.request-cancelled-row td button {
   border-top: none;
 }
 
+.calendar-page__detail--modal-duty-day {
+  max-height: min(92dvh, 720px);
+  min-height: auto;
+  padding: 8px 10px 0;
+}
+
+.calendar-page__detail--modal-duty-day .calendar-detail-modal-body {
+  overflow: hidden;
+  padding-bottom: 4px;
+}
+
+.calendar-page__detail--modal-duty-day .calendar-detail-modal-footer {
+  padding-top: 4px;
+  padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+}
+
 @media (max-width: 768px) {
   .calendar-page__detail--modal-emergency {
     left: 50%;
     right: auto;
     top: 50%;
     bottom: auto;
-    width: calc(100vw - 24px);
+    width: calc(100vw - 16px);
     max-height: min(60dvh, 510px);
     min-height: min(350px, 52dvh);
     transform: translate3d(-50%, -50%, 0);
@@ -4268,69 +4284,184 @@ tr.request-cancelled-row td button {
     padding-bottom: 0;
   }
 
+  .calendar-page__detail--modal-duty-day {
+    width: calc(100vw - 12px);
+    max-height: min(92dvh, 680px);
+    min-height: auto;
+  }
+
   .app-shell--emergency .calendar-page__detail:not(.calendar-page__detail--modal) {
     display: none;
   }
 }
 
-.emergency-surgery-panel {
-  margin: 12px 0 16px;
-  padding: 14px;
-  border-radius: var(--radius-md);
+/* 당직일 응급 패널: 상단 입력 → 중단 전화 → 하단 메모 */
+.emergency-duty-day {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.emergency-duty-day__date {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary, #475569);
+}
+
+.emergency-duty-day__form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 8px;
+  padding: 8px;
+  border-radius: 10px;
   border: 1px solid var(--separator);
   background: var(--surface-elevated, #f8fafc);
 }
 
-.emergency-surgery-panel__title {
-  margin: 0 0 6px;
-  font-size: 1rem;
+.emergency-duty-day__field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
-.emergency-surgery-panel__lead {
-  margin: 0 0 12px;
+.emergency-duty-day__field .field-label {
+  font-size: 11px;
+  margin: 0;
+  line-height: 1.2;
 }
 
-.emergency-duty-list {
-  list-style: none;
-  margin: 0 0 14px;
-  padding: 0;
+.emergency-duty-day__field input {
+  font-size: 13px;
+  padding: 6px 8px;
+  min-height: 32px;
 }
 
-.emergency-duty-row {
+.emergency-duty-day__field--anes {
+  grid-column: 1 / -1;
+}
+
+.emergency-anesthesia-type--inline {
   display: flex;
   flex-wrap: wrap;
+  gap: 10px 14px;
   align-items: center;
-  gap: 8px 12px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--separator);
 }
 
-.emergency-duty-row__label {
-  min-width: 6.5rem;
+.emergency-anesthesia-type--inline label {
+  margin: 0;
   font-size: 13px;
+}
+
+.emergency-duty-day__notify {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.emergency-duty-day__notify button {
+  padding: 7px 12px !important;
+  font-size: 13px !important;
+}
+
+.emergency-duty-day__calls {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.emergency-duty-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 4px;
+  border-radius: 8px;
+  border: 1px solid var(--separator);
+  background: #fff;
+  text-align: center;
+}
+
+.emergency-duty-chip__label {
+  font-size: 10px;
   color: var(--text-secondary, #64748b);
 }
 
-.emergency-duty-row__name {
-  flex: 1;
-  font-weight: 600;
+.emergency-duty-chip__name {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  word-break: keep-all;
 }
 
-.emergency-duty-row__call {
+.emergency-duty-chip__call {
   display: inline-flex;
   align-items: center;
-  padding: 6px 12px;
+  justify-content: center;
+  min-width: 44px;
+  padding: 4px 8px;
   border-radius: 999px;
   background: var(--accent, #2563eb);
   color: #fff;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
   text-decoration: none;
 }
 
-.emergency-anesthesia-type label {
-  margin-right: 14px;
-  font-size: 14px;
+.emergency-duty-chip__call--disabled {
+  font-size: 10px;
+}
+
+.emergency-duty-day__duty-hint {
+  margin: 0;
+  font-size: 11px;
+}
+
+.emergency-duty-day__memo {
+  flex-shrink: 0;
+}
+
+.emergency-duty-day__msg {
+  margin: 0;
+  font-size: 12px;
+}
+
+.calendar-day-memo-section--compact {
+  margin-top: 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--separator);
+}
+
+.calendar-day-memo-section--compact.calendar-day-memo-section--holiday-duty {
+  margin-top: 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: #f5f9ff;
+  border: 1px solid #d6e6f8;
+}
+
+.calendar-day-memo-section--compact .calendar-day-memo-section__heading {
+  margin: 0 0 4px;
+  font-size: 12px;
+}
+
+.calendar-day-memo-section--compact .calendar-day-memo-section__compose textarea {
+  min-height: 32px;
+  font-size: 13px;
+  padding: 6px 8px;
+}
+
+.calendar-day-memo-section--compact .calendar-day-memo-section__compose button {
+  padding: 5px 10px !important;
+  font-size: 12px !important;
+}
+
+@media (max-width: 420px) {
+  .emergency-duty-day__calls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .app-shell--emergency .app-main {

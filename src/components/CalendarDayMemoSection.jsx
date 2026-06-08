@@ -2,6 +2,7 @@
 export default function CalendarDayMemoSection({
   selectedYmd,
   variant = "default",
+  compact = false,
   selectedDayComments,
   users,
   currentUserId,
@@ -28,7 +29,11 @@ export default function CalendarDayMemoSection({
   const title = isHolidayDuty ? "의사소통 메모" : "듀티 메모";
 
   return (
-    <section className={`calendar-day-memo-section${isHolidayDuty ? " calendar-day-memo-section--holiday-duty" : ""}`}>
+    <section
+      className={`calendar-day-memo-section${isHolidayDuty ? " calendar-day-memo-section--holiday-duty" : ""}${
+        compact ? " calendar-day-memo-section--compact" : ""
+      }`}
+    >
       {showAdminDutyMemo ? (
         <div data-calendar-scroll-target="duty-memo">
           <h4 className="calendar-day-memo-section__heading">{title}</h4>
@@ -57,9 +62,9 @@ export default function CalendarDayMemoSection({
 
       <div className="day-comment-section" data-calendar-scroll-target="comments">
         {showAdminDutyMemo ? null : <h4 className="calendar-day-memo-section__heading">{title}</h4>}
-        {selectedDayComments.length === 0 ? (
+        {!compact && selectedDayComments.length === 0 ? (
           <p className="help">아직 등록된 메모가 없습니다.</p>
-        ) : (
+        ) : !compact && selectedDayComments.length > 0 ? (
           <ul className="day-comment-list">
             {selectedDayComments.map((row) => {
               const authorName = users.find((u) => u.id === row.userId)?.name ?? row.userId;
@@ -117,11 +122,11 @@ export default function CalendarDayMemoSection({
               );
             })}
           </ul>
-        )}
+        ) : null}
         {canComposeMemo ? (
           <div className="calendar-day-memo-section__compose">
             <textarea
-              rows={isHolidayDuty ? 3 : 2}
+              rows={compact ? 1 : isHolidayDuty ? 3 : 2}
               placeholder={isHolidayDuty ? "응급·당직 관련 메모를 입력하세요" : "추가 메모를 입력하세요"}
               value={commentDraft}
               onChange={(e) => onCommentDraftChange(e.target.value)}

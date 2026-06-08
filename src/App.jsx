@@ -2440,6 +2440,9 @@ function App() {
       actorUserId: auth.userId,
       leaveDate: payload?.leaveDate,
       surgeryName: payload?.surgeryName,
+      attendingPhysician: payload?.attendingPhysician,
+      specialistPhysician: payload?.specialistPhysician,
+      emergencyContact: payload?.emergencyContact,
       startTime: payload?.startTime,
       anesthesiaType: payload?.anesthesiaType,
     });
@@ -7545,28 +7548,34 @@ function CalendarPage({
         <div
           className={`calendar-page__detail${detailModalOpen ? " calendar-page__detail--modal" : ""}${
             detailModalOpen && useCompactDetailModal ? " calendar-page__detail--modal-emergency" : ""
+          }${
+            detailModalOpen && holidayDutyContactViewer && selectedCell?.isOffDay
+              ? " calendar-page__detail--modal-duty-day"
+              : ""
           }`}
         >
       <div className={detailModalOpen ? "calendar-detail-modal-body" : undefined}>
       <div className="calendar-detail">
         {!selectedYmd ? null : (
           <>
-            <h3 className="calendar-detail-title">{selectedYmd} 상세</h3>
+            {!holidayDutyContactViewer || !selectedCell?.isOffDay ? (
+              <h3 className="calendar-detail-title">{selectedYmd} 상세</h3>
+            ) : null}
               {holidayDutyContactViewer ? (
                 selectedCell?.isOffDay ? (
-                  <>
-                    <EmergencySurgeryPanel
-                      selectedYmd={selectedYmd}
-                      holidayName={selectedCell?.holidayName}
-                      holidayDuties={holidayDuties}
-                      users={users}
-                      serverMode={serverMode}
-                      onNotify={onNotifyEmergencySurgery}
-                    />
-                    {canHolidayDutyMemo ? (
-                      <CalendarDayMemoSection {...dayMemoSectionProps} variant="holiday-duty" />
-                    ) : null}
-                  </>
+                  <EmergencySurgeryPanel
+                    selectedYmd={selectedYmd}
+                    holidayName={selectedCell?.holidayName}
+                    holidayDuties={holidayDuties}
+                    users={users}
+                    serverMode={serverMode}
+                    onNotify={onNotifyEmergencySurgery}
+                    memoSection={
+                      canHolidayDutyMemo ? (
+                        <CalendarDayMemoSection {...dayMemoSectionProps} variant="holiday-duty" compact />
+                      ) : null
+                    }
+                  />
                 ) : (
                   <p className="help">주말·공휴일·명절·대체공휴일만 조회할 수 있습니다.</p>
                 )

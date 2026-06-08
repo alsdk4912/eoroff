@@ -852,12 +852,34 @@ app.post("/api/notifications/read-all", async (req, res) => {
   }
 });
 
+const MIN_SURGERY_LEAD_MS = 2.5 * 60 * 60 * 1000;
+const SURGERY_START_TOO_SOON_MSG = "현재시간으로부터 2시간 30분이후의 수술만 설정가능합니다";
+
+function parseEmergencySurgeryStart(startTime) {
+  const s = String(startTime ?? "").trim();
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(s);
+  if (m) {
+    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), 0, 0);
+  }
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function isEmergencySurgeryStartAllowed(startTime) {
+  const d = parseEmergencySurgeryStart(startTime);
+  if (!d) return false;
+  return d.getTime() >= Date.now() + MIN_SURGERY_LEAD_MS;
+}
+
 /** 응급실 의국: 휴일 당직자·진기숙에게 응급수술 알림 */
 app.post("/api/emergency-surgery/notify", async (req, res) => {
   try {
     const actorUserId = String(req.body?.actorUserId ?? "").trim();
     const leaveDate = String(req.body?.leaveDate ?? "").slice(0, 10);
     const surgeryName = String(req.body?.surgeryName ?? "").trim();
+    const attendingPhysician = String(req.body?.attendingPhysician ?? "").trim();
+    const specialistPhysician = String(req.body?.specialistPhysician ?? "").trim();
+    const emergencyContact = String(req.body?.emergencyContact ?? "").replace(/\D/g, "").trim();
     const startTime = String(req.body?.startTime ?? "").trim();
     const anesthesiaType = String(req.body?.anesthesiaType ?? "GENERAL").trim().toUpperCase();
     if (!actorUserId) return res.status(400).json({ error: "actorUserId가 필요합니다." });
@@ -865,7 +887,15 @@ app.post("/api/emergency-surgery/notify", async (req, res) => {
       return res.status(400).json({ error: "leaveDate(YYYY-MM-DD)가 필요합니다." });
     }
     if (!surgeryName) return res.status(400).json({ error: "수술명이 필요합니다." });
+    if (!attendingPhysician) return res.status(400).json({ error: "주치의가 필요합니다." });
+    if (!specialistPhysician) return res.status(400).json({ error: "담당전공의가 필요합니다." });
+    if (!emergencyContact || emergencyContact.length < 9) {
+      return res.status(400).json({ error: "응급연락처가 필요합니다." });
+    }
     if (!startTime) return res.status(400).json({ error: "수술 시작 시간이 필요합니다." });
+    if (!isEmergencySurgeryStartAllowed(startTime)) {
+      return res.status(400).json({ error: SURGERY_START_TOO_SOON_MSG });
+    }
 
     const actor = await queryOne("SELECT id, role, name FROM users WHERE id = ?", actorUserId);
     const fromEmergencyOr = actor && String(actor.role) === "EMERGENCY_OR";
@@ -888,7 +918,7 @@ app.post("/api/emergency-surgery/notify", async (req, res) => {
     const deptHeads = await deptHeadUserIds();
     const anesLabel = anesthesiaType === "LOCAL" ? "국소(로컬)마취" : "전신마취";
     const senderLabel = fromDeptHead ? String(actor?.name ?? "부서파트장") : "의국";
-    const msg = `[응급수술] ${leaveDate} ${startTime} | ${surgeryName} | ${anesLabel} (${senderLabel})`;
+    const msg = `[응급수술] ${leaveDate} ${startTime} | ${surgeryName} | 주치의 ${attendingPhysician} | 전공의 ${specialistPhysician} | ${anesLabel} | 연락 ${emergencyContact} (${senderLabel})`;
 
     const notifyIds = [n1, n2, anes];
     if (fromEmergencyOr) notifyIds.push(...deptHeads);
