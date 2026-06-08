@@ -4312,7 +4312,7 @@ tr.request-cancelled-row td button {
 
 .emergency-duty-day__form {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 4px 6px;
   padding: 6px;
   border-radius: 8px;
@@ -4325,6 +4325,7 @@ tr.request-cancelled-row td button {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  overflow: hidden;
 }
 
 .emergency-duty-day__field .field-label {
@@ -4334,9 +4335,35 @@ tr.request-cancelled-row td button {
 }
 
 .emergency-duty-day__field input {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   font-size: 12px;
   padding: 4px 6px;
+  height: 28px;
   min-height: 28px;
+  line-height: 1.2;
+  overflow: hidden;
+}
+
+.emergency-duty-day__field input[type="datetime-local"] {
+  padding: 4px 4px;
+  font-size: 11px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.emergency-duty-day__field input[type="datetime-local"]::-webkit-datetime-edit,
+.emergency-duty-day__field input[type="datetime-local"]::-webkit-datetime-edit-fields-wrapper {
+  padding: 0;
+  min-width: 0;
+}
+
+.emergency-duty-day__field input[type="datetime-local"]::-webkit-date-and-time-value {
+  min-width: 0;
+  text-align: left;
 }
 
 .emergency-duty-day__field--anes {
@@ -4346,6 +4373,7 @@ tr.request-cancelled-row td button {
 .emergency-duty-day__field--start,
 .emergency-duty-day__field--contact {
   grid-column: span 1;
+  min-width: 0;
 }
 
 .emergency-anesthesia-type--inline {
