@@ -3771,7 +3771,7 @@ button.ym-wheel-check:hover {
 
 .work-schedule-table tbody tr.work-schedule-row--self td.work-schedule-month-cell--current {
   background: #ecfccb;
-  box-shadow: inset 0 0 0 1px #84cc16;
+  box-shadow: inset 0 0 0 0.5px rgba(132, 204, 22, 0.75);
 }
 
 .work-schedule-table tbody tr.work-schedule-row--self .work-schedule-picker-face {
@@ -3810,7 +3810,7 @@ button.ym-wheel-check:hover {
 
 .weekly-schedule-table tbody tr.work-schedule-row--self td.weekly-cell--today {
   background: #ecfccb !important;
-  box-shadow: inset 0 0 0 1px #84cc16;
+  box-shadow: inset 0 0 0 0.5px rgba(132, 204, 22, 0.75);
 }
 
 .weekly-schedule-table tbody td.weekly-cell--today .weekly-cell-select {
