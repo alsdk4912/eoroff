@@ -3488,6 +3488,142 @@ button.ym-wheel-check:hover {
   font-size: 16px;
 }
 
+.admin-day-panel--by-dept {
+  padding: 12px;
+}
+
+.admin-day-panel__date {
+  margin: 0 0 2px;
+  font-size: 17px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.admin-day-panel__date-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+}
+
+.admin-day-dept-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-day-dept-block {
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-md);
+  background: #fff;
+  overflow: hidden;
+  border-left-width: 4px;
+}
+
+.admin-day-dept-block--nurse {
+  border-left-color: #2563eb;
+}
+
+.admin-day-dept-block--anesthesia {
+  border-left-color: #6b5b95;
+}
+
+.admin-day-dept-block--chief {
+  border-left-color: #0d9488;
+}
+
+.admin-day-dept-block__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.admin-day-dept-block__head:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.admin-day-dept-block--nurse .admin-day-dept-block__head {
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.admin-day-dept-block--anesthesia .admin-day-dept-block__head {
+  background: rgba(107, 91, 149, 0.08);
+}
+
+.admin-day-dept-block--chief .admin-day-dept-block__head {
+  background: rgba(13, 148, 136, 0.08);
+}
+
+.admin-day-dept-block__label {
+  font-size: 15px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.admin-day-dept-block__meta {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.admin-day-dept-block__badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #4b5563;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.admin-day-dept-block__chevron {
+  font-size: 12px;
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
+.admin-day-dept-block__body {
+  padding: 0 12px 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.admin-day-dept-block__section + .admin-day-dept-block__section {
+  margin-top: 10px;
+}
+
+.admin-day-dept-block__subhead {
+  margin: 10px 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #374151;
+}
+
+.admin-day-dept-block__leave-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 14px;
+}
+
+.admin-day-dept-block__leave-type {
+  font-size: 12px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.admin-day-dept-block__empty {
+  margin: 0;
+  font-size: 12px;
+}
+
+.admin-day-substitute-grid--dept {
+  margin-top: 2px;
+}
+
 .admin-day-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

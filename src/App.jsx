@@ -105,13 +105,13 @@ import {
   parseStandaloneSubstituteLeaveDate,
   getSubstituteRecordsForRequest,
   buildCalendarSubstituteEditorRows,
-  buildCalendarSubstituteDisplayRows,
   getStandaloneSubstituteRecordsForScope,
   staffRoleFromStandaloneRequestId,
   userById,
   isStaffLeaveRole,
   isConfirmedLeaveStatus,
 } from "./utils/leaveVisibility.js";
+import AdminDayDeptPanel from "./components/AdminDayDeptPanel.jsx";
 import EmergencySurgeryPanel from "./components/EmergencySurgeryPanel.jsx";
 import CalendarDayMemoSection from "./components/CalendarDayMemoSection.jsx";
 import {
@@ -3631,40 +3631,6 @@ function baseMonthCodeForNurseName(name, ymd, workScheduleByYear) {
   if (raw == null || String(raw).trim() === "") return "—";
   if (isCustomShiftCodeValue(raw)) return customShiftText(raw).trim() || "—";
   return String(raw).trim();
-}
-
-/** 캘린더 하단 대체자 표: 수술실·마취·주임 전체(미지정 `-` 행 없음) */
-function renderDaySubstituteGridCells(selectedYmd, selectedCell, substituteAssignments, users) {
-  const cells = [];
-  const sections = [
-    { staffRole: "NURSE", applicants: selectedCell?.approvedApplicants, key: "n" },
-    { staffRole: "ANESTHESIA", applicants: selectedCell?.anesthesiaApprovedApplicants, key: "a" },
-    { staffRole: "CHIEF", applicants: selectedCell?.chiefApprovedApplicants, key: "c" },
-  ];
-  for (const { staffRole, applicants, key } of sections) {
-    const rows = buildCalendarSubstituteDisplayRows({
-      selectedYmd,
-      staffRole,
-      approvedApplicants: applicants,
-      substituteAssignments,
-      users,
-    });
-    for (let i = 0; i < rows.length; i += 1) {
-      const s = rows[i];
-      const subName = users.find((u) => u.id === s.substituteUserId)?.name ?? s.substituteUserId;
-      const rawCode = String(s.shiftCode ?? "").trim();
-      const code = isCustomShiftCodeValue(rawCode) ? customShiftText(rawCode).trim() || "-" : rawCode || "-";
-      cells.push(
-        <span key={`${key}_${selectedYmd}_${i}_code`} className="admin-day-substitute-grid__cell">
-          {code}
-        </span>,
-        <span key={`${key}_${selectedYmd}_${i}_sub`} className="admin-day-substitute-grid__cell">
-          {subName}
-        </span>
-      );
-    }
-  }
-  return cells;
 }
 
 /**
@@ -8001,75 +7967,20 @@ function CalendarPage({
       !hideCalendarAllDeptPanelOnOffDay(viewerRole, selectedIsOffDay) &&
       calendarShowsAllDepartmentsLeaveAndSubstitute(viewerRole) &&
       (!detailModalOpen || detailTab === "list") ? (
-        <section className="admin-day-panel">
-          <h3>{selectedYmd} 휴가자 (수술실)</h3>
-          <ul>
-            {selectedCell.approvedApplicants.length === 0 ? (
-              <li className="help admin-day-empty">없음</li>
-            ) : (
-              selectedCell.approvedApplicants.map((item) => (
-                <li key={item.id}>
-                  {item.name} ({typeFullLabel(item.leaveType)})
-                </li>
-              ))
-            )}
-          </ul>
-          <div className="calendar-applicant-divider admin-day-panel__divider" role="separator">
-            <span>마취과</span>
-          </div>
-          <h3 className="admin-day-panel__anes-title">{selectedYmd} 휴가자 (마취과)</h3>
-          <ul>
-            {!(Array.isArray(selectedCell.anesthesiaApprovedApplicants) && selectedCell.anesthesiaApprovedApplicants.length) ? (
-              <li className="help admin-day-empty">없음</li>
-            ) : (
-              selectedCell.anesthesiaApprovedApplicants.map((item) => (
-                <li key={`anes_ap_${item.id}`}>
-                  {item.name} ({typeFullLabel(item.leaveType)})
-                </li>
-              ))
-            )}
-          </ul>
-          <div className="calendar-applicant-divider admin-day-panel__divider" role="separator">
-            <span>주임</span>
-          </div>
-          <h3 className="admin-day-panel__anes-title">{selectedYmd} 휴가자 (주임)</h3>
-          <ul>
-            {!(Array.isArray(selectedCell.chiefApprovedApplicants) && selectedCell.chiefApprovedApplicants.length) ? (
-              <li className="help admin-day-empty">없음</li>
-            ) : (
-              selectedCell.chiefApprovedApplicants.map((item) => (
-                <li key={`chief_ap_${item.id}`}>
-                  {item.name} ({typeFullLabel(item.leaveType)})
-                </li>
-              ))
-            )}
-          </ul>
-          <div className="admin-day-substitute-grid-wrap">
-            <h4>{selectedYmd} 대체자 (전 부서)</h4>
-            <div className="admin-day-substitute-grid">
-              <div className="admin-day-substitute-grid__head">번표</div>
-              <div className="admin-day-substitute-grid__head">대체자</div>
-              {(() => {
-                const cells = renderDaySubstituteGridCells(
-                  selectedYmd,
-                  selectedCell,
-                  substituteAssignments,
-                  users
-                );
-                if (cells.length === 0) {
-                  return <div className="help" style={{ gridColumn: "1 / -1" }}>없음</div>;
-                }
-                return cells;
-              })()}
-            </div>
-          </div>
+        <>
+          <AdminDayDeptPanel
+            selectedYmd={selectedYmd}
+            selectedCell={selectedCell}
+            substituteAssignments={substituteAssignments}
+            users={users}
+          />
           {(!selectedIsOffDay || canHolidayDutyMemo) && (
             <CalendarDayMemoSection
               {...dayMemoSectionProps}
               variant={selectedIsOffDay ? "holiday-duty" : "default"}
             />
           )}
-        </section>
+        </>
       ) : null}
       </div>
 
