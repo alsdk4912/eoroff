@@ -3,6 +3,17 @@ import { buildCalendarSubstituteDisplayRows } from "../utils/leaveVisibility.js"
 
 const CUSTOM_SHIFT_PREFIX = "__CUSTOM_SHIFT__:";
 
+/** 관리자·관리자2·진기숙(DEPT_HEAD)은 전 부서 펼침, 그 외는 본인 부서만 */
+function shouldExpandDeptBlockByDefault(viewerRole, staffRole) {
+  if (viewerRole === "ADMIN" || viewerRole === "ADMIN2" || viewerRole === "DEPT_HEAD") {
+    return true;
+  }
+  if (viewerRole === "NURSE" && staffRole === "NURSE") return true;
+  if (viewerRole === "ANESTHESIA" && staffRole === "ANESTHESIA") return true;
+  if (viewerRole === "CHIEF" && staffRole === "CHIEF") return true;
+  return false;
+}
+
 function formatShiftCode(raw) {
   const s = String(raw ?? "").trim();
   if (s.startsWith(CUSTOM_SHIFT_PREFIX)) {
@@ -20,6 +31,7 @@ function AdminDayDeptBlock({
   applicants,
   substituteAssignments,
   users,
+  defaultOpen,
 }) {
   const leaveList = Array.isArray(applicants) ? applicants : [];
   const substituteRows = useMemo(() => {
@@ -39,13 +51,12 @@ function AdminDayDeptBlock({
 
   const leaveCount = leaveList.length;
   const subCount = substituteRows.length;
-  const hasContent = leaveCount > 0 || subCount > 0;
 
-  const [open, setOpen] = useState(hasContent);
+  const [open, setOpen] = useState(defaultOpen);
 
   useEffect(() => {
-    setOpen(hasContent);
-  }, [selectedYmd, hasContent]);
+    setOpen(defaultOpen);
+  }, [selectedYmd, defaultOpen]);
 
   return (
     <section className={`admin-day-dept-block ${toneClass}${open ? " admin-day-dept-block--open" : ""}`}>
@@ -88,7 +99,13 @@ function AdminDayDeptBlock({
   );
 }
 
-export default function AdminDayDeptPanel({ selectedYmd, selectedCell, substituteAssignments, users }) {
+export default function AdminDayDeptPanel({
+  selectedYmd,
+  selectedCell,
+  substituteAssignments,
+  users,
+  viewerRole,
+}) {
   const sections = [
     {
       blockId: "nurse",
@@ -125,6 +142,7 @@ export default function AdminDayDeptPanel({ selectedYmd, selectedCell, substitut
             selectedYmd={selectedYmd}
             substituteAssignments={substituteAssignments}
             users={users}
+            defaultOpen={shouldExpandDeptBlockByDefault(viewerRole, sec.staffRole)}
           />
         ))}
       </div>

@@ -7973,6 +7973,7 @@ function CalendarPage({
             selectedCell={selectedCell}
             substituteAssignments={substituteAssignments}
             users={users}
+            viewerRole={viewerRole}
           />
           {(!selectedIsOffDay || canHolidayDutyMemo) && (
             <CalendarDayMemoSection
