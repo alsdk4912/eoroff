@@ -1,4 +1,4 @@
-import { emptyScheduleMonthValues, mergeWorkScheduleRows } from "./shiftCodes.js";
+import { emptyScheduleMonthValues, mergeWorkScheduleRows, normalizeWorkScheduleRowsForAnesthesia } from "./shiftCodes.js";
 
 export const WORK_SCHEDULE_MONTH_LABELS = [
   "1월",
@@ -59,7 +59,9 @@ export function getWorkScheduleTemplateForYear(year, templates) {
  */
 export function rehydrateScheduleFromSeed(saved, seedTemplate) {
   const template = Array.isArray(seedTemplate) ? seedTemplate : [];
-  const savedMap = new Map((Array.isArray(saved) ? saved : []).map((r) => [String(r?.name ?? ""), r]));
+  const savedMap = new Map(
+    normalizeWorkScheduleRowsForAnesthesia(Array.isArray(saved) ? saved : []).map((r) => [String(r?.name ?? ""), r])
+  );
   return template.map((t) => {
     const hit = savedMap.get(t.name);
     const seedVals = Array.isArray(t.values) ? t.values : [];
@@ -101,6 +103,17 @@ export function normalizeWorkScheduleByYear(byYear, templates) {
   if (!out["2026"]) out["2026"] = rehydrateScheduleFromSeed(null, templates.rows2026);
   if (!out["2027"]) out["2027"] = rehydrateScheduleFromSeed(null, templates.rows2027);
   return out;
+}
+
+export function mapWorkScheduleRowsFromServer(rows) {
+  return normalizeWorkScheduleRowsForAnesthesia(
+    (Array.isArray(rows) ? rows : [])
+      .map((row) => ({
+        name: String(row?.name ?? ""),
+        values: Array.isArray(row?.values) ? row.values.map((v) => String(v ?? "")) : [],
+      }))
+      .filter((row) => row.name)
+  );
 }
 
 export function loadWorkScheduleByYearFromStorage(storageKeys, templates) {

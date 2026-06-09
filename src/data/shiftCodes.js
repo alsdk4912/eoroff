@@ -25,7 +25,29 @@ export const NURSE_SHIFT_OPTIONS = [
 ];
 
 /** 마취과 간호사 */
-export const ANESTHESIA_SHIFT_OPTIONS = ["", "opd", "r1", "r3", "10시", "병가"];
+export const ANESTHESIA_SHIFT_OPTIONS = ["", "opd", "R1", "R3", "10시", "병가"];
+
+/** 마취과 번표 표기 통일 (레거시 r1/r3/D0 호환) */
+export function normalizeAnesthesiaShiftCode(value) {
+  const s = String(value ?? "").trim();
+  if (!s) return "";
+  if (s.startsWith("__CUSTOM_SHIFT__:")) return s;
+  if (s === "r1" || s === "R1") return "R1";
+  if (s === "r3" || s === "R3") return "R3";
+  if (s === "D0") return "opd";
+  return s;
+}
+
+export function normalizeWorkScheduleRowsForAnesthesia(rows) {
+  return (Array.isArray(rows) ? rows : []).map((row) => {
+    if (monthlyRowSection(row?.name) !== "anesthesia") return row;
+    const vals = Array.isArray(row?.values) ? row.values : [];
+    return {
+      name: row.name,
+      values: vals.map((v) => normalizeAnesthesiaShiftCode(v)),
+    };
+  });
+}
 
 /** 주임 */
 export const CHIEF_SHIFT_OPTIONS = ["", "D0", "D1", "9-5", "E"];
@@ -73,7 +95,9 @@ export function separatorBeforeMonthlyRow(name, previousName) {
 
 export function mergeWorkScheduleRows(saved, templateRows) {
   const template = Array.isArray(templateRows) ? templateRows : [];
-  const map = new Map((Array.isArray(saved) ? saved : []).map((r) => [String(r?.name ?? ""), r]));
+  const map = new Map(
+    normalizeWorkScheduleRowsForAnesthesia(Array.isArray(saved) ? saved : []).map((r) => [String(r?.name ?? ""), r])
+  );
   return template.map((t) => {
     const len = (t.values || []).length;
     const hit = map.get(t.name);

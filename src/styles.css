@@ -3900,7 +3900,7 @@ button.ym-wheel-check:hover {
 
 /* ----- 종합현황 · 2026 근무표: 모바일에서 select에 글자(안E, 5D2 등)가 보이도록 ----- */
 .work-schedule-wrap {
-  overflow-x: visible;
+  overflow-x: auto;
   max-width: 100%;
   -webkit-overflow-scrolling: touch;
 }
@@ -4064,6 +4064,10 @@ button.ym-wheel-check:hover {
 }
 
 @media (max-width: 768px) {
+  .work-schedule-table {
+    min-width: 36rem;
+  }
+
   .work-schedule-table th:first-child,
   .work-schedule-table td.work-schedule-name-cell {
     width: 2.85rem;
@@ -4083,9 +4087,15 @@ button.ym-wheel-check:hover {
   }
 
   .work-schedule-picker-face {
+    position: relative;
+    z-index: 1;
     font-size: 10px;
     min-height: 28px;
     padding: 3px 2px;
+  }
+
+  .work-schedule-table .work-schedule-select {
+    z-index: 2;
   }
 
   /* 월별번표생성 결과표: 모바일에서 한눈에 보기 좋게 더 압축 */

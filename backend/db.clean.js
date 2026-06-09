@@ -272,6 +272,14 @@ CREATE TABLE IF NOT EXISTS notices (
 CREATE INDEX IF NOT EXISTS idx_notices_created
   ON notices(created_at DESC);
 
+-- 월간 근무표 (연도별, 전 기기 동기화)
+CREATE TABLE IF NOT EXISTS work_schedules (
+  year TEXT PRIMARY KEY,
+  rows_json TEXT NOT NULL,
+  updated_by TEXT,
+  updated_at TEXT NOT NULL
+);
+
 -- 공지사항 댓글
 CREATE TABLE IF NOT EXISTS notice_comments (
   id TEXT PRIMARY KEY,
@@ -410,6 +418,7 @@ export async function initDb() {
   await ensureRegistrationRequestsTable();
   await ensureUsersPhoneColumn();
   await ensureNoticesImagesColumn();
+  await ensureWorkSchedulesTable();
 
   await seedDefaultsIfEmpty();
   await ensureAnesthesiaUsers();
@@ -508,6 +517,17 @@ async function ensureNoticesImagesColumn() {
   if (!names.has("images_json")) {
     await execute("ALTER TABLE notices ADD COLUMN images_json TEXT NOT NULL DEFAULT '[]'");
   }
+}
+
+async function ensureWorkSchedulesTable() {
+  await execute(`
+    CREATE TABLE IF NOT EXISTS work_schedules (
+      year TEXT PRIMARY KEY,
+      rows_json TEXT NOT NULL,
+      updated_by TEXT,
+      updated_at TEXT NOT NULL
+    )
+  `);
 }
 
 async function ensureWeeklyCellOverridesTable() {

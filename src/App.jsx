@@ -49,6 +49,7 @@ import {
   emptyScheduleMonthValues,
   mergeMonthlySaveDraft,
   mergeWorkScheduleRows,
+  normalizeAnesthesiaShiftCode,
   monthlyRowSection,
   separatorBeforeMonthlyRow,
 } from "./data/shiftCodes.js";
@@ -58,6 +59,7 @@ import {
   getWorkScheduleTemplateForYear,
   listBaseScheduleYears,
   loadWorkScheduleByYearFromStorage,
+  mapWorkScheduleRowsFromServer,
   normalizeWorkScheduleByYear,
   padScheduleRowValues,
   parseBaseSchedulePlanKey,
@@ -527,6 +529,15 @@ function App() {
       [y]: mergeWorkScheduleRows(rows, getWorkScheduleTemplateForYear(Number(y), WORK_SCHEDULE_TEMPLATES)),
     }));
   };
+  async function persistWorkScheduleForYearToServer(year, rows) {
+    if (!serverMode || !auth?.userId) return;
+    const y = String(year);
+    const merged = mergeWorkScheduleRows(rows, getWorkScheduleTemplateForYear(Number(y), WORK_SCHEDULE_TEMPLATES));
+    saveWorkScheduleForYear(y, merged);
+    await api.syncWorkScheduleForYear(y, { actorUserId: auth.userId, rows: merged });
+    const data = await api.bootstrap();
+    applyBootstrapPayload(data);
+  }
   const [generatedMonthlySchedules, setGeneratedMonthlySchedules] = useLocalStorage(LS_GENERATED_MONTHLY_SCHEDULES, {});
   const [substituteAssignments, setSubstituteAssignments] = useLocalStorage(LS_SUBSTITUTE_ASSIGNMENTS, []);
   /** 주간 번표 셀 수동 표시(기기 로컬) */
@@ -952,6 +963,21 @@ function App() {
     );
     if (data.weeklyCellOverrides != null) {
       setWeeklyCellOverrides(mapWeeklyOverrideRowsToClient(Array.isArray(data.weeklyCellOverrides) ? data.weeklyCellOverrides : []));
+    }
+    if (Array.isArray(data.workSchedules) && data.workSchedules.length > 0) {
+      const fromServer = {};
+      for (const row of data.workSchedules) {
+        const y = String(row.year ?? "").trim();
+        if (!/^\d{4}$/.test(y)) continue;
+        let parsed = [];
+        try {
+          parsed = JSON.parse(String(row.rows_json ?? "[]"));
+        } catch {
+          parsed = [];
+        }
+        fromServer[y] = mapWorkScheduleRowsFromServer(parsed);
+      }
+      setWorkScheduleByYear((prev) => normalizeWorkScheduleByYear({ ...prev, ...fromServer }, WORK_SCHEDULE_TEMPLATES));
     }
   }
 
@@ -2635,6 +2661,7 @@ function App() {
               currentUserId={auth?.userId}
               workScheduleByYear={workScheduleByYear}
               onSaveWorkScheduleForYear={saveWorkScheduleForYear}
+              persistWorkScheduleForYearToServer={serverMode && auth?.userId ? persistWorkScheduleForYearToServer : null}
               generatedMonthlySchedules={generatedMonthlySchedules}
               onSaveGeneratedMonthlySchedule={(key, payload) =>
                 setGeneratedMonthlySchedules((prev) => ({ ...(prev && typeof prev === "object" ? prev : {}), [key]: payload }))
@@ -3598,10 +3625,7 @@ function resolveShiftCodeFromStored(rawShift, role) {
   let raw = String(rawShift ?? "").trim();
   if (!raw) return "";
   if (String(role ?? "").trim() === "ANESTHESIA") {
-    // 레거시 저장값(D0/R1/R3) 호환: 새 표기(opd/r1/r3)로 자동 매핑
-    if (raw === "D0") raw = "opd";
-    else if (raw === "R1") raw = "r1";
-    else if (raw === "R3") raw = "r3";
+    raw = normalizeAnesthesiaShiftCode(raw);
   }
   return shiftOptionSetForRole(role).has(raw) ? raw : toCustomShiftCode(raw);
 }
@@ -4939,6 +4963,7 @@ function DashboardPage({
   currentUserId,
   workScheduleByYear,
   onSaveWorkScheduleForYear,
+  persistWorkScheduleForYearToServer,
   generatedMonthlySchedules,
   onSaveGeneratedMonthlySchedule,
   isAdmin,
@@ -5104,7 +5129,7 @@ function DashboardPage({
     );
   }
 
-  function saveWorkSchedule() {
+  async function saveWorkSchedule() {
     if (!baseScheduleYear) return;
     if (scheduleChanges.length === 0) {
       setScheduleMsg("변경된 항목이 없습니다.");
@@ -5115,10 +5140,22 @@ function DashboardPage({
     if (!ok) return;
     const saved = workScheduleByYear?.[String(baseScheduleYear)];
     const next = mergeMonthlySaveDraft(saved, draftRows, activeBaseTemplate, currentRole);
-    onSaveWorkScheduleForYear?.(baseScheduleYear, next);
-    setDraftRows(next);
-    setScheduleMsg("근무표가 저장되었습니다.");
-    notifyDone("저장되었습니다.");
+    try {
+      if (typeof persistWorkScheduleForYearToServer === "function") {
+        await persistWorkScheduleForYearToServer(baseScheduleYear, next);
+      } else {
+        onSaveWorkScheduleForYear?.(baseScheduleYear, next);
+        setDraftRows(next);
+      }
+      setScheduleMsg(
+        typeof persistWorkScheduleForYearToServer === "function"
+          ? "서버에 저장했습니다. 모든 기기에서 동일하게 보입니다."
+          : "근무표가 저장되었습니다."
+      );
+      notifyDone("저장되었습니다.");
+    } catch (e) {
+      window.alert?.(`근무표 저장 실패: ${e?.message || e}`);
+    }
   }
 
   async function generateYearlyRoster() {
@@ -5436,7 +5473,11 @@ function DashboardPage({
                     <td className="work-schedule-name-cell">{row.name}</td>
                     {visibleMonths.map((m) => {
                       const idx = m.index;
-                      const cellVal = row.values?.[idx] ?? "";
+                      const rawCellVal = row.values?.[idx] ?? "";
+                      const cellVal =
+                        sec === "anesthesia" && !isCustomShiftCodeValue(rawCellVal)
+                          ? normalizeAnesthesiaShiftCode(rawCellVal)
+                          : rawCellVal;
                       const displayVal = isCustomShiftCodeValue(cellVal) ? customShiftText(cellVal) : String(cellVal);
                       const faceLabel = String(displayVal).trim() ? displayVal : "—";
                       const selectValue = isCustomShiftCodeValue(cellVal) ? CUSTOM_SHIFT_SENTINEL : cellVal;

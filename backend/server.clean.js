@@ -565,6 +565,7 @@ app.get("/api/bootstrap", async (_, res) => {
       holidays: await queryAll("SELECT * FROM holidays"),
       leaveRequestAuditCount: Number(auditCountRow?.c ?? 0),
       weeklyCellOverrides: await queryAll("SELECT * FROM weekly_cell_overrides ORDER BY ymd ASC, user_id ASC"),
+      workSchedules: await queryAll("SELECT year, rows_json, updated_by, updated_at FROM work_schedules ORDER BY year ASC"),
     });
   } catch (err) {
     console.error("GET /api/bootstrap", err);
@@ -683,6 +684,66 @@ async function applyWeeklyOverridesToSubstitutes(overridesMap, actorUserId) {
     );
   }
 }
+
+function normalizeAnesthesiaShiftCodeServer(value) {
+  const s = String(value ?? "").trim();
+  if (!s) return "";
+  if (s.startsWith("__CUSTOM_SHIFT__:")) return s;
+  if (s === "r1" || s === "R1") return "R1";
+  if (s === "r3" || s === "R3") return "R3";
+  if (s === "D0") return "opd";
+  return s;
+}
+
+const ANESTHESIA_MONTHLY_NAMES = ["김인자", "이지현", "박현정", "윤지민"];
+
+function normalizeWorkScheduleRowsServer(rows) {
+  return (Array.isArray(rows) ? rows : []).map((row) => {
+    const name = String(row?.name ?? "").trim();
+    if (!name) return null;
+    const vals = Array.isArray(row?.values) ? row.values : [];
+    const values =
+      ANESTHESIA_MONTHLY_NAMES.includes(name)
+        ? vals.map((v) => normalizeAnesthesiaShiftCodeServer(v))
+        : vals.map((v) => String(v ?? ""));
+    return { name, values };
+  }).filter(Boolean);
+}
+
+app.post("/api/work-schedules/:year/sync", async (req, res) => {
+  try {
+    const year = String(req.params.year ?? "").trim();
+    if (!/^\d{4}$/.test(year) || Number(year) < 2026) {
+      return res.status(400).json({ error: "유효한 연도(2026~)가 필요합니다." });
+    }
+    const actorUserId = String(req.body?.actorUserId ?? "").trim();
+    const rows = req.body?.rows;
+    if (!actorUserId) return res.status(400).json({ error: "actorUserId가 필요합니다." });
+    const actor = await queryOne(
+      "SELECT id, role FROM users WHERE id = ? AND role IN ('ADMIN', 'DEPT_HEAD', 'ADMIN2', 'NURSE', 'ANESTHESIA', 'CHIEF')",
+      actorUserId
+    );
+    if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
+    if (!Array.isArray(rows)) return res.status(400).json({ error: "rows 배열이 필요합니다." });
+    const normalized = normalizeWorkScheduleRowsServer(rows);
+    if (normalized.length === 0) return res.status(400).json({ error: "저장할 근무표 행이 없습니다." });
+    const payload = JSON.stringify(normalized);
+    if (payload.length > 2_000_000) return res.status(400).json({ error: "근무표 데이터가 너무 큽니다." });
+    const now = new Date().toISOString();
+    await execute(
+      `INSERT INTO work_schedules (year, rows_json, updated_by, updated_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(year) DO UPDATE SET rows_json = excluded.rows_json, updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
+      year,
+      payload,
+      actorUserId,
+      now
+    );
+    return res.json({ ok: true, year, rowCount: normalized.length, updatedAt: now });
+  } catch (err) {
+    console.error("POST /api/work-schedules/:year/sync", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
 
 app.post("/api/weekly-cell-overrides/sync", async (req, res) => {
   try {

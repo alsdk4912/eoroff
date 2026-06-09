@@ -171,6 +171,11 @@ export const api = {
   /** 주간 번표 수동 셀 전체 동기화(서버 저장 → bootstrap으로 전 사용자 반영) */
   syncWeeklyCellOverrides: (payload) =>
     requestJson("/weekly-cell-overrides/sync", { method: "POST", body: JSON.stringify(payload) }),
+  syncWorkScheduleForYear: (year, payload) =>
+    requestJson(`/work-schedules/${encodeURIComponent(String(year ?? ""))}/sync`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   createLadderResult: (payload) =>
     requestJson("/ladder-results", { method: "POST", body: JSON.stringify(payload) }),
   upsertAdminDayMemo: (payload) =>
