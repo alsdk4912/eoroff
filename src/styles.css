@@ -3771,7 +3771,7 @@ button.ym-wheel-check:hover {
 
 .work-schedule-table tbody tr.work-schedule-row--self td.work-schedule-month-cell--current {
   background: #ecfccb;
-  box-shadow: inset 0 0 0 2px #84cc16;
+  box-shadow: inset 0 0 0 1px #84cc16;
 }
 
 .work-schedule-table tbody tr.work-schedule-row--self .work-schedule-picker-face {
@@ -3780,7 +3780,6 @@ button.ym-wheel-check:hover {
 
 .work-schedule-table tbody tr.work-schedule-row--self td.work-schedule-month-cell--current .work-schedule-picker-face {
   background: #ecfccb;
-  box-shadow: inset 0 0 0 1px #84cc16;
 }
 
 .work-schedule-table td.work-schedule-month-cell--current .work-schedule-picker-face {
@@ -3811,7 +3810,7 @@ button.ym-wheel-check:hover {
 
 .weekly-schedule-table tbody tr.work-schedule-row--self td.weekly-cell--today {
   background: #ecfccb !important;
-  box-shadow: inset 0 0 0 2px #84cc16;
+  box-shadow: inset 0 0 0 1px #84cc16;
 }
 
 .weekly-schedule-table tbody td.weekly-cell--today .weekly-cell-select {
@@ -3820,7 +3819,6 @@ button.ym-wheel-check:hover {
 
 .weekly-schedule-table tbody tr.work-schedule-row--self td.weekly-cell--today .weekly-cell-select {
   background: #ecfccb !important;
-  box-shadow: inset 0 0 0 1px #84cc16;
 }
 
 /* ----- 종합현황 · 2026 근무표: 모바일에서 select에 글자(안E, 5D2 등)가 보이도록 ----- */
