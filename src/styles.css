@@ -3537,17 +3537,29 @@ button.ym-wheel-check:hover {
   width: 100%;
   padding: 10px 12px;
   border: 0;
+  border-radius: 0;
   background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
   cursor: pointer;
   text-align: left;
-  font: inherit;
+  transition: none;
 }
 
-.admin-day-dept-block__head:hover {
-  background: rgba(0, 0, 0, 0.03);
+.admin-day-dept-block__head:hover:not(:disabled),
+.admin-day-dept-block__head:active:not(:disabled) {
+  transform: none;
+  color: var(--text-primary);
 }
 
 .admin-day-dept-block--nurse .admin-day-dept-block__head {
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.admin-day-dept-block--nurse .admin-day-dept-block__head:hover:not(:disabled),
+.admin-day-dept-block--nurse .admin-day-dept-block__head:active:not(:disabled) {
   background: rgba(37, 99, 235, 0.06);
 }
 
@@ -3555,7 +3567,17 @@ button.ym-wheel-check:hover {
   background: rgba(107, 91, 149, 0.08);
 }
 
+.admin-day-dept-block--anesthesia .admin-day-dept-block__head:hover:not(:disabled),
+.admin-day-dept-block--anesthesia .admin-day-dept-block__head:active:not(:disabled) {
+  background: rgba(107, 91, 149, 0.08);
+}
+
 .admin-day-dept-block--chief .admin-day-dept-block__head {
+  background: rgba(13, 148, 136, 0.08);
+}
+
+.admin-day-dept-block--chief .admin-day-dept-block__head:hover:not(:disabled),
+.admin-day-dept-block--chief .admin-day-dept-block__head:active:not(:disabled) {
   background: rgba(13, 148, 136, 0.08);
 }
 
