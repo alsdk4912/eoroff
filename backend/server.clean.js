@@ -28,7 +28,7 @@ import { defaultGoldkeyQuotaForName } from "../src/data/goldkeyQuotas.js";
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "12mb" }));
 
 // v1과 동시 실행 시 포트 분리(로컬 4015). Render 등은 PORT 환경변수 사용.
 const PORT = Number(process.env.PORT) || 4015;
@@ -553,7 +553,9 @@ app.get("/api/bootstrap", async (_, res) => {
       selections: await queryAll("SELECT * FROM selections"),
       logs: await queryAll("SELECT * FROM logs"),
       ladderResults: await queryAll("SELECT * FROM ladder_results ORDER BY created_at DESC"),
-      notices: await queryAll("SELECT id, user_id, title, content, created_at, updated_at FROM notices ORDER BY created_at DESC"),
+      notices: await queryAll(
+        "SELECT id, user_id, title, content, images_json, created_at, updated_at FROM notices ORDER BY created_at DESC"
+      ),
       noticeComments: await queryAll(
         "SELECT id, notice_id, user_id, content, created_at, updated_at FROM notice_comments ORDER BY notice_id ASC, created_at ASC"
       ),
@@ -1522,9 +1524,33 @@ app.post("/api/day-comments/:id/delete", async (req, res) => {
   }
 });
 
+const NOTICE_MAX_IMAGES = 5;
+const NOTICE_IMAGE_DATA_URL_RE = /^data:image\/(jpeg|jpg|png|webp);base64,/i;
+const NOTICE_MAX_IMAGE_DATA_URL_LEN = 1_400_000;
+
+function normalizeNoticeImagesInput(raw) {
+  if (raw == null || raw === "") return "[]";
+  const arr = Array.isArray(raw) ? raw : [];
+  if (arr.length > NOTICE_MAX_IMAGES) {
+    throw new Error(`사진은 최대 ${NOTICE_MAX_IMAGES}장까지 첨부할 수 있습니다.`);
+  }
+  const out = [];
+  for (const item of arr) {
+    const dataUrl = String(typeof item === "string" ? item : item?.dataUrl ?? "").trim();
+    if (!NOTICE_IMAGE_DATA_URL_RE.test(dataUrl)) {
+      throw new Error("올바르지 않은 이미지 형식입니다.");
+    }
+    if (dataUrl.length > NOTICE_MAX_IMAGE_DATA_URL_LEN) {
+      throw new Error("이미지 용량이 너무 큽니다.");
+    }
+    out.push(dataUrl);
+  }
+  return JSON.stringify(out);
+}
+
 app.post("/api/notices", async (req, res) => {
   try {
-    const { actorUserId, title, content } = req.body ?? {};
+    const { actorUserId, title, content, images } = req.body ?? {};
     const actor = await queryOne(
       "SELECT id FROM users WHERE id = ? AND role IN ('ADMIN', 'DEPT_HEAD', 'ADMIN2', 'NURSE', 'ANESTHESIA', 'CHIEF')",
       actorUserId
@@ -1536,14 +1562,21 @@ app.post("/api/notices", async (req, res) => {
     if (!c) return res.status(400).json({ error: "내용을 입력하세요." });
     if (t.length > 80) return res.status(400).json({ error: "제목은 80자 이내로 입력하세요." });
     if (c.length > 2000) return res.status(400).json({ error: "내용은 2000자 이내로 입력하세요." });
+    let imagesJson = "[]";
+    try {
+      imagesJson = normalizeNoticeImagesInput(images);
+    } catch (imgErr) {
+      return res.status(400).json({ error: String(imgErr?.message || imgErr) });
+    }
     const nowIso = new Date().toISOString();
     const id = `ntc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     await execute(
-      "INSERT INTO notices (id, user_id, title, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT INTO notices (id, user_id, title, content, images_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
       id,
       actorUserId,
       t,
       c,
+      imagesJson,
       nowIso,
       nowIso
     );
@@ -1558,13 +1591,13 @@ app.post("/api/notices/:id/update", async (req, res) => {
   try {
     const noticeId = String(req.params.id ?? "").trim();
     if (!noticeId) return res.status(400).json({ error: "notice id가 필요합니다." });
-    const { actorUserId, title, content } = req.body ?? {};
+    const { actorUserId, title, content, images } = req.body ?? {};
     const actor = await queryOne(
       "SELECT id, role FROM users WHERE id = ? AND role IN ('ADMIN', 'DEPT_HEAD', 'ADMIN2', 'NURSE', 'ANESTHESIA', 'CHIEF')",
       actorUserId
     );
     if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
-    const row = await queryOne("SELECT id, user_id FROM notices WHERE id = ?", noticeId);
+    const row = await queryOne("SELECT id, user_id, images_json FROM notices WHERE id = ?", noticeId);
     if (!row) return res.status(404).json({ error: "공지사항을 찾을 수 없습니다." });
     const canManage =
       isOrLeaveAdminRoleServer(actor.role) ||
@@ -1577,7 +1610,22 @@ app.post("/api/notices/:id/update", async (req, res) => {
     if (!c) return res.status(400).json({ error: "내용을 입력하세요." });
     if (t.length > 80) return res.status(400).json({ error: "제목은 80자 이내로 입력하세요." });
     if (c.length > 2000) return res.status(400).json({ error: "내용은 2000자 이내로 입력하세요." });
-    await execute("UPDATE notices SET title = ?, content = ?, updated_at = ? WHERE id = ?", t, c, new Date().toISOString(), noticeId);
+    let imagesJson = String(row.images_json ?? "[]");
+    if (images !== undefined) {
+      try {
+        imagesJson = normalizeNoticeImagesInput(images);
+      } catch (imgErr) {
+        return res.status(400).json({ error: String(imgErr?.message || imgErr) });
+      }
+    }
+    await execute(
+      "UPDATE notices SET title = ?, content = ?, images_json = ?, updated_at = ? WHERE id = ?",
+      t,
+      c,
+      imagesJson,
+      new Date().toISOString(),
+      noticeId
+    );
     return res.json({ ok: true });
   } catch (err) {
     console.error("POST /api/notices/:id/update", err);

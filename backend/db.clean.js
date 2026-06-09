@@ -264,6 +264,7 @@ CREATE TABLE IF NOT EXISTS notices (
   user_id TEXT NOT NULL,
   title TEXT NOT NULL,
   content TEXT NOT NULL,
+  images_json TEXT NOT NULL DEFAULT '[]',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -408,6 +409,7 @@ export async function initDb() {
   await ensureWeeklyCellOverridesTable();
   await ensureRegistrationRequestsTable();
   await ensureUsersPhoneColumn();
+  await ensureNoticesImagesColumn();
 
   await seedDefaultsIfEmpty();
   await ensureAnesthesiaUsers();
@@ -497,6 +499,14 @@ async function ensureRequestsSoftDeleteColumns() {
   }
   if (!names.has("deleted_yn")) {
     await execute("ALTER TABLE requests ADD COLUMN deleted_yn INTEGER NOT NULL DEFAULT 0");
+  }
+}
+
+async function ensureNoticesImagesColumn() {
+  const cols = await queryAll("PRAGMA table_info(notices)");
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("images_json")) {
+    await execute("ALTER TABLE notices ADD COLUMN images_json TEXT NOT NULL DEFAULT '[]'");
   }
 }
 

@@ -112,6 +112,7 @@ import {
   isConfirmedLeaveStatus,
 } from "./utils/leaveVisibility.js";
 import AdminDayDeptPanel from "./components/AdminDayDeptPanel.jsx";
+import { NoticeImageGallery, NoticeImagePicker } from "./components/NoticeImageAttachments.jsx";
 import EmergencySurgeryPanel from "./components/EmergencySurgeryPanel.jsx";
 import CalendarDayMemoSection from "./components/CalendarDayMemoSection.jsx";
 import {
@@ -123,6 +124,7 @@ import {
   isGoldkeyNegotiationPendingChip,
   goldkeyNegotiationChipHint,
 } from "./utils/negotiationMeta.js";
+import { parseNoticeImages } from "./utils/noticeImages.js";
 
 /** 오프라인 저장소 버전 — 배포 시 키 올리면 예전 휴가·골드키 캐시 무시(빈 신청·기본 골드키로 로드) */
 const LS_REQUESTS = "or.requests.v5";
@@ -916,6 +918,7 @@ function App() {
           userId: row.user_id ?? row.userId,
           title: String(row.title ?? ""),
           content: String(row.content ?? ""),
+          images: parseNoticeImages(row.images_json ?? row.imagesJson ?? row.images),
           createdAt: row.created_at ?? row.createdAt,
           updatedAt: row.updated_at ?? row.updatedAt,
         }))
@@ -2210,13 +2213,14 @@ function App() {
     notifyDone("댓글이 삭제되었습니다.");
   }
 
-  async function createNotice(title, content) {
+  async function createNotice(title, content, images = []) {
     const t = String(title ?? "").trim();
     const c = String(content ?? "").trim();
+    const imageList = parseNoticeImages(images);
     if (!t || !c || !auth?.userId) return;
     if (serverMode) {
       try {
-        await api.createNotice({ actorUserId: auth.userId, title: t, content: c });
+        await api.createNotice({ actorUserId: auth.userId, title: t, content: c, images: imageList });
         await bootstrap();
         notifyDone("공지사항이 등록되었습니다.");
       } catch (e) {
@@ -2225,19 +2229,28 @@ function App() {
       return;
     }
     const nowIso = new Date().toISOString();
-    const row = { id: `ntc_${Date.now()}`, userId: auth.userId, title: t, content: c, createdAt: nowIso, updatedAt: nowIso };
+    const row = {
+      id: `ntc_${Date.now()}`,
+      userId: auth.userId,
+      title: t,
+      content: c,
+      images: imageList,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
     setNotices((prev) => [row, ...(Array.isArray(prev) ? prev : [])]);
     notifyDone("공지사항이 등록되었습니다.");
   }
 
-  async function updateNotice(noticeId, title, content) {
+  async function updateNotice(noticeId, title, content, images = []) {
     const id = String(noticeId ?? "").trim();
     const t = String(title ?? "").trim();
     const c = String(content ?? "").trim();
+    const imageList = parseNoticeImages(images);
     if (!id || !t || !c || !auth?.userId) return;
     if (serverMode) {
       try {
-        await api.updateNotice(id, { actorUserId: auth.userId, title: t, content: c });
+        await api.updateNotice(id, { actorUserId: auth.userId, title: t, content: c, images: imageList });
         await bootstrap();
         notifyDone("공지사항이 수정되었습니다.");
       } catch (e) {
@@ -2247,7 +2260,9 @@ function App() {
     }
     setNotices((prev) =>
       (Array.isArray(prev) ? prev : []).map((n) =>
-        n.id === id && (isAdmin || n.userId === auth.userId) ? { ...n, title: t, content: c, updatedAt: new Date().toISOString() } : n
+        n.id === id && (isAdmin || n.userId === auth.userId)
+          ? { ...n, title: t, content: c, images: imageList, updatedAt: new Date().toISOString() }
+          : n
       )
     );
     notifyDone("공지사항이 수정되었습니다.");
@@ -5896,10 +5911,12 @@ function NoticeBoardPage({
   const [composeOpen, setComposeOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [composeImages, setComposeImages] = useState([]);
   const [selectedId, setSelectedId] = useState("");
   const [editingMode, setEditingMode] = useState(false);
   const [editingTitle, setEditingTitle] = useState("");
   const [editingContent, setEditingContent] = useState("");
+  const [editingImages, setEditingImages] = useState([]);
   const [commentDraft, setCommentDraft] = useState("");
   const [editingCommentId, setEditingCommentId] = useState("");
   const [editingCommentDraft, setEditingCommentDraft] = useState("");
@@ -5934,6 +5951,10 @@ function NoticeBoardPage({
     setCommentDraft("");
     setEditingCommentId("");
     setEditingCommentDraft("");
+    setEditingMode(false);
+    setEditingTitle("");
+    setEditingContent("");
+    setEditingImages([]);
   }, [selectedId]);
 
   function canManage(row) {
@@ -5948,18 +5969,20 @@ function NoticeBoardPage({
 
   async function submitNotice(e) {
     e.preventDefault();
-    await createNotice?.(title, content);
+    await createNotice?.(title, content, composeImages);
     setTitle("");
     setContent("");
+    setComposeImages([]);
     setComposeOpen(false);
   }
 
   async function saveEdit() {
     if (!selected?.id) return;
-    await updateNotice?.(selected.id, editingTitle, editingContent);
+    await updateNotice?.(selected.id, editingTitle, editingContent, editingImages);
     setEditingMode(false);
     setEditingTitle("");
     setEditingContent("");
+    setEditingImages([]);
   }
 
   return (
@@ -5971,7 +5994,16 @@ function NoticeBoardPage({
         <button
           type="button"
           className="notice-board-compose-btn"
-          onClick={() => setComposeOpen((v) => !v)}
+          onClick={() => {
+            setComposeOpen((v) => {
+              if (v) {
+                setTitle("");
+                setContent("");
+                setComposeImages([]);
+              }
+              return !v;
+            });
+          }}
         >
           {composeOpen ? "등록 닫기" : "게시글 등록"}
         </button>
@@ -5981,6 +6013,7 @@ function NoticeBoardPage({
         <form className="grid notice-compose-form" onSubmit={submitNotice}>
           <input type="text" maxLength={80} placeholder="제목 (최대 80자)" value={title} onChange={(e) => setTitle(e.target.value)} />
           <textarea rows={4} maxLength={2000} placeholder="내용 (최대 2000자)" value={content} onChange={(e) => setContent(e.target.value)} />
+          <NoticeImagePicker images={composeImages} onChange={setComposeImages} />
           <button type="submit">게시글 등록</button>
         </form>
       ) : null}
@@ -6001,7 +6034,12 @@ function NoticeBoardPage({
               <span>{idToName.get(r.userId) ?? r.userId}</span>
               <span>{r.createdAt ? new Date(r.createdAt).toLocaleDateString("ko-KR") : "-"}</span>
             </div>
-            <div className="notice-item__summary">{String(r.content ?? "").replace(/\s+/g, " ").trim()}</div>
+            <div className="notice-item__summary">
+              {String(r.content ?? "").replace(/\s+/g, " ").trim()}
+              {Array.isArray(r.images) && r.images.length > 0 ? (
+                <span className="notice-item__photo-badge"> · 사진 {r.images.length}</span>
+              ) : null}
+            </div>
           </button>
         ))}
       </div>
@@ -6012,6 +6050,7 @@ function NoticeBoardPage({
             <div className="grid">
               <input type="text" maxLength={80} value={editingTitle} onChange={(e) => setEditingTitle(e.target.value)} />
               <textarea rows={6} maxLength={2000} value={editingContent} onChange={(e) => setEditingContent(e.target.value)} />
+              <NoticeImagePicker images={editingImages} onChange={setEditingImages} />
             </div>
           ) : (
             <>
@@ -6020,6 +6059,7 @@ function NoticeBoardPage({
                 {idToName.get(selected.userId) ?? selected.userId} · {selected.createdAt ? new Date(selected.createdAt).toLocaleString("ko-KR") : "-"}
               </p>
               <div className="notice-detail__content">{selected.content}</div>
+              <NoticeImageGallery images={selected.images} />
             </>
           )}
           {canManage(selected) ? (
@@ -6033,6 +6073,7 @@ function NoticeBoardPage({
                       setEditingMode(false);
                       setEditingTitle("");
                       setEditingContent("");
+                      setEditingImages([]);
                     }}
                   >
                     취소
@@ -6046,6 +6087,7 @@ function NoticeBoardPage({
                       setEditingMode(true);
                       setEditingTitle(String(selected.title ?? ""));
                       setEditingContent(String(selected.content ?? ""));
+                      setEditingImages(parseNoticeImages(selected.images));
                     }}
                   >
                     수정
