@@ -11,15 +11,6 @@ function formatShiftCode(raw) {
   return s || "—";
 }
 
-function typeFullLabel(leaveType) {
-  if (leaveType === "GOLDKEY") return "골드키";
-  if (leaveType === "CHIEF_LEAVE") return "휴가";
-  if (leaveType === "GENERAL") return "일반휴가";
-  if (leaveType === "GENERAL_PRIORITY") return "일반휴가-우선순위";
-  if (leaveType === "HALF_DAY") return "반차";
-  return "일반휴가-후순위";
-}
-
 function AdminDayDeptBlock({
   blockId,
   label,
@@ -75,39 +66,22 @@ function AdminDayDeptBlock({
       </button>
       {open ? (
         <div className="admin-day-dept-block__body">
-          <div className="admin-day-dept-block__section">
-            <h4 className="admin-day-dept-block__subhead">휴가자</h4>
-            {leaveCount === 0 ? (
-              <p className="help admin-day-dept-block__empty">없음</p>
-            ) : (
-              <ul className="admin-day-dept-block__leave-list">
-                {leaveList.map((item) => (
-                  <li key={item.id}>
-                    {item.name} <span className="admin-day-dept-block__leave-type">({typeFullLabel(item.leaveType)})</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <div className="admin-day-dept-block__section">
-            <h4 className="admin-day-dept-block__subhead">대체자</h4>
-            {subCount === 0 ? (
-              <p className="help admin-day-dept-block__empty">없음</p>
-            ) : (
-              <div className="admin-day-substitute-grid admin-day-substitute-grid--dept">
-                <div className="admin-day-substitute-grid__head">번표</div>
-                <div className="admin-day-substitute-grid__head">대체자</div>
-                {substituteRows.flatMap((row) => [
-                  <div key={`${row.key}_code`} className="admin-day-substitute-grid__cell">
-                    {row.shiftCode}
-                  </div>,
-                  <div key={`${row.key}_name`} className="admin-day-substitute-grid__cell">
-                    {row.substituteName}
-                  </div>,
-                ])}
-              </div>
-            )}
-          </div>
+          {subCount === 0 ? (
+            <p className="help admin-day-dept-block__empty">대체 없음</p>
+          ) : (
+            <div className="admin-day-substitute-grid admin-day-substitute-grid--dept">
+              <div className="admin-day-substitute-grid__head">번표</div>
+              <div className="admin-day-substitute-grid__head">대체자</div>
+              {substituteRows.flatMap((row) => [
+                <div key={`${row.key}_code`} className="admin-day-substitute-grid__cell">
+                  {row.shiftCode}
+                </div>,
+                <div key={`${row.key}_name`} className="admin-day-substitute-grid__cell">
+                  {row.substituteName}
+                </div>,
+              ])}
+            </div>
+          )}
         </div>
       ) : null}
     </section>
@@ -142,7 +116,7 @@ export default function AdminDayDeptPanel({ selectedYmd, selectedCell, substitut
   return (
     <section className="admin-day-panel admin-day-panel--by-dept">
       <p className="admin-day-panel__date">{selectedYmd}</p>
-      <p className="help admin-day-panel__date-hint">휴가자·대체자 (부서별)</p>
+      <p className="help admin-day-panel__date-hint">대체자 (부서별)</p>
       <div className="admin-day-dept-stack">
         {sections.map((sec) => (
           <AdminDayDeptBlock
