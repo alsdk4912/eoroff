@@ -4743,3 +4743,225 @@ tr.request-cancelled-row td button {
   width: 100%;
   box-sizing: border-box;
 }
+
+/* ----- 팝업 가독성: 글자 크기 소폭 상향 ----- */
+.calendar-page__detail--modal,
+.ladder-modal-dialog,
+.ym-wheel-modal__sheet {
+  font-size: 16px;
+}
+
+.calendar-page__detail--modal .calendar-detail-title {
+  font-size: 18px;
+}
+
+.calendar-page__detail--modal .calendar-tab {
+  font-size: 15px;
+}
+
+.calendar-page__detail--modal .calendar-applicant-name {
+  font-size: 14px;
+}
+
+.calendar-page__detail--modal .help,
+.calendar-page__detail--modal .field-label,
+.calendar-page__detail--modal .grid .field-label {
+  font-size: 14px;
+}
+
+.calendar-page__detail--modal .goldkey-policy-note {
+  font-size: 14px !important;
+}
+
+.calendar-page__detail--modal .negotiation-order-readonly {
+  font-size: 15px;
+}
+
+.calendar-page__detail--modal .negotiation-mode-pill {
+  font-size: 12px;
+}
+
+.calendar-page__detail--modal .calendar-ladder-quick-btn {
+  font-size: 12px;
+}
+
+.calendar-page__detail--modal .admin-calendar-btn {
+  font-size: 13px;
+}
+
+.calendar-page__detail--modal .admin-calendar-substitute-title {
+  font-size: 17px;
+}
+
+.calendar-page__detail--modal .admin-calendar-substitute-lead {
+  font-size: 14px !important;
+}
+
+.calendar-page__detail--modal .admin-day-meta {
+  font-size: 14px;
+}
+
+.calendar-page__detail--modal .admin-day-field select {
+  font-size: 15px;
+}
+
+.calendar-page__detail--modal .admin-day-primary-btn {
+  font-size: 15px !important;
+}
+
+.calendar-page__detail--modal .admin-calendar-sub-bulk-label {
+  font-size: 13px;
+}
+
+.calendar-page__detail--modal .admin-day-substitute-grid__head {
+  font-size: 14px;
+}
+
+.calendar-page__detail--modal .admin-day-substitute-grid__cell {
+  font-size: 15px;
+}
+
+.calendar-page__detail--modal .admin-day-panel__date {
+  font-size: 18px;
+}
+
+.calendar-page__detail--modal .admin-day-panel__date-hint {
+  font-size: 13px;
+}
+
+.calendar-page__detail--modal .admin-day-dept-block__label {
+  font-size: 16px;
+}
+
+.calendar-page__detail--modal .admin-day-dept-block__badge {
+  font-size: 12px;
+}
+
+.calendar-page__detail--modal .admin-day-dept-block__empty {
+  font-size: 13px;
+}
+
+.calendar-page__detail--modal .holiday-duty-title {
+  font-size: 16px;
+}
+
+.calendar-page__detail--modal .day-comment-section h4,
+.calendar-page__detail--modal .calendar-day-memo-section__heading {
+  font-size: 15px;
+}
+
+.calendar-page__detail--modal .day-comment-item {
+  font-size: 14px !important;
+}
+
+.calendar-page__detail--modal .day-comment-actions button {
+  font-size: 13px !important;
+}
+
+.calendar-page__detail--modal .duty-memo-text {
+  font-size: 15px !important;
+}
+
+.calendar-page__detail--modal .calendar-day-memo-section--compact .calendar-day-memo-section__heading {
+  font-size: 14px;
+}
+
+.calendar-page__detail--modal .calendar-day-memo-section--compact.calendar-day-memo-section--holiday-duty .day-comment-item {
+  font-size: 13px !important;
+}
+
+.calendar-page__detail--modal .calendar-day-memo-section--compact .calendar-day-memo-section__compose textarea {
+  font-size: 15px;
+}
+
+.calendar-page__detail--modal .calendar-day-memo-section--compact .calendar-day-memo-section__compose button {
+  font-size: 13px !important;
+}
+
+.calendar-page__detail--modal .calendar-detail-modal-close {
+  font-size: 13px !important;
+}
+
+.calendar-page__detail--modal .emergency-duty-day__date {
+  font-size: 13px;
+}
+
+.calendar-page__detail--modal .emergency-duty-day__field .field-label {
+  font-size: 12px;
+}
+
+.calendar-page__detail--modal .emergency-anesthesia-type--inline label {
+  font-size: 12px;
+}
+
+.calendar-page__detail--modal .emergency-duty-day__notify button {
+  font-size: 13px !important;
+}
+
+.calendar-page__detail--modal .emergency-duty-chip__label {
+  font-size: 12px;
+}
+
+.calendar-page__detail--modal .emergency-duty-chip__name {
+  font-size: 14px;
+}
+
+.calendar-page__detail--modal .emergency-duty-chip__call {
+  font-size: 12px;
+}
+
+.calendar-page__detail--modal .emergency-duty-chip__call--disabled {
+  font-size: 11px;
+}
+
+.calendar-page__detail--modal .emergency-duty-day__duty-hint,
+.calendar-page__detail--modal .emergency-duty-day__msg {
+  font-size: 13px;
+}
+
+.ladder-modal-dialog .ladder-modal-title {
+  font-size: 18px;
+}
+
+.ladder-modal-dialog .ladder-modal-close {
+  font-size: 15px;
+}
+
+.ladder-modal-dialog .ladder-modal-hint,
+.ladder-modal-dialog .ladder-preview-line--modal {
+  font-size: 13px !important;
+}
+
+.ym-wheel-modal__sheet .ym-wheel-item {
+  font-size: 18px;
+}
+
+.ym-wheel-modal__sheet button.ym-wheel-today {
+  font-size: 16px !important;
+}
+
+@media (max-width: 768px) {
+  .calendar-page__detail--modal .calendar-applicant-item--row .calendar-applicant-name {
+    font-size: 13px !important;
+  }
+
+  .calendar-page__detail--modal .calendar-applicant-item--row .row.wrap button {
+    font-size: 13px !important;
+  }
+
+  .calendar-page__detail--modal .calendar-applicant-item--admin .admin-calendar-btn {
+    font-size: 12px;
+  }
+
+  .calendar-page__detail--modal .negotiation-order-input {
+    font-size: 14px !important;
+  }
+
+  .calendar-page__detail--modal .negotiation-order-readonly {
+    font-size: 14px;
+  }
+
+  .calendar-page__detail--modal .negotiation-mode-pill {
+    font-size: 11px;
+  }
+}
