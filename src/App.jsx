@@ -3910,7 +3910,6 @@ function downloadWeeklyOfficialHtmlFile(filename, html) {
   URL.revokeObjectURL(url);
 }
 
-/** 주간 번표: 유진·임희종·최유경 행 — 월간 근무표 강조(#ecfdf5 / #d1fae5) 톤과 조화되는 구분색 */
 function WeeklyScheduleTab({
   workScheduleByYear,
   requests,
@@ -3941,6 +3940,11 @@ function WeeklyScheduleTab({
   const days = Array.from({ length: 7 }, (_, i) => addDaysToYmd(mon, i));
   const dayLabels = ["월", "화", "수", "목", "금", "토", "일"];
   const rosterRows = weeklyRosterAllSections(users);
+  const viewerScheduleName = useMemo(
+    () => (Array.isArray(users) ? users.find((u) => u.id === viewerUserId)?.name : "") ?? "",
+    [users, viewerUserId]
+  );
+  const todayYmd = useMemo(() => toLocalYMD(new Date()), []);
 
   /** 주말·공휴일(명절 등 캐시된 휴일) 열 — 일반 근무가 없는 날짜 강조 */
   function isWeeklyRestDayColumn(ymd) {
@@ -4069,7 +4073,13 @@ function WeeklyScheduleTab({
               {days.map((d, i) => (
                 <th
                   key={d}
-                  className={`weekly-th-day${isWeeklyRestDayColumn(d) ? " weekly-th-day--rest" : ""}`}
+                  className={[
+                    "weekly-th-day",
+                    d === todayYmd ? "weekly-th-day--today" : "",
+                    isWeeklyRestDayColumn(d) ? "weekly-th-day--rest" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
                 >
                   <div>{dayLabels[i]}</div>
                   <div className="weekly-th-date">{d.slice(5).replace("-", "/")}</div>
@@ -4095,7 +4105,7 @@ function WeeklyScheduleTab({
                 <tr
                   key={u.id}
                   className={[
-                    u.name === "유진" || u.name === "오민아" || u.name === "최유경" ? "work-schedule-row--highlight" : "",
+                    u.id === viewerUserId || u.name === viewerScheduleName ? "work-schedule-row--self" : "",
                     sec === "anesthesia" ? "work-schedule-row--anesthesia" : "",
                     sec === "chief" ? "work-schedule-row--chief" : "",
                   ]
@@ -4128,7 +4138,14 @@ function WeeklyScheduleTab({
                     return (
                       <td
                         key={d}
-                        className={`weekly-cell weekly-cell--${cell.kind}${isWeeklyRestDayColumn(d) ? " weekly-cell--restcol" : ""}`}
+                        className={[
+                          "weekly-cell",
+                          `weekly-cell--${cell.kind}`,
+                          d === todayYmd ? "weekly-cell--today" : "",
+                          isWeeklyRestDayColumn(d) ? "weekly-cell--restcol" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
                       >
                         {cellEditable ? (
                           <div className="weekly-cell-editor">
