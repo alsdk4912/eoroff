@@ -3750,81 +3750,73 @@ button.ym-wheel-check:hover {
   width: 100%;
 }
 
-/* 월간·주간 공통: 본인 행(노랑) · 오늘/현재월 열(파랑) */
+/* 월간·주간 공통: 본인 행(파스텔 노랑) · 오늘/현재월 열(파스텔 연두) */
 .work-schedule-table thead th.work-schedule-month-col--current {
-  background: #2563eb;
-  color: #fff;
-  box-shadow: inset 0 -3px 0 #1d4ed8;
+  background: #d1fae5;
+  color: #166534;
 }
 
 .work-schedule-table tbody tr.work-schedule-row--self td {
-  background: #fef08a;
+  background: #fefce8;
 }
 
 .work-schedule-table tbody tr.work-schedule-row--self td.work-schedule-name-cell {
-  background: #facc15;
-  font-weight: 800;
-  box-shadow: inset 4px 0 0 #d97706;
+  background: #fef08a;
+  font-weight: 700;
 }
 
 .work-schedule-table td.work-schedule-month-cell--current {
-  background: #93c5fd;
-  box-shadow: inset 0 0 0 2px #2563eb;
+  background: #ecfdf5;
 }
 
 .work-schedule-table tbody tr.work-schedule-row--self td.work-schedule-month-cell--current {
-  background: #fbbf24;
-  box-shadow: inset 0 0 0 2px #d97706;
+  background: #ecfccb;
 }
 
 .work-schedule-table tbody tr.work-schedule-row--self .work-schedule-picker-face {
-  background: #fde047;
-  border-color: #d97706;
+  background: #fef9c3;
 }
 
 .work-schedule-table tbody tr.work-schedule-row--self td.work-schedule-month-cell--current .work-schedule-picker-face {
-  background: #fbbf24;
-  border-color: #b45309;
-  color: #78350f;
+  background: #ecfccb;
+}
+
+.work-schedule-table td.work-schedule-month-cell--current .work-schedule-picker-face {
+  background: #d1fae5;
 }
 
 .weekly-schedule-table thead th.weekly-th-day--today {
-  background: #2563eb !important;
-  color: #fff !important;
+  background: #d1fae5 !important;
+  color: #166534 !important;
 }
 
 .weekly-schedule-table thead th.weekly-th-day--today .weekly-th-date {
-  color: rgba(255, 255, 255, 0.92);
+  color: #15803d;
 }
 
 .weekly-schedule-table tbody tr.work-schedule-row--self td {
-  background: #fef08a;
+  background: #fefce8;
 }
 
 .weekly-schedule-table tbody tr.work-schedule-row--self td.weekly-name {
-  background: #facc15;
-  font-weight: 800;
-  box-shadow: inset 4px 0 0 #d97706;
+  background: #fef08a;
+  font-weight: 700;
 }
 
 .weekly-schedule-table tbody td.weekly-cell--today {
-  background: #93c5fd !important;
-  box-shadow: inset 0 0 0 2px #2563eb;
+  background: #ecfdf5 !important;
 }
 
 .weekly-schedule-table tbody tr.work-schedule-row--self td.weekly-cell--today {
-  background: #fbbf24 !important;
-  box-shadow: inset 0 0 0 2px #d97706;
+  background: #ecfccb !important;
 }
 
 .weekly-schedule-table tbody td.weekly-cell--today .weekly-cell-select {
-  background: #bfdbfe !important;
-  border-color: #2563eb;
+  background: #d1fae5 !important;
 }
 
 .weekly-schedule-table tbody tr.work-schedule-row--self td.weekly-cell--today .weekly-cell-select {
-  background: #fde047 !important;
-  border-color: #d97706;
+  background: #ecfccb !important;
 }
 
 /* ----- 종합현황 · 2026 근무표: 모바일에서 select에 글자(안E, 5D2 등)가 보이도록 ----- */
