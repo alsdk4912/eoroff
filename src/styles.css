@@ -3754,6 +3754,37 @@ button.ym-wheel-check:hover {
   background: #ecfdf5;
 }
 
+.work-schedule-table thead th.work-schedule-month-col--current {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.work-schedule-table tbody tr.work-schedule-row--self td {
+  background: #fffbeb;
+}
+
+.work-schedule-table tbody tr.work-schedule-row--self td.work-schedule-name-cell {
+  background: #fef3c7;
+  font-weight: 700;
+}
+
+.work-schedule-table td.work-schedule-month-cell--current {
+  background: #eff6ff;
+}
+
+.work-schedule-table tbody tr.work-schedule-row--self td.work-schedule-month-cell--current {
+  background: #fde68a;
+}
+
+.work-schedule-table tbody tr.work-schedule-row--self .work-schedule-picker-face {
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.work-schedule-table tbody tr.work-schedule-row--self td.work-schedule-month-cell--current .work-schedule-picker-face {
+  background: #fef08a;
+  border-color: rgba(245, 158, 11, 0.5);
+}
+
 /* ----- 종합현황 · 2026 근무표: 모바일에서 select에 글자(안E, 5D2 등)가 보이도록 ----- */
 .work-schedule-wrap {
   overflow-x: visible;

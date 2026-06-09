@@ -5048,6 +5048,16 @@ function DashboardPage({
     return activePlan.months.filter((m) => String(m.ymd).startsWith(`${scheduleYearFilter}-`));
   }, [activePlan.months, scheduleYearFilter]);
 
+  const viewerScheduleName = useMemo(
+    () => (Array.isArray(users) ? users.find((u) => u.id === currentUserId)?.name : "") ?? "",
+    [users, currentUserId]
+  );
+
+  const currentScheduleMonthYmd = useMemo(() => {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`;
+  }, []);
+
   function onDraftCellChange(name, monthIndex, value) {
     setScheduleMsg("");
     const monthLen = activePlan.monthCount ?? SCHEDULE_MONTH_COUNT;
@@ -5347,7 +5357,12 @@ function DashboardPage({
               <tr>
                 <th>이름</th>
                 {visibleMonths.map((m) => (
-                  <th key={m.ymd}>{m.label}</th>
+                  <th
+                    key={m.ymd}
+                    className={m.ymd === currentScheduleMonthYmd ? "work-schedule-month-col--current" : undefined}
+                  >
+                    {m.label}
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -5379,9 +5394,7 @@ function DashboardPage({
                   <tr
                     key={row.name}
                     className={[
-                      row.name === "유진" || row.name === "오민아" || row.name === "최유경"
-                        ? "work-schedule-row--highlight"
-                        : "",
+                      row.name === viewerScheduleName ? "work-schedule-row--self" : "",
                       sec === "anesthesia" ? "work-schedule-row--anesthesia" : "",
                       sec === "chief" ? "work-schedule-row--chief" : "",
                     ]
@@ -5400,7 +5413,15 @@ function DashboardPage({
                       const customPlaceholder =
                         sec === "anesthesia" ? "예: D0" : sec === "chief" ? "예: 9-5" : "예: 3D2/3D1";
                       return (
-                        <td key={`${row.name}-${m.ymd}`} className="work-schedule-month-cell">
+                        <td
+                          key={`${row.name}-${m.ymd}`}
+                          className={[
+                            "work-schedule-month-cell",
+                            m.ymd === currentScheduleMonthYmd ? "work-schedule-month-cell--current" : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
+                        >
                           <label className="work-schedule-picker">
                             <span className="work-schedule-picker-face" aria-hidden="true">
                               {faceLabel}
