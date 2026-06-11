@@ -23,6 +23,7 @@ import {
   leaveNatureLabel,
   leaveTypeLabel,
   statusLabel,
+  canEditLeaveNatureStatus,
   validateRequest,
   leaveTypesForApplicantRole,
   isLeaveTypeAllowedForRole,
@@ -1808,7 +1809,7 @@ function App() {
 
   async function updateLeaveNatureForRequest(requestId, nextNature) {
     const target = requests.find((r) => r.id === requestId);
-    if (!target || !isWinnerStatus(target.status)) return;
+    if (!target || !canEditLeaveNatureStatus(target.status)) return;
     const n = String(nextNature ?? "").trim();
     if (!n) return;
     if (serverMode) {
@@ -3418,13 +3419,13 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
                     <span className={`leave-type-pill ${buildLeaveChipClass(r.leaveType, r.status)}`}>{leaveTypeLabel(r.leaveType)}</span>
                   </td>
                   <td className="my-requests-col my-requests-col--nature">
-                    {isWinnerStatus(r.status) ? (
+                    {canEditLeaveNatureStatus(r.status) ? (
                       <select
                         className="my-requests-nature-select"
                         value={String(r.leaveNature ?? "PERSONAL")}
                         onChange={(e) => void (onUpdateLeaveNature && onUpdateLeaveNature(r.id, e.target.value))}
                         aria-label="휴가 유형"
-                        title="확정 후 개인휴가·병가·공가·필수교육을 선택합니다. 주간 번표·캘린더에 반영됩니다."
+                        title="개인휴가·병가·공가·필수교육을 선택합니다. 확정 후 주간 번표·캘린더에 반영됩니다."
                       >
                         <option value="PERSONAL">{leaveNatureLabel("PERSONAL")}</option>
                         <option value="SICK_LEAVE">{leaveNatureLabel("SICK_LEAVE")}</option>

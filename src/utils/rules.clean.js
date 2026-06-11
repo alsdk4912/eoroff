@@ -66,6 +66,11 @@ export function statusLabel(status) {
   return STATUS_LABEL[status] ?? status;
 }
 
+/** 내 신청: 휴가 유형(개인/병가/공가/필수교육) 변경 가능 상태 — 신청·확정 모두 */
+export function canEditLeaveNatureStatus(status) {
+  return status === "APPLIED" || status === "SELECTED" || status === "APPROVED";
+}
+
 /** 한국 표준시 기준 오늘 날짜 YYYY-MM-DD */
 export function kstTodayYmd() {
   const parts = new Intl.DateTimeFormat("en-CA", {

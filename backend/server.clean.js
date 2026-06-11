@@ -23,6 +23,7 @@ import {
   generalNormalLadderLockedMessage,
   isGeneralNormalLadderTimeLocked,
   isLeaveDateBeforeTodayKst,
+  canEditLeaveNatureStatus,
 } from "../src/utils/rules.clean.js";
 import { defaultGoldkeyQuotaForName } from "../src/data/goldkeyQuotas.js";
 
@@ -2486,7 +2487,7 @@ async function handleNegotiationOrder(req, res) {
 app.patch("/api/requests/:id/negotiation-order", handleNegotiationOrder);
 app.post("/api/requests/:id/negotiation-order", handleNegotiationOrder);
 
-/** 확정(SELECTED/APPROVED)된 본인 신청만: 개인휴가/공가/필수교육(일정 표시) 변경 — 주간번표 자동 연동 */
+/** 본인 신청(신청·확정): 개인휴가/공가/필수교육(일정 표시) 변경 — 확정 후 주간번표 연동 */
 async function handleLeaveNatureUpdate(req, res) {
   try {
     const requestId = decodeURIComponent(String(req.params.id ?? ""));
@@ -2510,8 +2511,8 @@ async function handleLeaveNatureUpdate(req, res) {
       return res.status(403).json({ error: "본인 신청만 변경할 수 있습니다." });
     }
     const st = String(row.status ?? "");
-    if (st !== "SELECTED" && st !== "APPROVED") {
-      return res.status(409).json({ error: "확정된 휴가만 일정 표시를 바꿀 수 있습니다." });
+    if (!canEditLeaveNatureStatus(st)) {
+      return res.status(409).json({ error: "취소·반려된 휴가는 일정 표시를 바꿀 수 없습니다." });
     }
     const prevNature = String(row.leave_nature ?? "PERSONAL");
     if (prevNature === leaveNature) return res.json({ ok: true, leaveNature });
