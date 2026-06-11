@@ -1562,7 +1562,7 @@ function App() {
     () => filterRequestsForViewerRole(requestsRawVisible, users, viewerRole),
     [requestsRawVisible, users, viewerRole]
   );
-  /** 월 달력 칩: 소속 부서 확정만 (취소·타 부서는 팝업 신청현황) */
+  /** 월 달력 칩: 소속 부서 — 미확정일은 신청 표시(취소 제외), 확정일은 확정만 */
   const requestsForCalendarGrid = useMemo(
     () => filterRequestsForCalendarGrid(requestsVisibleInUi, users, viewerRole),
     [requestsVisibleInUi, users, viewerRole]
