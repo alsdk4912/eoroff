@@ -225,13 +225,13 @@ export function buildNegotiationMetaByRequestId(dayRequests, leaveDateYmd, optio
   return map;
 }
 
-/** 캘린더: 협의 대기·24시간 대기 구간(점선). 사다리 완료·24시간 경과 단독은 제외 */
+/** 캘린더 점선: 동일 휴가일·24시간 내 2명 이상 골드키로 협의 순번 미정일 때만 */
 export function isGoldkeyNegotiationPendingChip(requestRow, metaByRequestId) {
   if (!requestRow || (requestRow.leaveType ?? requestRow.leave_type) !== "GOLDKEY") return false;
   if (String(requestRow.status ?? "").trim() !== "APPLIED") return false;
   const meta = metaByRequestId?.get?.(String(requestRow.id));
   if (meta?.ladderDone) return false;
-  return meta?.mode === "negotiate" || meta?.mode === "waitingWindow";
+  return meta?.mode === "negotiate";
 }
 
 export function goldkeyNegotiationChipHint(meta) {
