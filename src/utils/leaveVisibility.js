@@ -472,3 +472,18 @@ export function canApplyLeaveRole(role) {
 export function showHolidayDutyEditorRole(role) {
   return role === "NURSE" || role === "ADMIN" || role === "ANESTHESIA";
 }
+
+/** 휴일 당직 변경 이력 열람 (의국·부서파트장 제외) */
+export function showHolidayDutyHistoryRole(role) {
+  return (
+    role === "NURSE" ||
+    role === "ADMIN" ||
+    role === "ANESTHESIA" ||
+    role === "ADMIN2"
+  );
+}
+
+/** 당직 패널(편집 또는 관리자2 열람) */
+export function showHolidayDutyPanelRole(role) {
+  return showHolidayDutyEditorRole(role) || role === "ADMIN2";
+}

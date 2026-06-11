@@ -196,6 +196,19 @@ CREATE TABLE IF NOT EXISTS holiday_duties (
   anesthesia_user_id TEXT
 );
 
+CREATE TABLE IF NOT EXISTS holiday_duty_history (
+  id TEXT PRIMARY KEY,
+  holiday_date TEXT NOT NULL,
+  slot TEXT NOT NULL,
+  from_user_id TEXT,
+  to_user_id TEXT NOT NULL,
+  changed_by TEXT NOT NULL,
+  changed_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_holiday_duty_history_date
+  ON holiday_duty_history(holiday_date, changed_at DESC);
+
 -- 휴가 확정 건별 대체 근무 배정(여러 명 가능)
 CREATE TABLE IF NOT EXISTS substitute_assignments (
   id TEXT PRIMARY KEY,
@@ -411,6 +424,7 @@ export async function initDb() {
   await ensureRequestsNegotiationOrderColumn();
   await ensureRequestsNegotiationOrderLockedColumn();
   await ensureHolidayDutiesAnesthesiaColumn();
+  await ensureHolidayDutyHistoryTable();
   await ensureCancellationsDeductionColumns();
   await ensureCancellationsRevokedColumns();
   await ensureRequestsSoftDeleteColumns();
@@ -474,6 +488,23 @@ async function ensureHolidayDutiesAnesthesiaColumn() {
   if (!names.has("anesthesia_user_id")) {
     await execute("ALTER TABLE holiday_duties ADD COLUMN anesthesia_user_id TEXT");
   }
+}
+
+async function ensureHolidayDutyHistoryTable() {
+  await execute(
+    `CREATE TABLE IF NOT EXISTS holiday_duty_history (
+      id TEXT PRIMARY KEY,
+      holiday_date TEXT NOT NULL,
+      slot TEXT NOT NULL,
+      from_user_id TEXT,
+      to_user_id TEXT NOT NULL,
+      changed_by TEXT NOT NULL,
+      changed_at TEXT NOT NULL
+    )`
+  );
+  await execute(
+    "CREATE INDEX IF NOT EXISTS idx_holiday_duty_history_date ON holiday_duty_history(holiday_date, changed_at DESC)"
+  );
 }
 
 async function ensureCancellationsDeductionColumns() {

@@ -561,6 +561,9 @@ app.get("/api/bootstrap", async (_, res) => {
         "SELECT id, notice_id, user_id, content, created_at, updated_at FROM notice_comments ORDER BY notice_id ASC, created_at ASC"
       ),
       holidayDuties: await queryAll("SELECT * FROM holiday_duties"),
+      holidayDutyHistory: await queryAll(
+        "SELECT id, holiday_date, slot, from_user_id, to_user_id, changed_by, changed_at FROM holiday_duty_history ORDER BY changed_at DESC"
+      ),
       adminDayMemos: await queryAll("SELECT * FROM admin_day_memos"),
       dayComments: await queryAll("SELECT * FROM day_comments ORDER BY created_at ASC"),
       holidays: await queryAll("SELECT * FROM holidays"),
@@ -1926,13 +1929,40 @@ app.post("/api/admin/holiday-duties", async (req, res) => {
     const holidayRow = await queryOne("SELECT holiday_date FROM holidays WHERE holiday_date = ? AND is_holiday = 1", hd);
     if (!holidayRow && !isWeekend) return res.status(400).json({ error: "해당 날짜가 공휴일/주말이 아닙니다." });
 
-    await execute(
-      "INSERT INTO holiday_duties (holiday_date, nurse1_user_id, nurse2_user_id, anesthesia_user_id) VALUES (?, ?, ?, ?) ON CONFLICT(holiday_date) DO UPDATE SET nurse1_user_id = excluded.nurse1_user_id, nurse2_user_id = excluded.nurse2_user_id, anesthesia_user_id = excluded.anesthesia_user_id",
-      hd,
-      n1,
-      n2,
-      a1
+    const prev = await queryOne(
+      "SELECT nurse1_user_id, nurse2_user_id, anesthesia_user_id FROM holiday_duties WHERE holiday_date = ?",
+      hd
     );
+    const prevN1 = String(prev?.nurse1_user_id ?? "").trim() || null;
+    const prevN2 = String(prev?.nurse2_user_id ?? "").trim() || null;
+    const prevA1 = String(prev?.anesthesia_user_id ?? "").trim() || null;
+    const nowIso = new Date().toISOString();
+    const historyRows = [];
+    if (prevN1 !== n1) historyRows.push({ slot: "nurse1", from: prevN1, to: n1 });
+    if (prevN2 !== n2) historyRows.push({ slot: "nurse2", from: prevN2, to: n2 });
+    if (prevA1 !== a1) historyRows.push({ slot: "anesthesia", from: prevA1, to: a1 });
+
+    await runTransaction(async (tx) => {
+      for (const row of historyRows) {
+        await tx.execute(
+          "INSERT INTO holiday_duty_history (id, holiday_date, slot, from_user_id, to_user_id, changed_by, changed_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          `hdh_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+          hd,
+          row.slot,
+          row.from,
+          row.to,
+          String(actorUserId),
+          nowIso
+        );
+      }
+      await tx.execute(
+        "INSERT INTO holiday_duties (holiday_date, nurse1_user_id, nurse2_user_id, anesthesia_user_id) VALUES (?, ?, ?, ?) ON CONFLICT(holiday_date) DO UPDATE SET nurse1_user_id = excluded.nurse1_user_id, nurse2_user_id = excluded.nurse2_user_id, anesthesia_user_id = excluded.anesthesia_user_id",
+        hd,
+        n1,
+        n2,
+        a1
+      );
+    });
 
     return res.json({ ok: true });
   } catch (err) {

@@ -3782,6 +3782,70 @@ button.ym-wheel-check:hover {
   flex-shrink: 0;
 }
 
+.holiday-duty-readonly {
+  margin: 0 0 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.holiday-duty-readonly__row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 14px;
+}
+
+.holiday-duty-readonly__row dt {
+  margin: 0;
+  min-width: 5.5rem;
+  font-weight: 600;
+  color: #92400e;
+}
+
+.holiday-duty-readonly__row dd {
+  margin: 0;
+}
+
+.holiday-duty-history {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(180, 83, 9, 0.35);
+}
+
+.holiday-duty-history__title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #92400e;
+}
+
+.holiday-duty-history__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.holiday-duty-history__item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: baseline;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.holiday-duty-history__line {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.holiday-duty-history__time {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
 .day-comment-section h4 {
   margin: 0 0 6px;
   font-size: 14px;

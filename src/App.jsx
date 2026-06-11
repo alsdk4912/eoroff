@@ -77,6 +77,13 @@ import {
 } from "./utils/webPush.js";
 import { buildFullAutoHolidayDutyPlansForYears } from "./utils/holidayDutyPlan.clean.js";
 import {
+  appendHolidayDutyHistoryEntries,
+  diffHolidayDutyAssignments,
+  formatHolidayDutyHistoryLine,
+  groupHolidayDutyHistoryByDate,
+  userNameFromId,
+} from "./utils/holidayDutyHistory.js";
+import {
   canApplyLeaveRole,
   canViewerApproveRequest,
   CHIEF_LEAVE_TYPE,
@@ -103,6 +110,8 @@ import {
   canManageHolidayDutyDayComment,
   isScheduleOnlyDashboardRole,
   showHolidayDutyEditorRole,
+  showHolidayDutyHistoryRole,
+  showHolidayDutyPanelRole,
   substituteScopeStaffRole,
   standaloneSubstituteRequestId,
   isStandaloneSubstituteRequestId,
@@ -138,6 +147,7 @@ const LS_SELECTIONS = "or.selections.v3";
 const LS_GOLDKEYS = "or.goldkeys.v4";
 const LS_ADJUSTMENT_LOGS = "or.adjustmentLogs.v3";
 const LS_HOLIDAY_DUTIES = "or.holidayDuties.v1";
+const LS_HOLIDAY_DUTY_HISTORY = "or.holidayDutyHistory.v1";
 const LS_LADDER_RESULTS = "or.ladderResults.v1";
 const LS_ADMIN_DAY_MEMOS = "or.adminDayMemos.v1";
 const LS_DAY_COMMENTS = "or.dayComments.v1";
@@ -504,6 +514,7 @@ function App() {
   const [adjustmentLogs, setAdjustmentLogs] = useLocalStorage(LS_ADJUSTMENT_LOGS, initialAdjustmentLogs);
   const [holidays, setHolidays] = useLocalStorage("or.holidays", seedHolidays);
   const [holidayDuties, setHolidayDuties] = useLocalStorage(LS_HOLIDAY_DUTIES, initialHolidayDuties);
+  const [holidayDutyHistory, setHolidayDutyHistory] = useLocalStorage(LS_HOLIDAY_DUTY_HISTORY, {});
   const [ladderResults, setLadderResults] = useLocalStorage(LS_LADDER_RESULTS, initialLadderResults);
   const [adminDayMemos, setAdminDayMemos] = useLocalStorage(LS_ADMIN_DAY_MEMOS, {});
   const [dayComments, setDayComments] = useLocalStorage(LS_DAY_COMMENTS, []);
@@ -883,6 +894,7 @@ function App() {
       return acc;
     }, {});
     setHolidayDuties(dutyByDate);
+    setHolidayDutyHistory(groupHolidayDutyHistoryByDate(data.holidayDutyHistory));
     const subRows = Array.isArray(data.substituteAssignments) ? data.substituteAssignments : [];
     const normalizedSubs = subRows
       .map((s) => ({
@@ -1301,11 +1313,16 @@ function App() {
       return;
     }
 
-    // 오프라인: 브라우저 로컬에만 저장
+    const prevRow = holidayDuties?.[hd] ?? {};
+    const nextRow = { nurse1UserId, nurse2UserId, anesthesiaUserId: a1 };
+    const changes = diffHolidayDutyAssignments(prevRow, nextRow);
     setHolidayDuties((prev) => ({
       ...(prev ?? {}),
-      [hd]: { nurse1UserId, nurse2UserId, anesthesiaUserId: a1 },
+      [hd]: nextRow,
     }));
+    if (changes.length > 0) {
+      setHolidayDutyHistory((prev) => appendHolidayDutyHistoryEntries(prev, hd, changes, auth?.userId));
+    }
   }
 
   async function autoAssignUnsetHolidayDutiesByYear(year) {
@@ -2755,6 +2772,7 @@ function App() {
               currentUserId={auth?.userId}
               saveNegotiationOrder={saveNegotiationOrder}
               holidayDuties={holidayDuties}
+              holidayDutyHistory={holidayDutyHistory}
               saveHolidayDuty={saveHolidayDuty}
               selectRequest={selectRequest}
               unselectRequest={unselectRequest}
@@ -6894,6 +6912,56 @@ function renderCalendarDayChip(applicant, keyPrefix, chipClassExtra, titlePrefix
   );
 }
 
+function HolidayDutyHistoryBlock({ selectedYmd, holidayDutyHistory, users }) {
+  const entries = useMemo(() => {
+    const hd = String(selectedYmd ?? "").slice(0, 10);
+    if (!hd) return [];
+    return Array.isArray(holidayDutyHistory?.[hd]) ? holidayDutyHistory[hd] : [];
+  }, [selectedYmd, holidayDutyHistory]);
+
+  if (entries.length === 0) return null;
+
+  return (
+    <div className="holiday-duty-history">
+      <h5 className="holiday-duty-history__title">당직 변경 이력</h5>
+      <ul className="holiday-duty-history__list">
+        {entries.map((entry) => (
+          <li key={entry.id} className="holiday-duty-history__item">
+            <span className="holiday-duty-history__line">{formatHolidayDutyHistoryLine(entry, users)}</span>
+            {entry.changedAt ? (
+              <span className="holiday-duty-history__time">
+                {new Date(entry.changedAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+              </span>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function HolidayDutyReadonlySummary({ duty, users }) {
+  if (!duty?.nurse1UserId && !duty?.nurse2UserId && !duty?.anesthesiaUserId) {
+    return <p className="help">등록된 당직자가 없습니다.</p>;
+  }
+  return (
+    <dl className="holiday-duty-readonly">
+      <div className="holiday-duty-readonly__row">
+        <dt>당직자1</dt>
+        <dd>{userNameFromId(users, duty?.nurse1UserId)}</dd>
+      </div>
+      <div className="holiday-duty-readonly__row">
+        <dt>당직자2</dt>
+        <dd>{userNameFromId(users, duty?.nurse2UserId)}</dd>
+      </div>
+      <div className="holiday-duty-readonly__row">
+        <dt>마취과 당직자</dt>
+        <dd>{userNameFromId(users, duty?.anesthesiaUserId)}</dd>
+      </div>
+    </dl>
+  );
+}
+
 function calendarCellHasConfirmedChips(cell) {
   return (
     (Array.isArray(cell?.displayApplicants) && cell.displayApplicants.length > 0) ||
@@ -6928,6 +6996,7 @@ function CalendarPage({
   currentUserId,
   saveNegotiationOrder,
   holidayDuties,
+  holidayDutyHistory = {},
   saveHolidayDuty,
   selectRequest,
   unselectRequest,
@@ -7088,6 +7157,8 @@ function CalendarPage({
   const calendarTopRef = useRef(null);
   const deptHeadHolidayViewer = isDeptHeadRole(viewerRole);
   const holidayDutyContactViewer = isHolidayDutyContactViewer(viewerRole);
+  const showHolidayDutyPanel = showHolidayDutyPanelRole(viewerRole);
+  const showHolidayDutyHistory = showHolidayDutyHistoryRole(viewerRole);
   /** 의국·부서파트장: 모바일 포함 당직일과 동일한 여백 있는 중앙 팝업 */
   const useCompactDetailModal = isEmergencyOrViewer || deptHeadHolidayViewer;
   const showCalendarDetailPanel = useCompactDetailModal ? detailModalOpen : true;
@@ -7695,74 +7766,84 @@ function CalendarPage({
                   <p className="help">주말·공휴일·명절·대체공휴일만 조회할 수 있습니다.</p>
                 )
               ) : null}
-              {!isEmergencyOrRole(viewerRole) &&
-              !deptHeadHolidayViewer &&
-              canEditHolidayDuty &&
-              selectedCell?.isOffDay ? (
+              {!isEmergencyOrRole(viewerRole) && !deptHeadHolidayViewer && showHolidayDutyPanel && selectedCell?.isOffDay ? (
                 <section className="holiday-duty-panel">
                   <h4 className="holiday-duty-title">휴일 당직자 기록 (주말·공휴·대체공휴일·명절)</h4>
-                  <div className="row wrap holiday-duty-grid">
-                    <div className="holiday-duty-field">
-                      <label className="field-label">당직자 1</label>
-                      <select value={duty1UserId} onChange={(e) => setDuty1UserId(e.target.value)}>
-                        <option value="">선택</option>
-                        {nurseUsers
-                          .slice()
-                          .sort((a, b) => a.name.localeCompare(b.name, "ko"))
-                          .map((u) => (
-                            <option key={u.id} value={u.id}>
-                              {u.name}
-                            </option>
-                          ))}
-                      </select>
-                    </div>
-                    <div className="holiday-duty-field">
-                      <label className="field-label">당직자 2</label>
-                      <select value={duty2UserId} onChange={(e) => setDuty2UserId(e.target.value)}>
-                        <option value="">선택</option>
-                        {nurseUsers
-                          .slice()
-                          .sort((a, b) => a.name.localeCompare(b.name, "ko"))
-                          .map((u) => (
-                            <option key={u.id} value={u.id} disabled={u.id === duty1UserId}>
-                              {u.name}
-                            </option>
-                          ))}
-                      </select>
-                    </div>
-                    <div className="holiday-duty-action">
-                      <div className="holiday-duty-field">
-                        <label className="field-label">마취과 당직자</label>
-                        <select value={anesthesiaDutyUserId} onChange={(e) => setAnesthesiaDutyUserId(e.target.value)}>
-                          <option value="">선택</option>
-                          {anesthesiaUsers
-                            .slice()
-                            .sort((a, b) => a.name.localeCompare(b.name, "ko"))
-                            .map((u) => (
-                              <option key={u.id} value={u.id}>
-                                {u.name}
-                              </option>
-                            ))}
-                        </select>
+                  {canEditHolidayDuty ? (
+                    <>
+                      <div className="row wrap holiday-duty-grid">
+                        <div className="holiday-duty-field">
+                          <label className="field-label">당직자 1</label>
+                          <select value={duty1UserId} onChange={(e) => setDuty1UserId(e.target.value)}>
+                            <option value="">선택</option>
+                            {nurseUsers
+                              .slice()
+                              .sort((a, b) => a.name.localeCompare(b.name, "ko"))
+                              .map((u) => (
+                                <option key={u.id} value={u.id}>
+                                  {u.name}
+                                </option>
+                              ))}
+                          </select>
+                        </div>
+                        <div className="holiday-duty-field">
+                          <label className="field-label">당직자 2</label>
+                          <select value={duty2UserId} onChange={(e) => setDuty2UserId(e.target.value)}>
+                            <option value="">선택</option>
+                            {nurseUsers
+                              .slice()
+                              .sort((a, b) => a.name.localeCompare(b.name, "ko"))
+                              .map((u) => (
+                                <option key={u.id} value={u.id} disabled={u.id === duty1UserId}>
+                                  {u.name}
+                                </option>
+                              ))}
+                          </select>
+                        </div>
+                        <div className="holiday-duty-action">
+                          <div className="holiday-duty-field">
+                            <label className="field-label">마취과 당직자</label>
+                            <select value={anesthesiaDutyUserId} onChange={(e) => setAnesthesiaDutyUserId(e.target.value)}>
+                              <option value="">선택</option>
+                              {anesthesiaUsers
+                                .slice()
+                                .sort((a, b) => a.name.localeCompare(b.name, "ko"))
+                                .map((u) => (
+                                  <option key={u.id} value={u.id}>
+                                    {u.name}
+                                  </option>
+                                ))}
+                            </select>
+                          </div>
+                        </div>
+                        <div className="holiday-duty-action">
+                          <button
+                            type="button"
+                            onClick={() => void saveHolidayDuty(selectedYmd, duty1UserId, duty2UserId, anesthesiaDutyUserId)}
+                            disabled={!duty1UserId || !duty2UserId || !anesthesiaDutyUserId}
+                            aria-label="공휴일 당직자 저장"
+                          >
+                            저장
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                    <div className="holiday-duty-action">
-                      <button
-                        type="button"
-                        onClick={() => void saveHolidayDuty(selectedYmd, duty1UserId, duty2UserId, anesthesiaDutyUserId)}
-                        disabled={!duty1UserId || !duty2UserId || !anesthesiaDutyUserId}
-                        aria-label="공휴일 당직자 저장"
-                      >
-                        저장
-                      </button>
-                    </div>
-                  </div>
-                  {(!duty1UserId || !duty2UserId || !anesthesiaDutyUserId) && (
-                    <p className="help">수술실 당직자 2명 + 마취과 당직자 1명을 선택한 뒤 저장해 주세요.</p>
+                      {(!duty1UserId || !duty2UserId || !anesthesiaDutyUserId) && (
+                        <p className="help">수술실 당직자 2명 + 마취과 당직자 1명을 선택한 뒤 저장해 주세요.</p>
+                      )}
+                    </>
+                  ) : (
+                    <HolidayDutyReadonlySummary duty={selectedHolidayDuty} users={users} />
                   )}
+                  {showHolidayDutyHistory ? (
+                    <HolidayDutyHistoryBlock
+                      selectedYmd={selectedYmd}
+                      holidayDutyHistory={holidayDutyHistory}
+                      users={users}
+                    />
+                  ) : null}
                 </section>
               ) : null}
-              {!holidayDutyContactViewer && selectedCell?.isOffDay && !isChiefViewer ? (
+              {!holidayDutyContactViewer && !showHolidayDutyPanel && selectedCell?.isOffDay && !isChiefViewer ? (
                 <p className="help" style={{ marginTop: 10 }}>
                   이 날짜는 휴일(공휴일/주말)로 휴가 신청을 받지 않습니다.
                 </p>
