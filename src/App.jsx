@@ -92,6 +92,7 @@ import {
   calendarShowsAllDepartmentsLeaveAndSubstitute,
   hideCalendarAllDeptPanelOnOffDay,
   isOrLeaveAdminRole,
+  canRunLadderGame,
   isEmergencyOrRole,
   isHolidayDutyContactViewer,
   isDeptHeadRole,
@@ -1364,6 +1365,10 @@ function App() {
   }
 
   async function createLadderResult(payload) {
+    if (!canRunLadderGame(viewerRole)) {
+      window.alert?.("사다리 기능은 관리자만 사용할 수 있습니다.");
+      return;
+    }
     if (isGeneralNormalLadderTimeLocked(payload?.leaveDate, payload?.leaveType)) {
       window.alert?.(generalNormalLadderLockedMessage(payload?.leaveDate));
       return;
@@ -2706,7 +2711,7 @@ function App() {
         <Route
           path="/ladder"
           element={
-            isEmergencyOrViewer ? (
+            isEmergencyOrViewer || !isOrLeaveAdmin ? (
               <Navigate to="/calendar" replace />
             ) : (
             <LadderGamePage
@@ -5257,15 +5262,17 @@ function DashboardPage({
           >
             골드키
           </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={dashTab === "ladder-results"}
-            className={`segmented-btn${dashTab === "ladder-results" ? " segmented-btn--active" : ""}`}
-            onClick={() => setDashTab("ladder-results")}
-          >
-            사다리 결과
-          </button>
+          {isAdmin ? (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={dashTab === "ladder-results"}
+              className={`segmented-btn${dashTab === "ladder-results" ? " segmented-btn--active" : ""}`}
+              onClick={() => setDashTab("ladder-results")}
+            >
+              사다리 결과
+            </button>
+          ) : null}
           {isAdmin ? (
             <button
               type="button"
@@ -5328,7 +5335,7 @@ function DashboardPage({
           </div>
         </section>
       ) : null}
-      {!isScheduleOnlyDashboardRole(currentRole) && dashTab === "ladder-results" ? (
+      {isAdmin && !isScheduleOnlyDashboardRole(currentRole) && dashTab === "ladder-results" ? (
         <section className="card">
           <h2 className="screen-title">저장된 사다리 결과</h2>
           <div className="ladder-results-list">
@@ -7790,7 +7797,7 @@ function CalendarPage({
                         <p className="help">이 날짜에 등록된 신청이 없습니다.</p>
                       ) : (
                         <>
-                          {viewerRole === "NURSE" && quickLadderTargets.length > 0 ? (
+                          {isOrLeaveAdmin && quickLadderTargets.length > 0 ? (
                             <div className="calendar-ladder-quick-bar">
                               {quickLadderTargets.map((t) => (
                                 (() => {

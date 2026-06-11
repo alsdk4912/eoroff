@@ -173,6 +173,11 @@ export function isOrLeaveAdminRole(role) {
   return role === "ADMIN" || role === "DEPT_HEAD";
 }
 
+/** 협의 사다리 실행·저장 — 수술실 관리자(ADMIN·DEPT_HEAD)만 */
+export function canRunLadderGame(role) {
+  return isOrLeaveAdminRole(role);
+}
+
 export function isAnesthesiaLeaveAdminRole(role) {
   return role === "ADMIN2";
 }

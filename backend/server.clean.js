@@ -2126,8 +2126,11 @@ app.post("/api/ladder-results", async (req, res) => {
       createdAt,
     } = req.body ?? {};
 
-    const actor = await queryOne("SELECT id FROM users WHERE id = ?", createdBy);
+    const actor = await queryOne("SELECT id, role FROM users WHERE id = ?", createdBy);
     if (!actor) return res.status(403).json({ error: "사용자 정보가 올바르지 않습니다." });
+    if (!isOrLeaveAdminRoleServer(actor.role)) {
+      return res.status(403).json({ error: "사다리 기능은 관리자만 사용할 수 있습니다." });
+    }
 
     const ld = String(leaveDate ?? "").trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(ld)) return res.status(400).json({ error: "leaveDate 형식이 올바르지 않습니다." });
