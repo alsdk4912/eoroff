@@ -1,7 +1,5 @@
 /** 수술실·마취과·주임 휴가 표시·관리 권한 */
 
-import { isLeaveDateBeforeTodayKst } from "./rules.clean.js";
-
 export const CHIEF_LEAVE_TYPE = "CHIEF_LEAVE";
 
 export function userById(users, userId) {
@@ -58,61 +56,20 @@ export function splitRequestsByStaffRole(requests, users) {
   return buckets;
 }
 
-/** 소속 부서·해당일 기준 월간 칩에 넣을 신청 행 */
-function ownDeptRowsVisibleOnCalendarGrid(dayRows, leaveDateYmd) {
-  if (!Array.isArray(dayRows) || dayRows.length === 0) return [];
-
-  const ld = String(leaveDateYmd ?? dayRows[0]?.leaveDate ?? "").slice(0, 10);
-  const confirmed = dayRows.filter((r) => isConfirmedLeaveStatus(r.status));
-  if (confirmed.length > 0) return confirmed;
-
-  if (isLeaveDateBeforeTodayKst(ld)) return [];
-
-  const hasApplied = dayRows.some((r) => String(r.status ?? "").trim() === "APPLIED");
-  if (!hasApplied) return [];
-
-  return dayRows.filter((r) => {
-    const st = String(r.status ?? "").trim();
-    return st === "APPLIED" || st === "CANCELLED" || st === "REJECTED";
-  });
-}
-
 /**
- * 월간 달력 칩:
- * - 타 부서: 확정(휴가자)만
- * - 소속 부서·해당일 확정 있음: 확정만
- * - 소속 부서·오늘 이후·미확정·신청(APPLIED) 있음: 신청·취소·반려 표시
- * - 소속 부서·과거일: 확정만(없으면 칩 없음)
+ * 월간 달력 칩: 소속 부서 확정(SELECTED/APPROVED)만.
+ * 취소·미확정·타 부서는 칩에 넣지 않음 → 날짜 팝업 신청현황에서만 표시.
  */
 export function filterRequestsForCalendarGrid(requests, users, viewerRole) {
   const rows = Array.isArray(requests) ? requests : [];
   const ownDepts = viewerOwnDepartmentRoles(viewerRole);
-
-  const ownDeptVisibleIds = new Set();
-  if (ownDepts) {
-    const byDayRole = new Map();
-    for (const r of rows) {
-      const subjectRole = userById(users, r.userId)?.role;
-      if (!ownDepts.has(subjectRole)) continue;
-      const key = `${String(r.leaveDate ?? "").slice(0, 10)}|${subjectRole}`;
-      if (!byDayRole.has(key)) byDayRole.set(key, []);
-      byDayRole.get(key).push(r);
-    }
-    for (const [key, dayRows] of byDayRole) {
-      const leaveDateYmd = key.split("|")[0];
-      for (const r of ownDeptRowsVisibleOnCalendarGrid(dayRows, leaveDateYmd)) {
-        ownDeptVisibleIds.add(String(r.id ?? ""));
-      }
-    }
-  }
+  if (!ownDepts) return [];
 
   return rows.filter((r) => {
     const subjectRole = userById(users, r.userId)?.role;
     if (!isStaffLeaveRole(subjectRole)) return false;
-    if (!ownDepts?.has(subjectRole)) {
-      return isConfirmedLeaveStatus(r.status);
-    }
-    return ownDeptVisibleIds.has(String(r.id ?? ""));
+    if (!ownDepts.has(subjectRole)) return false;
+    return isConfirmedLeaveStatus(r.status);
   });
 }
 

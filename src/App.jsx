@@ -1545,7 +1545,7 @@ function App() {
     () => filterRequestsForViewerRole(requestsRawVisible, users, viewerRole),
     [requestsRawVisible, users, viewerRole]
   );
-  /** 월 달력 칩: 소속 부서·해당일 미확정이면 신청·취소 포함, 타 부서·확정 후에는 확정만 */
+  /** 월 달력 칩: 소속 부서 확정만 (취소·타 부서는 팝업 신청현황) */
   const requestsForCalendarGrid = useMemo(
     () => filterRequestsForCalendarGrid(requestsVisibleInUi, users, viewerRole),
     [requestsVisibleInUi, users, viewerRole]
@@ -6954,7 +6954,8 @@ function CalendarPage({
   const offDaysOnlyViewer = isCalendarOffDaysOnlyRole(viewerRole);
   const [ymModalOpen, setYmModalOpen] = useState(false);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
-  const CALENDAR_DAY_CHIP_MAX = 4;
+  /** 칸당 최대 표시 칩 수 — 4건 이상이면 나머지는 +N */
+  const CALENDAR_DAY_CHIP_MAX = 3;
 
   useEffect(() => {
     if (!selectedYmd) return;
