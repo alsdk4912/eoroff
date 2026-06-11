@@ -7847,7 +7847,7 @@ function CalendarPage({
                 <p className="help" style={{ marginTop: 10 }}>
                   이 날짜는 휴일(공휴일/주말)로 휴가 신청을 받지 않습니다.
                 </p>
-              ) : !holidayDutyContactViewer ? (
+              ) : !holidayDutyContactViewer && !selectedCell?.isOffDay ? (
                 <>
                   <div className="calendar-detail-tabs" role="tablist">
                     <button
