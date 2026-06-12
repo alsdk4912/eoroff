@@ -3846,6 +3846,57 @@ button.ym-wheel-check:hover {
   color: var(--text-secondary);
 }
 
+/* 응급수술 기록 목록 (당직자 뷰) */
+.esr-list {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(220, 38, 38, 0.3);
+}
+.esr-list--panel {
+  border-top-color: rgba(220, 38, 38, 0.25);
+}
+.esr-list__title {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #b91c1c;
+}
+.esr-list__item {
+  background: #fff5f5;
+  border: 1px solid rgba(220, 38, 38, 0.18);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  display: grid;
+  gap: 4px;
+}
+.esr-list__item:last-child {
+  margin-bottom: 0;
+}
+.esr-list__row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.esr-list__label {
+  flex-shrink: 0;
+  width: 58px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.esr-list__value {
+  font-weight: 600;
+  color: #1f2937;
+  word-break: break-all;
+}
+.esr-list__meta {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
 .day-comment-section h4 {
   margin: 0 0 6px;
   font-size: 14px;

@@ -624,6 +624,8 @@ function App() {
   const [registrationAdminMessage, setRegistrationAdminMessage] = useState("");
   /** 달력에서 선택한 날짜(YYYY-MM-DD) — 상세 패널·신청 탭에 사용 */
   const [calendarSelectedYmd, setCalendarSelectedYmd] = useState(null);
+  /** 응급수술 기록: { "YYYY-MM-DD": [...records] } */
+  const [emergencySurgeryRecordsByDate, setEmergencySurgeryRecordsByDate] = useState({});
 
   // 탭 이동(라우트 전환) 후 다시 "/calendar"로 돌아올 때는
   // "오늘"이 속한 월을 보여주도록 강제합니다.
@@ -2519,6 +2521,27 @@ function App() {
       startTime: payload?.startTime,
       anesthesiaType: payload?.anesthesiaType,
     });
+    const notifyDate = String(payload?.leaveDate ?? "").slice(0, 10);
+    if (notifyDate && auth?.userId) {
+      api.getEmergencySurgeryRecords(notifyDate, auth.userId)
+        .then((data) => {
+          if (Array.isArray(data?.records)) {
+            setEmergencySurgeryRecordsByDate((prev) => ({ ...prev, [notifyDate]: data.records }));
+          }
+        })
+        .catch(() => {});
+    }
+  }
+
+  function fetchEmergencySurgeryRecordsForDate(ymd) {
+    if (!ymd || !serverMode || !auth?.userId) return;
+    api.getEmergencySurgeryRecords(ymd, auth.userId)
+      .then((data) => {
+        if (Array.isArray(data?.records)) {
+          setEmergencySurgeryRecordsByDate((prev) => ({ ...prev, [ymd]: data.records }));
+        }
+      })
+      .catch(() => {});
   }
 
   async function handleRejectRegistration(requestId, reason) {
@@ -2792,6 +2815,8 @@ function App() {
               serverMode={serverMode}
               onNotifyEmergencySurgery={handleNotifyEmergencySurgery}
               holidays={holidays}
+              emergencySurgeryRecords={emergencySurgeryRecordsByDate[calendarSelectedYmd] ?? []}
+              onSelectDutyDay={fetchEmergencySurgeryRecordsForDate}
             />
           }
         />
@@ -6940,6 +6965,48 @@ function HolidayDutyHistoryBlock({ selectedYmd, holidayDutyHistory, users }) {
   );
 }
 
+function EmergencySurgeryRecordsList({ records = [] }) {
+  if (!records || records.length === 0) return null;
+  const anesLabel = (t) => (t === "LOCAL" ? "국소" : "전신");
+  return (
+    <div className="esr-list">
+      <h5 className="esr-list__title">응급수술 정보</h5>
+      {records.map((r) => (
+        <div key={r.id} className="esr-list__item">
+          <div className="esr-list__row">
+            <span className="esr-list__label">수술명</span>
+            <span className="esr-list__value">{r.surgeryName}</span>
+          </div>
+          <div className="esr-list__row">
+            <span className="esr-list__label">주치의</span>
+            <span className="esr-list__value">{r.attendingPhysician}</span>
+          </div>
+          <div className="esr-list__row">
+            <span className="esr-list__label">전공의</span>
+            <span className="esr-list__value">{r.specialistPhysician}</span>
+          </div>
+          <div className="esr-list__row">
+            <span className="esr-list__label">마취</span>
+            <span className="esr-list__value">{anesLabel(r.anesthesiaType)}</span>
+          </div>
+          <div className="esr-list__row">
+            <span className="esr-list__label">수술 시작</span>
+            <span className="esr-list__value">{r.startTime ? r.startTime.slice(11, 16) : ""}</span>
+          </div>
+          {r.createdByName ? (
+            <div className="esr-list__meta">
+              {r.createdByName} 전송 ·{" "}
+              {r.createdAt
+                ? new Date(r.createdAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })
+                : ""}
+            </div>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function HolidayDutyReadonlySummary({ duty, users }) {
   if (!duty?.nurse1UserId && !duty?.nurse2UserId && !duty?.anesthesiaUserId) {
     return <p className="help">등록된 당직자가 없습니다.</p>;
@@ -7016,6 +7083,8 @@ function CalendarPage({
   serverMode = false,
   onNotifyEmergencySurgery,
   holidays = [],
+  emergencySurgeryRecords = [],
+  onSelectDutyDay,
 }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -7030,6 +7099,10 @@ function CalendarPage({
     if (!selectedYmd) return;
     setLeaveDate(selectedYmd);
   }, [selectedYmd, setLeaveDate]);
+
+  useEffect(() => {
+    if (selectedYmd) onSelectDutyDay?.(selectedYmd);
+  }, [selectedYmd]);
 
   useEffect(() => {
     if (viewerRole === "CHIEF") setLeaveType(CHIEF_LEAVE_TYPE);
@@ -7756,6 +7829,7 @@ function CalendarPage({
                     users={users}
                     serverMode={serverMode}
                     onNotify={onNotifyEmergencySurgery}
+                    surgeryRecords={emergencySurgeryRecords}
                     memoSection={
                       canHolidayDutyMemo ? (
                         <CalendarDayMemoSection {...dayMemoSectionProps} variant="holiday-duty" compact />
@@ -7841,6 +7915,7 @@ function CalendarPage({
                       users={users}
                     />
                   ) : null}
+                  <EmergencySurgeryRecordsList records={emergencySurgeryRecords} />
                 </section>
               ) : null}
               {!holidayDutyContactViewer && !showHolidayDutyPanel && selectedCell?.isOffDay && !isChiefViewer ? (

@@ -29,6 +29,48 @@ function DutyCallChip({ label, user }) {
   );
 }
 
+function EmergencySurgeryRecordsListInPanel({ records = [] }) {
+  if (!records || records.length === 0) return null;
+  const anesLabel = (t) => (t === "LOCAL" ? "국소" : "전신");
+  return (
+    <div className="esr-list esr-list--panel">
+      <h5 className="esr-list__title">전송된 응급수술 정보</h5>
+      {records.map((r) => (
+        <div key={r.id} className="esr-list__item">
+          <div className="esr-list__row">
+            <span className="esr-list__label">수술명</span>
+            <span className="esr-list__value">{r.surgeryName}</span>
+          </div>
+          <div className="esr-list__row">
+            <span className="esr-list__label">주치의</span>
+            <span className="esr-list__value">{r.attendingPhysician}</span>
+          </div>
+          <div className="esr-list__row">
+            <span className="esr-list__label">전공의</span>
+            <span className="esr-list__value">{r.specialistPhysician}</span>
+          </div>
+          <div className="esr-list__row">
+            <span className="esr-list__label">마취</span>
+            <span className="esr-list__value">{anesLabel(r.anesthesiaType)}</span>
+          </div>
+          <div className="esr-list__row">
+            <span className="esr-list__label">수술 시작</span>
+            <span className="esr-list__value">{r.startTime ? r.startTime.slice(11, 16) : ""}</span>
+          </div>
+          {r.createdByName ? (
+            <div className="esr-list__meta">
+              {r.createdAt
+                ? new Date(r.createdAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })
+                : ""}
+              {" "}전송
+            </div>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function EmergencySurgeryPanel({
   selectedYmd,
   holidayName,
@@ -36,6 +78,7 @@ export default function EmergencySurgeryPanel({
   users,
   serverMode,
   onNotify,
+  surgeryRecords = [],
   memoSection = null,
 }) {
   const [surgeryName, setSurgeryName] = useState("");
@@ -276,6 +319,8 @@ export default function EmergencySurgeryPanel({
       {memoSection ? <div className="emergency-duty-day__memo">{memoSection}</div> : null}
 
       {localMsg ? <p className="msg emergency-duty-day__msg">{localMsg}</p> : null}
+
+      <EmergencySurgeryRecordsListInPanel records={surgeryRecords} />
     </section>
   );
 }

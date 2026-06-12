@@ -1030,9 +1030,68 @@ app.post("/api/emergency-surgery/notify", async (req, res) => {
       url: `#/calendar?ymd=${encodeURIComponent(leaveDate)}&detail=1`,
     });
 
+    const recordId = `esr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    await execute(
+      `INSERT INTO emergency_surgery_records
+        (id, leave_date, surgery_name, attending_physician, specialist_physician, emergency_contact, start_time, anesthesia_type, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      recordId,
+      leaveDate,
+      surgeryName,
+      attendingPhysician,
+      specialistPhysician,
+      emergencyContact,
+      startTime,
+      anesthesiaType,
+      actorUserId,
+      new Date().toISOString()
+    );
+
     return res.json({ ok: true, message: msg });
   } catch (err) {
     console.error("POST /api/emergency-surgery/notify", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
+/** 당직자: 특정 날짜 응급수술 기록 조회 */
+app.get("/api/emergency-surgery/records/:date", async (req, res) => {
+  try {
+    const leaveDate = String(req.params.date ?? "").slice(0, 10);
+    const actorUserId = String(req.query?.actorUserId ?? "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(leaveDate)) {
+      return res.status(400).json({ error: "date(YYYY-MM-DD)가 필요합니다." });
+    }
+    if (!actorUserId) return res.status(400).json({ error: "actorUserId가 필요합니다." });
+    const actor = await queryOne("SELECT id, role FROM users WHERE id = ?", actorUserId);
+    if (!actor) return res.status(404).json({ error: "사용자를 찾을 수 없습니다." });
+
+    const records = await queryAll(
+      "SELECT id, leave_date, surgery_name, attending_physician, specialist_physician, start_time, anesthesia_type, created_by, created_at FROM emergency_surgery_records WHERE leave_date = ? ORDER BY created_at ASC",
+      leaveDate
+    );
+
+    const userIds = [...new Set(records.map((r) => r.created_by).filter(Boolean))];
+    const creatorRows = userIds.length
+      ? await queryAll(`SELECT id, name FROM users WHERE id IN (${userIds.map(() => "?").join(",")})`, ...userIds)
+      : [];
+    const creatorMap = new Map(creatorRows.map((u) => [u.id, u.name]));
+
+    const result = records.map((r) => ({
+      id: r.id,
+      leaveDate: String(r.leave_date ?? "").slice(0, 10),
+      surgeryName: r.surgery_name,
+      attendingPhysician: r.attending_physician,
+      specialistPhysician: r.specialist_physician,
+      startTime: r.start_time,
+      anesthesiaType: r.anesthesia_type,
+      createdByName: creatorMap.get(r.created_by) ?? "",
+      createdAt: r.created_at,
+    }));
+
+    return res.json({ records: result });
+  } catch (err) {
+    console.error("GET /api/emergency-surgery/records/:date", err);
     return res.status(500).json({ error: String(err?.message || err) });
   }
 });

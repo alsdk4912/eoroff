@@ -200,6 +200,8 @@ export const api = {
     requestJson(`/notice-comments/${encodeURIComponent(id)}/delete`, { method: "POST", body: JSON.stringify(payload) }),
   notifyEmergencySurgery: (payload) =>
     requestJson("/emergency-surgery/notify", { method: "POST", body: JSON.stringify(payload) }),
+  getEmergencySurgeryRecords: (date, actorUserId) =>
+    requestJson(`/emergency-surgery/records/${encodeURIComponent(date)}?actorUserId=${encodeURIComponent(String(actorUserId ?? ""))}`),
   listNotifications: (userId) =>
     requestJson(`/notifications?userId=${encodeURIComponent(String(userId ?? ""))}`),
   markAllNotificationsRead: (payload) =>

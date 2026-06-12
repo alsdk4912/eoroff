@@ -272,6 +272,23 @@ CREATE TABLE IF NOT EXISTS notifications (
 CREATE INDEX IF NOT EXISTS idx_notifications_user_created
   ON notifications(user_id, created_at DESC);
 
+-- 응급수술 알림 기록 (의국/부서파트장 전송, 당직자 열람)
+CREATE TABLE IF NOT EXISTS emergency_surgery_records (
+  id TEXT PRIMARY KEY,
+  leave_date TEXT NOT NULL,
+  surgery_name TEXT NOT NULL,
+  attending_physician TEXT NOT NULL,
+  specialist_physician TEXT NOT NULL,
+  emergency_contact TEXT NOT NULL,
+  start_time TEXT NOT NULL,
+  anesthesia_type TEXT NOT NULL DEFAULT 'GENERAL',
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_emergency_surgery_records_date
+  ON emergency_surgery_records(leave_date, created_at DESC);
+
 -- 공지사항 게시판 (관리자/간호사 공용)
 CREATE TABLE IF NOT EXISTS notices (
   id TEXT PRIMARY KEY,
@@ -426,6 +443,7 @@ export async function initDb() {
   await ensureRequestsNegotiationOrderLockedColumn();
   await ensureHolidayDutiesAnesthesiaColumn();
   await ensureHolidayDutyHistoryTable();
+  await ensureEmergencySurgeryRecordsTable();
   await ensureCancellationsDeductionColumns();
   await ensureCancellationsRevokedColumns();
   await ensureRequestsSoftDeleteColumns();
@@ -506,6 +524,26 @@ async function ensureHolidayDutyHistoryTable() {
   );
   await execute(
     "CREATE INDEX IF NOT EXISTS idx_holiday_duty_history_date ON holiday_duty_history(holiday_date, changed_at DESC)"
+  );
+}
+
+async function ensureEmergencySurgeryRecordsTable() {
+  await execute(
+    `CREATE TABLE IF NOT EXISTS emergency_surgery_records (
+      id TEXT PRIMARY KEY,
+      leave_date TEXT NOT NULL,
+      surgery_name TEXT NOT NULL,
+      attending_physician TEXT NOT NULL,
+      specialist_physician TEXT NOT NULL,
+      emergency_contact TEXT NOT NULL,
+      start_time TEXT NOT NULL,
+      anesthesia_type TEXT NOT NULL DEFAULT 'GENERAL',
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )`
+  );
+  await execute(
+    "CREATE INDEX IF NOT EXISTS idx_emergency_surgery_records_date ON emergency_surgery_records(leave_date, created_at DESC)"
   );
 }
 
