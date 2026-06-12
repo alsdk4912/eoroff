@@ -3405,6 +3405,7 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             aria-label="휴가 상태 필터"
+            style={{ display: "none" }}
           >
             <option value="ALL">휴가 상태</option>
             <option value="APPLIED">휴가신청</option>
