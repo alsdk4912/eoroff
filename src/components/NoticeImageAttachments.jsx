@@ -1,23 +1,66 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { NOTICE_MAX_IMAGES, compressNoticeImageFile } from "../utils/noticeImages.js";
 
 export function NoticeImageGallery({ images }) {
+  const [lightboxSrc, setLightboxSrc] = useState(null);
+  const [lightboxIdx, setLightboxIdx] = useState(0);
   const list = Array.isArray(images) ? images : [];
   if (list.length === 0) return null;
+
+  function openAt(idx) {
+    setLightboxIdx(idx);
+    setLightboxSrc(list[idx]);
+  }
+  function closeLightbox() { setLightboxSrc(null); }
+  function prev(e) {
+    e.stopPropagation();
+    const next = (lightboxIdx - 1 + list.length) % list.length;
+    setLightboxIdx(next);
+    setLightboxSrc(list[next]);
+  }
+  function next(e) {
+    e.stopPropagation();
+    const n = (lightboxIdx + 1) % list.length;
+    setLightboxIdx(n);
+    setLightboxSrc(list[n]);
+  }
+
   return (
-    <div className="notice-image-gallery">
-      {list.map((src, idx) => (
-        <a
-          key={`${idx}_${String(src).slice(0, 32)}`}
-          className="notice-image-gallery__item"
-          href={src}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src={src} alt={`첨부 사진 ${idx + 1}`} loading="lazy" />
-        </a>
-      ))}
-    </div>
+    <>
+      <div className="notice-image-gallery">
+        {list.map((src, idx) => (
+          <button
+            key={`${idx}_${String(src).slice(0, 32)}`}
+            type="button"
+            className="notice-image-gallery__item"
+            onClick={() => openAt(idx)}
+            aria-label={`사진 ${idx + 1} 크게 보기`}
+          >
+            <img src={src} alt={`첨부 사진 ${idx + 1}`} loading="lazy" />
+          </button>
+        ))}
+      </div>
+      {lightboxSrc ? (
+        <div className="notice-lightbox" onClick={closeLightbox}>
+          <button type="button" className="notice-lightbox__close" onClick={closeLightbox} aria-label="닫기">×</button>
+          {list.length > 1 ? (
+            <button type="button" className="notice-lightbox__nav notice-lightbox__nav--prev" onClick={prev} aria-label="이전">‹</button>
+          ) : null}
+          <img
+            className="notice-lightbox__img"
+            src={lightboxSrc}
+            alt={`사진 ${lightboxIdx + 1}`}
+            onClick={(e) => e.stopPropagation()}
+          />
+          {list.length > 1 ? (
+            <button type="button" className="notice-lightbox__nav notice-lightbox__nav--next" onClick={next} aria-label="다음">›</button>
+          ) : null}
+          {list.length > 1 ? (
+            <div className="notice-lightbox__counter">{lightboxIdx + 1} / {list.length}</div>
+          ) : null}
+        </div>
+      ) : null}
+    </>
   );
 }
 

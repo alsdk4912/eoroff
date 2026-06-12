@@ -6102,26 +6102,45 @@ function NoticeBoardPage({
       </div>
       ) : null}
       {canWriteNotices && composeOpen ? (
-        <form className="grid notice-compose-form" onSubmit={submitNotice}>
-          <input type="text" maxLength={80} placeholder="제목 (최대 80자)" value={title} onChange={(e) => setTitle(e.target.value)} />
-          <textarea rows={4} maxLength={2000} placeholder="내용 (최대 2000자)" value={content} onChange={(e) => setContent(e.target.value)} />
-          <NoticeImagePicker images={composeImages} onChange={setComposeImages} />
-          <button type="submit">게시글 등록</button>
+        <form className="notice-compose-form" onSubmit={submitNotice}>
+          <div className="notice-compose-form__col">
+            <label className="notice-compose-form__label">제목</label>
+            <input type="text" maxLength={80} placeholder="제목 (최대 80자)" value={title} onChange={(e) => setTitle(e.target.value)} />
+          </div>
+          <div className="notice-compose-form__col">
+            <label className="notice-compose-form__label">내용</label>
+            <textarea rows={5} maxLength={2000} placeholder="내용 (최대 2000자)" value={content} onChange={(e) => setContent(e.target.value)} style={{ resize: "vertical" }} />
+          </div>
+          <div className="notice-compose-form__col notice-compose-form__col--action">
+            <label className="notice-compose-form__label">사진</label>
+            <NoticeImagePicker images={composeImages} onChange={setComposeImages} />
+            <button type="submit" className="notice-compose-form__submit">게시글 등록</button>
+          </div>
         </form>
       ) : null}
 
       <div className="notice-list">
         {rows.map((r) => (
-          <button
-            type="button"
+          <div
             key={r.id}
             className={`notice-item${selectedId === r.id ? " notice-item--active" : ""}`}
+          >
+          <button
+            type="button"
+            className="notice-item__header"
             onClick={() => {
-              setSelectedId(r.id);
-              setEditingMode(false);
+              if (selectedId === r.id) {
+                setSelectedId("");
+              } else {
+                setSelectedId(r.id);
+                setEditingMode(false);
+              }
             }}
           >
-            <div className="notice-item__title">{r.title}</div>
+            <div className="notice-item__title">
+              {r.title}
+              <span className="notice-item__toggle-icon">{selectedId === r.id ? "▲" : "▼"}</span>
+            </div>
             <div className="notice-item__meta">
               <span>{idToName.get(r.userId) ?? r.userId}</span>
               <span>{r.createdAt ? new Date(r.createdAt).toLocaleDateString("ko-KR") : "-"}</span>
@@ -6133,6 +6152,7 @@ function NoticeBoardPage({
               ) : null}
             </div>
           </button>
+          </div>
         ))}
       </div>
 
