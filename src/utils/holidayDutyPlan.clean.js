@@ -53,7 +53,9 @@ export const OR_DUTY_WEEKEND_ANCHORS = [
   { saturday: "2026-06-06", nurse1: "오민아", nurse2: "유진" },
   { saturday: "2026-06-20", nurse1: "임희종", nurse2: "장성필" },
   { saturday: "2026-06-27", nurse1: "최유경", nurse2: "최종선" },
+  { saturday: "2026-08-15", nurse1: "최유경", nurse2: "최종선" },
   { saturday: "2026-08-22", nurse1: "최유리", nurse2: "허정숙" },
+  { saturday: "2026-10-10", nurse1: "정수영", nurse2: "장지은" },
 ];
 
 /** 명절 일자별 고정 배정 (추석·설날 등) */
@@ -67,23 +69,25 @@ export const OR_DUTY_FESTIVAL_ANCHORS = [
 function isDutyBlockedByRule(name, ymd) {
   const nm = String(name ?? "").trim();
   if (nm === "장지은") return ymd <= "2026-08-05";
-  if (nm === "정수영") return ymd < "2026-08-01";
+  if (nm === "정수영") return ymd < "2026-10-01";
   if (nm === "이지선") return ymd <= "2026-09-06";
   return false;
 }
 
-/** 가나다순 + 최유리·최종선 자리 교환 */
+/** 가나다순 + 두 쌍 위치 교환: 최유리↔최종선, 장지은↔정수영 */
 export function buildBaseDutyOrder(nurseUsers) {
   const sorted = [...nurseUsers].sort((a, b) => a.name.localeCompare(b.name, "ko"));
-  const iJong = sorted.findIndex((u) => u.name === "최종선");
-  const iRi = sorted.findIndex((u) => u.name === "최유리");
-  if (iJong >= 0 && iRi >= 0) {
-    const next = [...sorted];
-    next[iJong] = sorted[iRi];
-    next[iRi] = sorted[iJong];
-    return next;
+  const next = [...sorted];
+  function swap(nameA, nameB) {
+    const iA = next.findIndex((u) => u.name === nameA);
+    const iB = next.findIndex((u) => u.name === nameB);
+    if (iA >= 0 && iB >= 0) {
+      [next[iA], next[iB]] = [next[iB], next[iA]];
+    }
   }
-  return sorted;
+  swap("최유리", "최종선");
+  swap("장지은", "정수영");
+  return next;
 }
 
 /** 설·추석 명절·연휴 */

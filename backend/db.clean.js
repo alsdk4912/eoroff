@@ -924,7 +924,7 @@ async function ensureHolidayDutyAnchors2026() {
 
 /** 2026-06-12~ 수술실 당직 규칙 v2 재배정(명절·공휴·주말 순번 분리) */
 async function ensureOrDutyRulesV2June2026() {
-  const migrationId = "or_duty_rules_v2_20260612";
+  const migrationId = "or_duty_rules_v2_20260612_v3";
   const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
   if (done) return;
 
