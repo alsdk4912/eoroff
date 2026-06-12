@@ -924,7 +924,7 @@ async function ensureHolidayDutyAnchors2026() {
 
 /** 2026-06-12~ 수술실 당직 규칙 v2 재배정(명절·공휴·주말 순번 분리) */
 async function ensureOrDutyRulesV2June2026() {
-  const migrationId = "or_duty_rules_v2_20260612_v3";
+  const migrationId = "or_duty_rules_v2_20260612_v4";
   const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
   if (done) return;
 
@@ -966,10 +966,20 @@ async function ensureOrDutyRulesV2June2026() {
     overwriteExisting: true,
   });
 
+  // 수동 변경된 날짜 목록 (holiday_duty_history 기록이 있으면 수동 저장된 것으로 간주 → 덮어쓰지 않음)
+  const manuallyChangedRows = await queryAll(
+    "SELECT DISTINCT holiday_date FROM holiday_duty_history WHERE holiday_date >= ?",
+    assignFrom
+  );
+  const manuallyChangedDates = new Set(manuallyChangedRows.map((r) => String(r.holiday_date ?? "").slice(0, 10)));
+
   let upserted = 0;
   for (const row of plan) {
     const hd = String(row.holidayDate ?? "").slice(0, 10);
     if (!hd || hd < assignFrom) continue;
+
+    // 수동으로 저장된 이력이 있는 날짜는 건드리지 않음
+    if (manuallyChangedDates.has(hd)) continue;
 
     const n1 = String(row.nurse1UserId ?? "").trim();
     const n2 = String(row.nurse2UserId ?? "").trim();
