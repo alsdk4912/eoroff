@@ -3309,13 +3309,12 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
   const [search, setSearch] = useState("");
   const [sortOrder, setSortOrder] = useState("leaveDateAsc");
   const yearOptions = useMemo(() => {
-    const years = Array.from(
-      new Set(
-        (Array.isArray(myRequests) ? myRequests : [])
-          .map((r) => String(r.leaveDate ?? "").slice(0, 4))
-          .filter((v) => /^\d{4}$/.test(v))
-      )
-    ).sort((a, b) => b.localeCompare(a));
+    const currentYear = new Date().getFullYear();
+    const fromData = (Array.isArray(myRequests) ? myRequests : [])
+      .map((r) => String(r.leaveDate ?? "").slice(0, 4))
+      .filter((v) => /^\d{4}$/.test(v));
+    const guaranteed = [String(currentYear), String(currentYear + 1), String(currentYear + 2)];
+    const years = Array.from(new Set([...fromData, ...guaranteed])).sort((a, b) => b.localeCompare(a));
     return years;
   }, [myRequests]);
   function matchesYearFilter(r) {
