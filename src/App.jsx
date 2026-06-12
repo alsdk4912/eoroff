@@ -3422,7 +3422,6 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
               <th>휴가일</th>
               <th>휴가 구분</th>
               <th>휴가 유형</th>
-              <th>휴가 상태</th>
               <th>신청시각</th>
               <th>액션</th>
             </tr>
@@ -3479,7 +3478,6 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
                       leaveNatureLabel(r.leaveNature)
                     )}
                   </td>
-                  <td className="my-requests-col my-requests-col--status">{statusLabel(r.status)}</td>
                   <td className="my-requests-col my-requests-col--time">{formatRequestedAtCompact(r.requestedAt)}</td>
                   <td className="my-requests-col my-requests-col--action">{actionCell}</td>
                 </tr>
