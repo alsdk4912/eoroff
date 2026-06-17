@@ -6117,43 +6117,6 @@ function NoticeBoardPage({
         </form>
       ) : null}
 
-      <div className="notice-list">
-        {rows.map((r) => (
-          <div
-            key={r.id}
-            className={`notice-item${selectedId === r.id ? " notice-item--active" : ""}`}
-          >
-          <button
-            type="button"
-            className="notice-item__header"
-            onClick={() => {
-              if (selectedId === r.id) {
-                setSelectedId("");
-              } else {
-                setSelectedId(r.id);
-                setEditingMode(false);
-              }
-            }}
-          >
-            <div className="notice-item__title">
-              {r.title}
-              <span className="notice-item__toggle-icon">{selectedId === r.id ? "▲" : "▼"}</span>
-            </div>
-            <div className="notice-item__meta">
-              <span>{idToName.get(r.userId) ?? r.userId}</span>
-              <span>{r.createdAt ? new Date(r.createdAt).toLocaleDateString("ko-KR") : "-"}</span>
-            </div>
-            <div className="notice-item__summary">
-              {String(r.content ?? "").replace(/\s+/g, " ").trim()}
-              {Array.isArray(r.images) && r.images.length > 0 ? (
-                <span className="notice-item__photo-badge"> · 사진 {r.images.length}</span>
-              ) : null}
-            </div>
-          </button>
-          </div>
-        ))}
-      </div>
-
       {selected ? (
         <div className="notice-detail">
           {editingMode ? (
@@ -6319,6 +6282,43 @@ function NoticeBoardPage({
           </div>
         </div>
       ) : null}
+
+      <div className="notice-list">
+        {rows.map((r) => (
+          <div
+            key={r.id}
+            className={`notice-item${selectedId === r.id ? " notice-item--active" : ""}`}
+          >
+          <button
+            type="button"
+            className="notice-item__header"
+            onClick={() => {
+              if (selectedId === r.id) {
+                setSelectedId("");
+              } else {
+                setSelectedId(r.id);
+                setEditingMode(false);
+              }
+            }}
+          >
+            <div className="notice-item__title">
+              {r.title}
+              <span className="notice-item__toggle-icon">{selectedId === r.id ? "▲" : "▼"}</span>
+            </div>
+            <div className="notice-item__meta">
+              <span>{idToName.get(r.userId) ?? r.userId}</span>
+              <span>{r.createdAt ? new Date(r.createdAt).toLocaleDateString("ko-KR") : "-"}</span>
+            </div>
+            <div className="notice-item__summary">
+              {String(r.content ?? "").replace(/\s+/g, " ").trim()}
+              {Array.isArray(r.images) && r.images.length > 0 ? (
+                <span className="notice-item__photo-badge"> · 사진 {r.images.length}</span>
+              ) : null}
+            </div>
+          </button>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
