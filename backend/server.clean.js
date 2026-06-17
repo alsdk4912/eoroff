@@ -25,6 +25,13 @@ import {
   isLeaveDateBeforeTodayKst,
   canEditLeaveNatureStatus,
 } from "../src/utils/rules.clean.js";
+import {
+  computeAutoHalfDaySlot,
+  buildHalfDayStatusForUser,
+  halfDay2ReminderMessage,
+  validateHalfDaySlotChange,
+  HALF_DAY_SLOT_VALUES,
+} from "../src/utils/halfDayLeave.clean.js";
 import { defaultGoldkeyQuotaForName } from "../src/data/goldkeyQuotas.js";
 
 const app = express();
@@ -252,7 +259,7 @@ function isDeptHeadRoleServer(role) {
 
 function canUseWebPushRoleServer(role) {
   const r = String(role ?? "").trim();
-  return r === "NURSE" || r === "DEPT_HEAD";
+  return r === "NURSE" || r === "DEPT_HEAD" || r === "ANESTHESIA";
 }
 
 function isOrLeaveAdminRoleServer(role) {
@@ -812,7 +819,7 @@ app.post("/api/push-subscriptions", async (req, res) => {
     if (!uid) return res.status(400).json({ error: "userId가 필요합니다." });
     const user = await queryOne("SELECT id, role FROM users WHERE id = ?", uid);
     if (!user || !canUseWebPushRoleServer(user.role)) {
-      return res.status(403).json({ error: "간호사·부서파트장만 푸시 구독할 수 있습니다." });
+      return res.status(403).json({ error: "간호사·마취과·부서파트장만 푸시 구독할 수 있습니다." });
     }
     const endpoint = String(subscription?.endpoint ?? "").trim();
     const p256dh = String(subscription?.keys?.p256dh ?? "").trim();
@@ -2628,6 +2635,99 @@ async function handleLeaveNatureUpdate(req, res) {
 app.patch("/api/requests/:id/leave-nature", handleLeaveNatureUpdate);
 app.post("/api/requests/:id/leave-nature", handleLeaveNatureUpdate);
 
+async function assertActorCanEditHalfDaySlot(actorUserId, leaveUserId) {
+  const actor = String(actorUserId ?? "").trim();
+  const owner = String(leaveUserId ?? "").trim();
+  if (!actor || !owner) {
+    const err = new Error("권한이 없습니다.");
+    err.statusCode = 403;
+    throw err;
+  }
+  if (actor === owner) return;
+  const actorRole = await userRoleById(actor);
+  const leaveRole = await userRoleById(owner);
+  if (leaveRole === "ANESTHESIA" && actorRole === "ADMIN2") return;
+  if (leaveRole === "NURSE" && (actorRole === "ADMIN" || actorRole === "DEPT_HEAD")) return;
+  const err = new Error("반차 구분을 변경할 권한이 없습니다.");
+  err.statusCode = 403;
+  throw err;
+}
+
+async function handleHalfDaySlotUpdate(req, res) {
+  try {
+    const requestId = decodeURIComponent(String(req.params.id ?? ""));
+    const idem = getIdempotencyKey(req);
+    if (idem) {
+      const prev = await auditRowByIdempotencyKey(idem);
+      if (prev) return res.json({ ok: true, idempotentReplay: true });
+    }
+    const actorUserId = String(req.body?.actorUserId ?? "").trim();
+    if (!actorUserId) return res.status(400).json({ error: "actorUserId가 필요합니다." });
+    const halfDaySlot = String(req.body?.halfDaySlot ?? req.body?.half_day_slot ?? "").trim();
+    if (!HALF_DAY_SLOT_VALUES.has(halfDaySlot)) {
+      return res.status(400).json({ error: "반차1 또는 반차2만 선택할 수 있습니다." });
+    }
+    const row = await queryOne(
+      `SELECT id, user_id, leave_date, leave_type, status, half_day_slot FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`,
+      requestId
+    );
+    if (!row) return res.status(404).json({ error: "요청을 찾을 수 없습니다." });
+    if (String(row.leave_type ?? "") !== "HALF_DAY") {
+      return res.status(409).json({ error: "반차 신청만 구분을 변경할 수 있습니다." });
+    }
+    if (String(row.status ?? "") !== "APPROVED") {
+      return res.status(409).json({ error: "확정된 반차만 구분을 변경할 수 있습니다." });
+    }
+    try {
+      await assertActorCanEditHalfDaySlot(actorUserId, row.user_id);
+    } catch (authErr) {
+      return res.status(authErr.statusCode || 403).json({ error: String(authErr?.message || authErr) });
+    }
+    const prevSlot = String(row.half_day_slot ?? "").trim();
+    if (prevSlot === halfDaySlot) return res.json({ ok: true, halfDaySlot });
+
+    const allHalf = await queryAll(
+      `SELECT id, user_id, leave_date, leave_type, status, half_day_slot FROM requests
+       WHERE leave_type = 'HALF_DAY' AND status = 'APPROVED' AND deleted_at IS NULL`
+    );
+    const validationErr = validateHalfDaySlotChange(
+      allHalf.map((r) => ({
+        id: r.id,
+        userId: r.user_id,
+        leaveDate: String(r.leave_date ?? "").slice(0, 10),
+        leaveType: r.leave_type,
+        status: r.status,
+        halfDaySlot: r.half_day_slot,
+      })),
+      requestId,
+      String(row.user_id ?? ""),
+      String(row.leave_date ?? "").slice(0, 10),
+      halfDaySlot
+    );
+    if (validationErr) return res.status(409).json({ error: validationErr });
+
+    await runTransaction(async (tx) => {
+      await tx.execute("UPDATE requests SET half_day_slot = ? WHERE id = ?", halfDaySlot, requestId);
+      await insertLeaveRequestAuditRow(tx, {
+        leaveRequestId: requestId,
+        action: "HALF_DAY_SLOT_UPDATE",
+        fromStatus: "APPROVED",
+        toStatus: "APPROVED",
+        actorUserId,
+        reason: null,
+        idempotencyKey: idem || null,
+        metadataJson: { previousHalfDaySlot: prevSlot || null, halfDaySlot },
+      });
+    });
+    return res.json({ ok: true, halfDaySlot });
+  } catch (err) {
+    console.error("half-day-slot", err);
+    res.status(500).json({ error: String(err?.message || err) });
+  }
+}
+app.patch("/api/requests/:id/half-day-slot", handleHalfDaySlotUpdate);
+app.post("/api/requests/:id/half-day-slot", handleHalfDaySlotUpdate);
+
 app.post("/api/requests/:id/cancel", async (req, res) => {
   try {
     const requestId = String(req.params.id ?? "");
@@ -2770,7 +2870,7 @@ app.post("/api/requests/:id/select", async (req, res) => {
     }
 
     const row = await queryOne(
-      `SELECT id, leave_date, leave_type, status FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`,
+      `SELECT id, user_id, leave_date, leave_type, status FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`,
       requestId
     );
     if (!row) return res.status(404).json({ error: "요청을 찾을 수 없습니다." });
@@ -2806,6 +2906,28 @@ app.post("/api/requests/:id/select", async (req, res) => {
         throw Object.assign(new Error("상태 충돌"), { code: "STATUS_CONFLICT" });
       }
       await tx.execute("UPDATE requests SET status = 'APPROVED' WHERE id = ?", requestId);
+      if (String(row.leave_type ?? "") === "HALF_DAY") {
+        const existingHalf = await tx.queryAll(
+          `SELECT id, user_id, leave_date, leave_type, status, half_day_slot
+           FROM requests
+           WHERE user_id = ? AND leave_type = 'HALF_DAY' AND status = 'APPROVED' AND deleted_at IS NULL AND id != ?`,
+          String(row.user_id ?? ""),
+          requestId
+        );
+        const slot = computeAutoHalfDaySlot(
+          existingHalf.map((r) => ({
+            id: r.id,
+            userId: r.user_id,
+            leaveDate: String(r.leave_date ?? "").slice(0, 10),
+            leaveType: r.leave_type,
+            status: r.status,
+            halfDaySlot: r.half_day_slot,
+          })),
+          String(row.user_id ?? ""),
+          String(row.leave_date ?? "").slice(0, 10)
+        );
+        await tx.execute("UPDATE requests SET half_day_slot = ? WHERE id = ?", slot, requestId);
+      }
       await tx.execute(
         "INSERT INTO selections (id, leave_request_id, selected_by, selected_at) VALUES (?, ?, ?, ?)",
         selectionId,
@@ -2880,7 +3002,7 @@ app.post("/api/requests/:id/unselect", async (req, res) => {
       if (!cur || String(cur.status) !== "APPROVED") {
         throw Object.assign(new Error("상태 충돌"), { code: "STATUS_CONFLICT" });
       }
-      await tx.execute("UPDATE requests SET status = 'APPLIED' WHERE id = ?", requestId);
+      await tx.execute("UPDATE requests SET status = 'APPLIED', half_day_slot = NULL WHERE id = ?", requestId);
       await tx.execute("DELETE FROM selections WHERE leave_request_id = ?", requestId);
       await insertLeaveRequestAuditRow(tx, {
         leaveRequestId: requestId,
@@ -3388,6 +3510,73 @@ async function main() {
         console.log(`[auto-ladder] applied ${targetLeaveDate}: ${eligible.length} rows`);
       } catch (err) {
         console.error("[auto-ladder] failed", err);
+      }
+    },
+    { timezone: "Asia/Seoul" }
+  );
+
+  cron.schedule(
+    "5 0 9 * * *",
+    async () => {
+      try {
+        const todayYmd = kstYmdPlusDays(0, new Date());
+        const halfDayRows = await queryAll(
+          `SELECT id, user_id, leave_date, leave_type, status, half_day_slot, requested_at
+           FROM requests
+           WHERE leave_type = 'HALF_DAY' AND status = 'APPROVED' AND deleted_at IS NULL`
+        );
+        const mapped = halfDayRows.map((r) => ({
+          id: r.id,
+          userId: r.user_id,
+          leaveDate: String(r.leave_date ?? "").slice(0, 10),
+          leaveType: r.leave_type,
+          status: r.status,
+          halfDaySlot: r.half_day_slot,
+          requestedAt: r.requested_at,
+        }));
+        const targetUsers = await queryAll(
+          `SELECT id, role FROM users WHERE role IN ('NURSE', 'ANESTHESIA')`
+        );
+        for (const u of targetUsers) {
+          const userId = String(u.id ?? "").trim();
+          if (!userId) continue;
+          const status = buildHalfDayStatusForUser(mapped, userId, todayYmd);
+          if (!status.reminder?.needsReminder) continue;
+          const hd1Id = String(status.openCycle?.halfDay1?.id ?? status.openCycle?.halfDay1?.requestId ?? "").trim();
+          if (!hd1Id) continue;
+          const already = await queryOne(
+            "SELECT id FROM half_day_reminder_log WHERE user_id = ? AND half_day1_request_id = ? AND reminder_ymd = ?",
+            userId,
+            hd1Id,
+            todayYmd
+          );
+          if (already) continue;
+          const body = halfDay2ReminderMessage(status.reminder.deadlineYmd);
+          await execute(
+            "INSERT INTO half_day_reminder_log (id, user_id, half_day1_request_id, reminder_ymd, sent_at) VALUES (?, ?, ?, ?, ?)",
+            `hdr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            userId,
+            hd1Id,
+            todayYmd,
+            new Date().toISOString()
+          );
+          await createNotificationsForUserIds({
+            userIds: [userId],
+            type: "HALF_DAY2_DEADLINE",
+            message: body,
+            targetDate: status.reminder.deadlineYmd,
+            leaveRequestId: hd1Id,
+          });
+          await sendPushToUserIds({
+            userIds: [userId],
+            title: "반차 알림",
+            body,
+            url: "#/dashboard?halfDay=1",
+          });
+        }
+        console.log(`[half-day-reminder] checked ${todayYmd}`);
+      } catch (err) {
+        console.error("[half-day-reminder] failed", err);
       }
     },
     { timezone: "Asia/Seoul" }

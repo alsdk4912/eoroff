@@ -159,7 +159,7 @@ export function isDeptHeadRole(role) {
 
 /** Web Push 구독·푸시 켜기 (간호사·부서파트장) */
 export function canUseWebPushRole(role) {
-  return role === "NURSE" || role === "DEPT_HEAD";
+  return role === "NURSE" || role === "DEPT_HEAD" || role === "ANESTHESIA";
 }
 
 /** 수술실 휴가 관리(관리자) + 부서파트장(진기숙 동급 화면·권한) */
@@ -500,6 +500,26 @@ export function showAnesthesiaPublishedOverlay(viewerRole) {
 /** 현황: 월간·주간만 (골드키·사다리 등 제외) */
 export function isScheduleOnlyDashboardRole(role) {
   return role === "ANESTHESIA" || role === "ADMIN2" || role === "CHIEF";
+}
+
+/** 현황 탭 반차내역 — 본인(NURSE·ANESTHESIA) 또는 관리자(ADMIN·DEPT_HEAD·ADMIN2) */
+export function canViewHalfDayDashboardTab(role) {
+  const r = String(role ?? "").trim();
+  return r === "NURSE" || r === "ANESTHESIA" || r === "ADMIN" || r === "DEPT_HEAD" || r === "ADMIN2";
+}
+
+export function isHalfDayDashboardAdminView(role) {
+  const r = String(role ?? "").trim();
+  return r === "ADMIN" || r === "DEPT_HEAD" || r === "ADMIN2";
+}
+
+export function canEditHalfDaySlot(viewerRole, viewerUserId, targetUserId, users) {
+  if (String(viewerUserId ?? "") === String(targetUserId ?? "")) return true;
+  const target = (Array.isArray(users) ? users : []).find((u) => u.id === targetUserId);
+  const targetRole = String(target?.role ?? "").trim();
+  if (targetRole === "ANESTHESIA" && isAnesthesiaLeaveAdminRole(viewerRole)) return true;
+  if (targetRole === "NURSE" && isOrLeaveAdminRole(viewerRole)) return true;
+  return false;
 }
 
 export function canApplyLeaveRole(role) {

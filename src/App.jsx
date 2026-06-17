@@ -77,6 +77,12 @@ import {
 } from "./utils/webPush.js";
 import { buildFullAutoHolidayDutyPlansForYears } from "./utils/holidayDutyPlan.clean.js";
 import {
+  buildHalfDayStatusForUser,
+  halfDaySlotLabel,
+  halfDay2DeadlineYmd,
+  halfDay2ReminderMessage,
+} from "./utils/halfDayLeave.clean.js";
+import {
   appendHolidayDutyHistoryEntries,
   diffHolidayDutyAssignments,
   formatHolidayDutyHistoryLine,
@@ -109,6 +115,9 @@ import {
   canUseHolidayDutyDayMemo,
   canManageHolidayDutyDayComment,
   isScheduleOnlyDashboardRole,
+  canViewHalfDayDashboardTab,
+  isHalfDayDashboardAdminView,
+  canEditHalfDaySlot,
   showHolidayDutyEditorRole,
   showHolidayDutyHistoryRole,
   showHolidayDutyPanelRole,
@@ -1851,6 +1860,32 @@ function App() {
     });
   }
 
+  async function updateHalfDaySlotForRequest(requestId, nextSlot) {
+    const target = requests.find((r) => r.id === requestId);
+    if (!target || target.leaveType !== "HALF_DAY" || target.status !== "APPROVED") return;
+    const slot = String(nextSlot ?? "").trim();
+    if (slot !== "1" && slot !== "2") return;
+    if (!canEditHalfDaySlot(viewerRole, auth.userId, target.userId, users)) return;
+    if (serverMode) {
+      try {
+        await api.patchHalfDaySlot(requestId, { actorUserId: auth.userId, halfDaySlot: slot });
+        await bootstrap();
+      } catch (e) {
+        window.alert?.(`반차 구분 저장 실패: ${e?.message || e}`);
+      }
+      return;
+    }
+    setRequests((prev) => {
+      const next = prev.map((r) => (r.id === requestId ? { ...r, halfDaySlot: slot } : r));
+      try {
+        localStorage.setItem(LS_REQUESTS, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }
+
   async function selectRequest(requestId, substituteOpts = null) {
     const target = requests.find((r) => r.id === requestId);
     if (!target) return;
@@ -2723,6 +2758,7 @@ function App() {
               unselectRequest={unselectRequest}
               rejectRequest={rejectRequest}
               saveSubstituteForApprovedRequest={saveSubstituteForApprovedRequest}
+              onUpdateHalfDaySlot={updateHalfDaySlotForRequest}
             />
             )
           }
@@ -3769,7 +3805,7 @@ function effectiveScheduleCell(userId, nurseName, ymd, workScheduleByYear, reque
     if (nat === "PAID_TRAINING") return { kind: "leave", main: "공가", sub: typeFullLabel(approvedLeave.leaveType) };
     if (nat === "REQUIRED_TRAINING") return { kind: "leave", main: WEEKLY_REQUIRED_TRAINING_MARK, sub: typeFullLabel(approvedLeave.leaveType) };
     if (nat === "SICK_LEAVE") return { kind: "leave", main: "병가", sub: typeFullLabel(approvedLeave.leaveType) };
-    if (lt === "HALF_DAY") return { kind: "leave", main: "반차", sub: "" };
+    if (lt === "HALF_DAY") return { kind: "leave", main: halfDayMainLabel(approvedLeave), sub: "" };
     return { kind: "leave", main: "휴가", sub: typeFullLabel(approvedLeave.leaveType) };
   }
   const sub = (substituteAssignments || []).find((s) => s.substituteUserId === userId && String(s.leaveDate ?? "").slice(0, 10) === ld);
@@ -3828,7 +3864,7 @@ function effectiveWeeklyCell(
     if (leaveNature === "PAID_TRAINING") return { kind: "leave", main: "공가", sub: "" };
     if (leaveNature === "REQUIRED_TRAINING") return { kind: "leave", main: WEEKLY_REQUIRED_TRAINING_MARK, sub: "" };
     if (leaveNature === "SICK_LEAVE") return { kind: "leave", main: "병가", sub: "" };
-    if (leaveType === "HALF_DAY") return { kind: "leave", main: "반차", sub: "" };
+    if (leaveType === "HALF_DAY") return { kind: "leave", main: halfDayMainLabel(approvedLeave), sub: "" };
     return { kind: "leave", main: "휴가", sub: "" };
   }
   const offLike = isWeekendYmd(ld) || isPublicHolidayYmd(ld, holidays);
@@ -4996,6 +5032,152 @@ function buildYearlyRoster(startYm, nurseNames) {
   return { ok: false, error: `${lastErr}: 제약이 충돌해 생성하지 못했습니다.` };
 }
 
+function HalfDayDashboardSection({ requests, users, currentRole, currentUserId, onUpdateHalfDaySlot }) {
+  const adminView = isHalfDayDashboardAdminView(currentRole);
+  const halfDayRows = useMemo(
+    () =>
+      (Array.isArray(requests) ? requests : []).filter(
+        (r) => String(r.leaveType ?? "") === "HALF_DAY" && String(r.status ?? "") === "APPROVED"
+      ),
+    [requests]
+  );
+
+  const targetUsers = useMemo(() => {
+    const list = Array.isArray(users) ? users : [];
+    if (adminView) {
+      if (currentRole === "ADMIN2") return list.filter((u) => u.role === "ANESTHESIA").sort((a, b) => a.name.localeCompare(b.name, "ko"));
+      return list.filter((u) => u.role === "NURSE").sort((a, b) => a.name.localeCompare(b.name, "ko"));
+    }
+    const me = list.find((u) => u.id === currentUserId);
+    return me ? [me] : [];
+  }, [users, adminView, currentRole, currentUserId]);
+
+  const personalStatus = useMemo(() => {
+    if (adminView || !currentUserId) return null;
+    return buildHalfDayStatusForUser(halfDayRows, currentUserId);
+  }, [adminView, currentUserId, halfDayRows]);
+
+  const tableRows = useMemo(() => {
+    const out = [];
+    for (const u of targetUsers) {
+      const status = buildHalfDayStatusForUser(halfDayRows, u.id);
+      for (const rec of status.records) {
+        out.push({
+          userId: u.id,
+          userName: u.name,
+          ...rec,
+          deadlineYmd: rec.slot === "1" && !status.openCycle?.halfDay1 ? null : rec.slot === "1" ? halfDay2DeadlineYmd(rec.leaveDate) : null,
+        });
+      }
+      if (status.records.length === 0) {
+        out.push({ userId: u.id, userName: u.name, empty: true });
+      }
+    }
+    return out;
+  }, [targetUsers, halfDayRows]);
+
+  return (
+    <section className="card half-day-dashboard">
+      <h2 className="screen-title">반차 사용내역{adminView ? (currentRole === "ADMIN2" ? " (마취과)" : " (수술실)") : ""}</h2>
+      <p className="help page-lead">
+        반차1 사용 후 3개월 이내에 반차2를 사용해야 합니다. 확정 시 사용 기록에 따라 반차1·반차2가 자동 지정되며, 필요 시 수정할 수 있습니다.
+      </p>
+      {!adminView && personalStatus?.reminder?.needsReminder ? (
+        <p className="half-day-reminder-banner" role="status">
+          {halfDay2ReminderMessage(personalStatus.reminder.deadlineYmd)}
+        </p>
+      ) : null}
+      <div className="table-wrap">
+        <table className="half-day-table">
+          <thead>
+            <tr>
+              {adminView ? <th>이름</th> : null}
+              <th>휴가일</th>
+              <th>반차 구분</th>
+              <th>반차2 사용기한</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tableRows.length === 0 ? (
+              <tr>
+                <td colSpan={adminView ? 4 : 3} className="help">
+                  확정된 반차 내역이 없습니다.
+                </td>
+              </tr>
+            ) : (
+              tableRows.map((row) => {
+                if (row.empty) {
+                  return (
+                    <tr key={`empty-${row.userId}`}>
+                      {adminView ? <td>{row.userName}</td> : null}
+                      <td colSpan={3} className="help">
+                        확정된 반차 없음
+                      </td>
+                    </tr>
+                  );
+                }
+                const canEdit = canEditHalfDaySlot(currentRole, currentUserId, row.userId, users);
+                const deadline =
+                  row.slot === "1"
+                    ? (() => {
+                        const st = buildHalfDayStatusForUser(halfDayRows, row.userId);
+                        const open = st.openCycle;
+                        if (open && String(open.halfDay1?.id ?? "") === String(row.requestId)) {
+                          return open.deadlineYmd;
+                        }
+                        return halfDay2DeadlineYmd(row.leaveDate);
+                      })()
+                    : "-";
+                return (
+                  <tr key={row.requestId}>
+                    {adminView ? <td>{row.userName}</td> : null}
+                    <td>{formatLeaveDateShort(row.leaveDate)}</td>
+                    <td>
+                      {canEdit ? (
+                        <select
+                          className="half-day-slot-select"
+                          value={row.slot || "1"}
+                          onChange={(e) => void onUpdateHalfDaySlot?.(row.requestId, e.target.value)}
+                          aria-label={`${row.userName ?? "본인"} 반차 구분`}
+                        >
+                          <option value="1">반차1</option>
+                          <option value="2">반차2</option>
+                        </select>
+                      ) : (
+                        row.slotLabel || halfDaySlotLabel(row.slot) || "-"
+                      )}
+                    </td>
+                    <td>{row.slot === "1" ? formatLeaveDateShort(deadline) : "-"}</td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+      {adminView ? (
+        <div className="half-day-admin-reminders">
+          <h3 className="half-day-admin-reminders__title">반차2 사용기한 임박</h3>
+          <ul className="half-day-admin-reminders__list">
+            {targetUsers.map((u) => {
+              const st = buildHalfDayStatusForUser(halfDayRows, u.id);
+              if (!st.reminder?.needsReminder) return null;
+              return (
+                <li key={u.id}>
+                  <strong>{u.name}</strong>: {halfDay2ReminderMessage(st.reminder.deadlineYmd)}
+                </li>
+              );
+            })}
+          </ul>
+          {targetUsers.every((u) => !buildHalfDayStatusForUser(halfDayRows, u.id).reminder?.needsReminder) ? (
+            <p className="help">임박한 반차2 사용기한이 없습니다.</p>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function DashboardPage({
   dashboard,
   goldkeys,
@@ -5023,7 +5205,9 @@ function DashboardPage({
   selectRequest,
   rejectRequest,
   saveSubstituteForApprovedRequest,
+  onUpdateHalfDaySlot,
 }) {
+  const location = useLocation();
   const [dashTab, setDashTab] = useState("schedule");
   const [scheduleMsg, setScheduleMsg] = useState("");
   const [generatorStartYm, setGeneratorStartYm] = useState(() => {
@@ -5036,6 +5220,14 @@ function DashboardPage({
   const [ladderResultModal, setLadderResultModal] = useState(null);
   const [schedulePlanKey, setSchedulePlanKey] = useState("base_2026");
   const [scheduleYearFilter, setScheduleYearFilter] = useState("all");
+
+  useEffect(() => {
+    const hashQuery = String(location.hash ?? "").split("?")[1] ?? "";
+    const params = new URLSearchParams(hashQuery || location.search || "");
+    if (params.get("halfDay") === "1" && canViewHalfDayDashboardTab(currentRole)) {
+      setDashTab("half-day");
+    }
+  }, [location, currentRole]);
 
   const baseScheduleYear = parseBaseSchedulePlanKey(schedulePlanKey);
   const activeBaseTemplate = useMemo(
@@ -5274,6 +5466,17 @@ function DashboardPage({
               골드키
             </button>
           ) : null}
+          {canViewHalfDayDashboardTab(currentRole) ? (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={dashTab === "half-day"}
+              className={`segmented-btn${dashTab === "half-day" ? " segmented-btn--active" : ""}`}
+              onClick={() => setDashTab("half-day")}
+            >
+              반차내역
+            </button>
+          ) : null}
         </div>
       ) : (
         <div className="segmented-wrap segmented-wrap--multi" role="tablist" aria-label="현황 구분">
@@ -5304,6 +5507,17 @@ function DashboardPage({
           >
             골드키
           </button>
+          {canViewHalfDayDashboardTab(currentRole) ? (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={dashTab === "half-day"}
+              className={`segmented-btn${dashTab === "half-day" ? " segmented-btn--active" : ""}`}
+              onClick={() => setDashTab("half-day")}
+            >
+              반차내역
+            </button>
+          ) : null}
           {isAdmin ? (
             <button
               type="button"
@@ -5376,6 +5590,15 @@ function DashboardPage({
             </table>
           </div>
         </section>
+      ) : null}
+      {dashTab === "half-day" && canViewHalfDayDashboardTab(currentRole) ? (
+        <HalfDayDashboardSection
+          requests={requests}
+          users={users}
+          currentRole={currentRole}
+          currentUserId={currentUserId}
+          onUpdateHalfDaySlot={onUpdateHalfDaySlot}
+        />
       ) : null}
       {isAdmin && !isScheduleOnlyDashboardRole(currentRole) && dashTab === "ladder-results" ? (
         <section className="card">
@@ -8683,6 +8906,7 @@ function mapRequestRow(r) {
     requestedAt: r.requested_at ?? r.requestedAt,
     memo: r.memo ?? "",
     cancelLocked: Boolean(r.cancel_locked ?? r.cancelLocked),
+    halfDaySlot: String(r.half_day_slot ?? r.halfDaySlot ?? "").trim() || null,
   };
 }
 
@@ -8805,12 +9029,19 @@ function buildMonthMatrix(
   return cells;
 }
 
-function typeFullLabel(leaveType) {
+function halfDayMainLabel(requestOrSlot) {
+  if (requestOrSlot && typeof requestOrSlot === "object") {
+    return halfDaySlotLabel(requestOrSlot.halfDaySlot) || "반차";
+  }
+  return halfDaySlotLabel(requestOrSlot) || "반차";
+}
+
+function typeFullLabel(leaveType, halfDaySlot = null) {
   if (leaveType === "GOLDKEY") return "골드키";
   if (leaveType === "CHIEF_LEAVE") return "휴가";
   if (leaveType === "GENERAL") return "일반휴가";
   if (leaveType === "GENERAL_PRIORITY") return "일반휴가-우선순위";
-  if (leaveType === "HALF_DAY") return "반차";
+  if (leaveType === "HALF_DAY") return halfDayMainLabel(halfDaySlot);
   return "일반휴가-후순위";
 }
 

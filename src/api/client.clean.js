@@ -118,6 +118,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  patchHalfDaySlot: (id, payload) =>
+    requestJson(`/requests/${encodeURIComponent(id)}/half-day-slot`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   cancelRequest: (id, payload) =>
     requestJson(`/requests/${id}/cancel`, { method: "POST", body: JSON.stringify(payload) }),
   uncancelRequest: (id, payload) =>

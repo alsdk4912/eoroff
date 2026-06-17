@@ -5420,3 +5420,46 @@ tr.request-cancelled-row td button {
     font-size: 11px;
   }
 }
+
+.half-day-dashboard .half-day-reminder-banner {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  color: #9a3412;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.half-day-table th,
+.half-day-table td {
+  white-space: nowrap;
+}
+
+.half-day-slot-select {
+  min-width: 88px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+}
+
+.half-day-admin-reminders {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.half-day-admin-reminders__title {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.half-day-admin-reminders__list {
+  margin: 0;
+  padding-left: 18px;
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.5;
+}

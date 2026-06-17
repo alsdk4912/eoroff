@@ -10,6 +10,7 @@ import {
   buildFullAutoHolidayDutyPlansForYears,
   OR_DUTY_RULES_EFFECTIVE_FROM,
 } from "../src/utils/holidayDutyPlan.clean.js";
+import { computeAutoHalfDaySlot } from "../src/utils/halfDayLeave.clean.js";
 
 const EMPLOYEE_NO_BY_NAME = {
   양현아: "0534411",
@@ -441,7 +442,8 @@ export async function initDb() {
   await ensureRequestsLeaveNatureColumn();
   await ensureRequestsNegotiationOrderColumn();
   await ensureRequestsNegotiationOrderLockedColumn();
-  await ensureHolidayDutiesAnesthesiaColumn();
+  await ensureRequestsHalfDaySlotColumn();
+  await ensureHalfDayReminderLogTable();
   await ensureHolidayDutyHistoryTable();
   await ensureEmergencySurgeryRecordsTable();
   await ensureCancellationsDeductionColumns();
@@ -470,6 +472,7 @@ export async function initDb() {
   await backfillLongTermGoldkeyCancellationExemptions();
   await ensureGoldkeyDefaults();
   await backfillGeneralNormalNegotiationOrderFromAppliedOrder();
+  await backfillHalfDaySlots();
   return client;
 }
 
@@ -1352,3 +1355,146 @@ export async function resetLeaveDataToDefaults() {
     }
   });
 }
+
+async function ensureRequestsHalfDaySlotColumn() {
+  const cols = await queryAll("PRAGMA table_info(requests)");
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("half_day_slot")) {
+    await execute("ALTER TABLE requests ADD COLUMN half_day_slot TEXT");
+  }
+}
+
+async function ensureHalfDayReminderLogTable() {
+  await execute(
+    `CREATE TABLE IF NOT EXISTS half_day_reminder_log (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      half_day1_request_id TEXT NOT NULL,
+      reminder_ymd TEXT NOT NULL,
+      sent_at TEXT NOT NULL
+    )`
+  );
+}
+
+/** 기존 확정 반차에 반차1/반차2 슬롯 백필 */
+async function backfillHalfDaySlots() {
+  const migrationId = "half_day_slot_backfill_v1";
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
+  if (done) return;
+
+  const rows = await queryAll(
+    `SELECT id, user_id, leave_date, leave_type, status, half_day_slot, requested_at
+     FROM requests
+     WHERE leave_type = 'HALF_DAY' AND status = 'APPROVED' AND deleted_at IS NULL
+     ORDER BY user_id ASC, leave_date ASC, requested_at ASC`
+  );
+
+  const byUser = new Map();
+  for (const r of rows) {
+    const uid = String(r.user_id ?? "");
+    if (!byUser.has(uid)) byUser.set(uid, []);
+    byUser.get(uid).push(r);
+  }
+
+  for (const [, userRows] of byUser) {
+    const assigned = [];
+    for (const r of userRows) {
+      if (String(r.half_day_slot ?? "").trim()) {
+        assigned.push({
+          id: r.id,
+          userId: r.user_id,
+          leaveDate: String(r.leave_date ?? "").slice(0, 10),
+          leaveType: "HALF_DAY",
+          status: "APPROVED",
+          halfDaySlot: String(r.half_day_slot),
+        });
+        continue;
+      }
+      const slot = computeAutoHalfDaySlot(assigned, String(r.user_id ?? ""), String(r.leave_date ?? "").slice(0, 10));
+      await execute("UPDATE requests SET half_day_slot = ? WHERE id = ?", slot, r.id);
+      assigned.push({
+        id: r.id,
+        userId: r.user_id,
+        leaveDate: String(r.leave_date ?? "").slice(0, 10),
+        leaveType: "HALF_DAY",
+        status: "APPROVED",
+        halfDaySlot: slot,
+      });
+    }
+  }
+
+  await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+  console.log("[db] half_day_slot_backfill_v1 applied");
+}
+
+async function ensureRequestsHalfDaySlotColumn() {
+  const cols = await queryAll("PRAGMA table_info(requests)");
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("half_day_slot")) {
+    await execute("ALTER TABLE requests ADD COLUMN half_day_slot TEXT");
+  }
+}
+
+async function ensureHalfDayReminderLogTable() {
+  await execute(
+    `CREATE TABLE IF NOT EXISTS half_day_reminder_log (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      half_day1_request_id TEXT NOT NULL,
+      reminder_ymd TEXT NOT NULL,
+      sent_at TEXT NOT NULL
+    )`
+  );
+}
+
+/** 기존 확정 반차에 반차1/반차2 슬롯 백필 */
+async function backfillHalfDaySlots() {
+  const migrationId = "half_day_slot_backfill_v1";
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
+  if (done) return;
+
+  const rows = await queryAll(
+    `SELECT id, user_id, leave_date, leave_type, status, half_day_slot, requested_at
+     FROM requests
+     WHERE leave_type = 'HALF_DAY' AND status = 'APPROVED' AND deleted_at IS NULL
+     ORDER BY user_id ASC, leave_date ASC, requested_at ASC`
+  );
+
+  const byUser = new Map();
+  for (const r of rows) {
+    const uid = String(r.user_id ?? "");
+    if (!byUser.has(uid)) byUser.set(uid, []);
+    byUser.get(uid).push(r);
+  }
+
+  for (const [, userRows] of byUser) {
+    const assigned = [];
+    for (const r of userRows) {
+      if (String(r.half_day_slot ?? "").trim()) {
+        assigned.push({
+          id: r.id,
+          userId: r.user_id,
+          leaveDate: String(r.leave_date ?? "").slice(0, 10),
+          leaveType: "HALF_DAY",
+          status: "APPROVED",
+          halfDaySlot: String(r.half_day_slot),
+        });
+        continue;
+      }
+      const slot = computeAutoHalfDaySlot(assigned, String(r.user_id ?? ""), String(r.leave_date ?? "").slice(0, 10));
+      await execute("UPDATE requests SET half_day_slot = ? WHERE id = ?", slot, r.id);
+      assigned.push({
+        id: r.id,
+        userId: r.user_id,
+        leaveDate: String(r.leave_date ?? "").slice(0, 10),
+        leaveType: "HALF_DAY",
+        status: "APPROVED",
+        halfDaySlot: slot,
+      });
+    }
+  }
+
+  await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+  console.log("[db] half_day_slot_backfill_v1 applied");
+}
+
