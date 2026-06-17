@@ -1,4 +1,4 @@
-/** 반차2 사용 기한: 반차1 휴가일 기준 3개월 */
+/** 반차2 권장 사용 기한: 반차1 휴가일 기준 3개월 (자동 지정과 무관, 알림·안내용) */
 export const HALF_DAY2_DEADLINE_MONTHS = 3;
 
 /** 반차2 기한 푸시 알림 시작: 기한 30일 전부터 */
@@ -85,9 +85,8 @@ export function hasMatchingHalfDay2(halfDay1Row, allRows) {
   });
 }
 
-/** 미사용 반차2가 있는 열린 사이클의 반차1 (가장 최근) */
-export function findOpenHalfDay1Cycle(halfDayRows, userId, nowYmd = null) {
-  const today = nowYmd ?? toYmdFromDate(new Date());
+/** 미사용 반차2가 있는 열린 사이클의 반차1 (가장 최근, 기한 경과 여부 무관) */
+export function findOpenHalfDay1Cycle(halfDayRows, userId) {
   const userRows = [...halfDayRows]
     .filter((r) => rowUserId(r) === userId && isApprovedHalfDayRow(r))
     .sort((a, b) => compareYmd(rowLeaveDate(a), rowLeaveDate(b)));
@@ -95,9 +94,9 @@ export function findOpenHalfDay1Cycle(halfDayRows, userId, nowYmd = null) {
   const hd1List = userRows.filter((r) => rowHalfDaySlot(r) === "1");
   for (let i = hd1List.length - 1; i >= 0; i -= 1) {
     const hd1 = hd1List[i];
-    const deadline = halfDay2DeadlineYmd(rowLeaveDate(hd1));
-    if (compareYmd(today, deadline) > 0) continue;
-    if (!hasMatchingHalfDay2(hd1, userRows)) return { halfDay1: hd1, deadlineYmd: deadline };
+    if (!hasMatchingHalfDay2(hd1, userRows)) {
+      return { halfDay1: hd1, deadlineYmd: halfDay2DeadlineYmd(rowLeaveDate(hd1)) };
+    }
   }
   return null;
 }
@@ -106,16 +105,16 @@ function toYmdFromDate(d) {
   return toYmd({ year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() });
 }
 
-/** 신규 확정 반차에 자동 부여할 슬롯 ('1' | '2') */
-export function computeAutoHalfDaySlot(existingApprovedRows, userId, newLeaveDate, excludeRequestId = null) {
+/** 신규 확정 반차에 자동 부여할 슬롯 ('1' | '2') — 반차1 다음은 기한과 관계없이 반차2 */
+export function computeAutoHalfDaySlot(existingApprovedRows, userId, _newLeaveDate = null, excludeRequestId = null) {
   const userRows = existingApprovedRows.filter(
     (r) =>
       rowUserId(r) === userId &&
       isApprovedHalfDayRow(r) &&
       (!excludeRequestId || rowId(r) !== excludeRequestId)
   );
-  const open = findOpenHalfDay1Cycle(userRows, userId, newLeaveDate);
-  if (open && compareYmd(newLeaveDate, open.deadlineYmd) <= 0) return "2";
+  const open = findOpenHalfDay1Cycle(userRows, userId);
+  if (open) return "2";
   return "1";
 }
 
@@ -134,7 +133,7 @@ export function buildHalfDayStatusForUser(halfDayRows, userId, nowYmd = null) {
     requestedAt: r.requestedAt ?? r.requested_at ?? "",
   }));
 
-  const open = findOpenHalfDay1Cycle(userRows, userId, today);
+  const open = findOpenHalfDay1Cycle(userRows, userId);
   let reminder = null;
   if (open) {
     const daysLeft = daysBetweenYmd(today, open.deadlineYmd);

@@ -5080,7 +5080,7 @@ function HalfDayDashboardSection({ requests, users, currentRole, currentUserId, 
     <section className="card half-day-dashboard">
       <h2 className="screen-title">반차 사용내역{adminView ? (currentRole === "ADMIN2" ? " (마취과)" : " (수술실)") : ""}</h2>
       <p className="help page-lead">
-        반차1 사용 후 3개월 이내에 반차2를 사용해야 합니다. 확정 시 사용 기록에 따라 반차1·반차2가 자동 지정되며, 필요 시 수정할 수 있습니다.
+        반차1 다음 확정 반차는 반차2로 자동 지정됩니다. 반차2는 반차1 사용 후 3개월 이내 사용을 권장하며, 필요 시 구분을 수정할 수 있습니다.
       </p>
       {!adminView && personalStatus?.reminder?.needsReminder ? (
         <p className="half-day-reminder-banner" role="status">
