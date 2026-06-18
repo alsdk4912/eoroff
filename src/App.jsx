@@ -79,7 +79,7 @@ import { buildFullAutoHolidayDutyPlansForYears } from "./utils/holidayDutyPlan.c
 import {
   buildHalfDayStatusForUser,
   halfDaySlotLabel,
-  halfDay2DeadlineYmd,
+  halfDay2EffectiveDeadlineYmd,
   halfDay2ReminderMessage,
 } from "./utils/halfDayLeave.clean.js";
 import {
@@ -1866,7 +1866,7 @@ function App() {
     if (!target || target.leaveType !== "HALF_DAY" || target.status !== "APPROVED") return;
     const slot = String(nextSlot ?? "").trim();
     if (slot !== "1" && slot !== "2") return;
-    if (!canEditHalfDaySlot(viewerRole, auth.userId, target.userId, users)) return;
+    if (!canEditHalfDaySlot(viewerRole)) return;
     if (serverMode) {
       try {
         await api.patchHalfDaySlot(requestId, { actorUserId: auth.userId, halfDaySlot: slot });
@@ -5071,7 +5071,7 @@ function HalfDayDashboardSection({ requests, users, currentRole, currentUserId, 
           userId: u.id,
           userName: u.name,
           ...rec,
-          deadlineYmd: rec.slot === "1" && !status.openCycle?.halfDay1 ? null : rec.slot === "1" ? halfDay2DeadlineYmd(rec.leaveDate) : null,
+          deadlineYmd: rec.slot === "1" ? halfDay2EffectiveDeadlineYmd(rec.leaveDate) : null,
         });
       }
       if (status.records.length === 0) {
@@ -5088,7 +5088,8 @@ function HalfDayDashboardSection({ requests, users, currentRole, currentUserId, 
         {adminView ? (currentRole === "ADMIN2" ? " (수술실·마취과)" : " (수술실)") : ""}
       </h2>
       <p className="help page-lead">
-        반차1 다음 확정 반차는 반차2로 자동 지정됩니다. 반차2는 반차1 사용 후 3개월 이내 사용을 권장하며, 필요 시 구분을 수정할 수 있습니다.
+        반차 분기는 매년 12월 1일 ~ 익년 11월 30일입니다. 11월 말까지 반차2를 쓰지 않으면 미사용 반차는 소멸되고, 12월부터 새 분기가 시작됩니다.
+        반차1 다음 확정 반차는 반차2로 자동 지정되며, 반차 구분 수정은 부서파트장만 가능합니다.
       </p>
       {!adminView && personalStatus?.reminder?.needsReminder ? (
         <p className={`half-day-reminder-banner${personalStatus.reminder.isOverdue ? " half-day-reminder-banner--overdue" : ""}`} role="status">
@@ -5124,7 +5125,7 @@ function HalfDayDashboardSection({ requests, users, currentRole, currentUserId, 
                     </tr>
                   );
                 }
-                const canEdit = canEditHalfDaySlot(currentRole, currentUserId, row.userId, users);
+                const canEdit = canEditHalfDaySlot(currentRole);
                 const deadline =
                   row.slot === "1"
                     ? (() => {
@@ -5133,7 +5134,7 @@ function HalfDayDashboardSection({ requests, users, currentRole, currentUserId, 
                         if (open && String(open.halfDay1?.id ?? "") === String(row.requestId)) {
                           return open.deadlineYmd;
                         }
-                        return halfDay2DeadlineYmd(row.leaveDate);
+                        return halfDay2EffectiveDeadlineYmd(row.leaveDate);
                       })()
                     : "-";
                 return (

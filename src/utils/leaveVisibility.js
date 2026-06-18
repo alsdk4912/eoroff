@@ -519,13 +519,8 @@ export function isHalfDayDashboardAdminView(role) {
   return r === "ADMIN" || r === "DEPT_HEAD" || r === "ADMIN2";
 }
 
-export function canEditHalfDaySlot(viewerRole, viewerUserId, targetUserId, users) {
-  if (String(viewerUserId ?? "") === String(targetUserId ?? "")) return true;
-  const target = (Array.isArray(users) ? users : []).find((u) => u.id === targetUserId);
-  const targetRole = String(target?.role ?? "").trim();
-  if (targetRole === "ANESTHESIA" && isAnesthesiaLeaveAdminRole(viewerRole)) return true;
-  if (targetRole === "NURSE" && isOrLeaveAdminRole(viewerRole)) return true;
-  return false;
+export function canEditHalfDaySlot(viewerRole) {
+  return String(viewerRole ?? "").trim() === "DEPT_HEAD";
 }
 
 export function canApplyLeaveRole(role) {

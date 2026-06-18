@@ -2635,22 +2635,13 @@ async function handleLeaveNatureUpdate(req, res) {
 app.patch("/api/requests/:id/leave-nature", handleLeaveNatureUpdate);
 app.post("/api/requests/:id/leave-nature", handleLeaveNatureUpdate);
 
-async function assertActorCanEditHalfDaySlot(actorUserId, leaveUserId) {
-  const actor = String(actorUserId ?? "").trim();
-  const owner = String(leaveUserId ?? "").trim();
-  if (!actor || !owner) {
-    const err = new Error("권한이 없습니다.");
+async function assertActorCanEditHalfDaySlot(actorUserId) {
+  const actorRole = await userRoleById(actorUserId);
+  if (actorRole !== "DEPT_HEAD") {
+    const err = new Error("반차 구분 변경은 부서파트장(진기숙)만 할 수 있습니다.");
     err.statusCode = 403;
     throw err;
   }
-  if (actor === owner) return;
-  const actorRole = await userRoleById(actor);
-  const leaveRole = await userRoleById(owner);
-  if (leaveRole === "ANESTHESIA" && actorRole === "ADMIN2") return;
-  if (leaveRole === "NURSE" && (actorRole === "ADMIN" || actorRole === "DEPT_HEAD")) return;
-  const err = new Error("반차 구분을 변경할 권한이 없습니다.");
-  err.statusCode = 403;
-  throw err;
 }
 
 async function handleHalfDaySlotUpdate(req, res) {
@@ -2679,7 +2670,7 @@ async function handleHalfDaySlotUpdate(req, res) {
       return res.status(409).json({ error: "확정된 반차만 구분을 변경할 수 있습니다." });
     }
     try {
-      await assertActorCanEditHalfDaySlot(actorUserId, row.user_id);
+      await assertActorCanEditHalfDaySlot(actorUserId);
     } catch (authErr) {
       return res.status(authErr.statusCode || 403).json({ error: String(authErr?.message || authErr) });
     }

@@ -23,6 +23,35 @@ function toYmd({ year, month, day }) {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
+/** 반차 분기: 매년 12월 1일 ~ 익년 11월 30일 */
+export function halfDayQuarterStartYmd(ymd) {
+  const p = parseYmd(ymd);
+  if (!p) return "";
+  if (p.month >= 12) return `${p.year}-12-01`;
+  return `${p.year - 1}-12-01`;
+}
+
+export function halfDayQuarterEndYmd(ymd) {
+  const start = parseYmd(halfDayQuarterStartYmd(ymd));
+  if (!start) return "";
+  return `${start.year + 1}-11-30`;
+}
+
+export function halfDayQuarterLabel(ymd) {
+  const start = parseYmd(halfDayQuarterStartYmd(ymd));
+  if (!start) return "";
+  return `${start.year}.12 ~ ${start.year + 1}.11`;
+}
+
+function isSameHalfDayQuarter(a, b) {
+  return halfDayQuarterStartYmd(a) === halfDayQuarterStartYmd(b);
+}
+
+function filterRowsInQuarter(rows, referenceYmd) {
+  const qStart = halfDayQuarterStartYmd(referenceYmd);
+  return rows.filter((r) => halfDayQuarterStartYmd(rowLeaveDate(r)) === qStart);
+}
+
 /** YYYY-MM-DD에 n개월 더함 (말일 보정) */
 export function addMonthsToYmd(ymd, months) {
   const p = parseYmd(ymd);
@@ -33,6 +62,14 @@ export function addMonthsToYmd(ymd, months) {
 
 export function halfDay2DeadlineYmd(halfDay1LeaveDate) {
   return addMonthsToYmd(halfDay1LeaveDate, HALF_DAY2_DEADLINE_MONTHS);
+}
+
+/** 반차2 권장 기한과 분기 말(11/30) 중 이른 날 */
+export function halfDay2EffectiveDeadlineYmd(halfDay1LeaveDate) {
+  const rec = halfDay2DeadlineYmd(halfDay1LeaveDate);
+  const qEnd = halfDayQuarterEndYmd(halfDay1LeaveDate);
+  if (!rec || !qEnd) return rec || qEnd;
+  return compareYmd(rec, qEnd) <= 0 ? rec : qEnd;
 }
 
 function compareYmd(a, b) {
@@ -85,17 +122,25 @@ export function hasMatchingHalfDay2(halfDay1Row, allRows) {
   });
 }
 
-/** 미사용 반차2가 있는 열린 사이클의 반차1 (가장 최근, 기한 경과 여부 무관) */
-export function findOpenHalfDay1Cycle(halfDayRows, userId) {
-  const userRows = [...halfDayRows]
-    .filter((r) => rowUserId(r) === userId && isApprovedHalfDayRow(r))
-    .sort((a, b) => compareYmd(rowLeaveDate(a), rowLeaveDate(b)));
+/** 미사용 반차2가 있는 열린 사이클의 반차1 (동일 분기·11/30 정산 전) */
+export function findOpenHalfDay1Cycle(halfDayRows, userId, asOfYmd = null) {
+  const today = asOfYmd ?? toYmdFromDate(new Date());
+  const userRows = filterRowsInQuarter(
+    [...halfDayRows].filter((r) => rowUserId(r) === userId && isApprovedHalfDayRow(r)),
+    today
+  ).sort((a, b) => compareYmd(rowLeaveDate(a), rowLeaveDate(b)));
 
   const hd1List = userRows.filter((r) => rowHalfDaySlot(r) === "1");
   for (let i = hd1List.length - 1; i >= 0; i -= 1) {
     const hd1 = hd1List[i];
+    const quarterEndYmd = halfDayQuarterEndYmd(rowLeaveDate(hd1));
+    if (compareYmd(today, quarterEndYmd) > 0) continue;
     if (!hasMatchingHalfDay2(hd1, userRows)) {
-      return { halfDay1: hd1, deadlineYmd: halfDay2DeadlineYmd(rowLeaveDate(hd1)) };
+      return {
+        halfDay1: hd1,
+        deadlineYmd: halfDay2EffectiveDeadlineYmd(rowLeaveDate(hd1)),
+        quarterEndYmd,
+      };
     }
   }
   return null;
@@ -105,15 +150,16 @@ function toYmdFromDate(d) {
   return toYmd({ year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() });
 }
 
-/** 신규 확정 반차에 자동 부여할 슬롯 ('1' | '2') — 반차1 다음은 기한과 관계없이 반차2 */
-export function computeAutoHalfDaySlot(existingApprovedRows, userId, _newLeaveDate = null, excludeRequestId = null) {
+/** 신규 확정 반차에 자동 부여할 슬롯 ('1' | '2') — 동일 분기 내 반차1 다음은 반차2 */
+export function computeAutoHalfDaySlot(existingApprovedRows, userId, newLeaveDate = null, excludeRequestId = null) {
+  const refDate = String(newLeaveDate ?? "").trim().slice(0, 10) || toYmdFromDate(new Date());
   const userRows = existingApprovedRows.filter(
     (r) =>
       rowUserId(r) === userId &&
       isApprovedHalfDayRow(r) &&
       (!excludeRequestId || rowId(r) !== excludeRequestId)
   );
-  const open = findOpenHalfDay1Cycle(userRows, userId);
+  const open = findOpenHalfDay1Cycle(userRows, userId, refDate);
   if (open) return "2";
   return "1";
 }
@@ -131,22 +177,24 @@ export function buildHalfDayStatusForUser(halfDayRows, userId, nowYmd = null) {
     slot: rowHalfDaySlot(r),
     slotLabel: halfDaySlotLabel(rowHalfDaySlot(r)),
     requestedAt: r.requestedAt ?? r.requested_at ?? "",
+    quarterLabel: halfDayQuarterLabel(rowLeaveDate(r)),
   }));
 
-  const open = findOpenHalfDay1Cycle(userRows, userId);
+  const open = findOpenHalfDay1Cycle(userRows, userId, today);
   let reminder = null;
   if (open) {
     const daysLeft = daysBetweenYmd(today, open.deadlineYmd);
     reminder = {
       halfDay1LeaveDate: rowLeaveDate(open.halfDay1),
       deadlineYmd: open.deadlineYmd,
+      quarterEndYmd: open.quarterEndYmd,
       daysLeft,
       isOverdue: daysLeft <= 0,
       needsReminder: daysLeft <= HALF_DAY2_REMINDER_DAYS_BEFORE,
     };
   }
 
-  return { records, openCycle: open, reminder };
+  return { records, openCycle: open, reminder, currentQuarterLabel: halfDayQuarterLabel(today) };
 }
 
 export function daysBetweenYmd(fromYmd, toYmd) {
@@ -182,3 +230,5 @@ export function validateHalfDaySlotChange(_allRows, _requestId, _userId, _leaveD
   if (!HALF_DAY_SLOT_VALUES.has(slot)) return "반차1 또는 반차2만 선택할 수 있습니다.";
   return "";
 }
+
+export { isSameHalfDayQuarter };
