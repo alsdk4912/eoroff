@@ -3444,6 +3444,84 @@ app.post("/api/admin/restore-sql", (req, res) => {
   res.json({ ok: true, restoredStatements: 0 });
 });
 
+async function runHalfDay2ReminderJob({ forceUserIds = null } = {}) {
+  const todayYmd = kstYmdPlusDays(0, new Date());
+  const halfDayRows = await queryAll(
+    `SELECT id, user_id, leave_date, leave_type, status, half_day_slot, requested_at
+     FROM requests
+     WHERE leave_type = 'HALF_DAY' AND status = 'APPROVED' AND deleted_at IS NULL`
+  );
+  const mapped = halfDayRows.map((r) => ({
+    id: r.id,
+    userId: r.user_id,
+    leaveDate: String(r.leave_date ?? "").slice(0, 10),
+    leaveType: r.leave_type,
+    status: r.status,
+    halfDaySlot: r.half_day_slot,
+    requestedAt: r.requested_at,
+  }));
+  const forceSet = forceUserIds ? new Set(forceUserIds.map((id) => String(id).trim()).filter(Boolean)) : null;
+  const targetUsers = await queryAll(`SELECT id, role FROM users WHERE role IN ('NURSE', 'ANESTHESIA')`);
+  let sent = 0;
+  for (const u of targetUsers) {
+    const userId = String(u.id ?? "").trim();
+    if (!userId) continue;
+    if (forceSet && !forceSet.has(userId)) continue;
+    const status = buildHalfDayStatusForUser(mapped, userId, todayYmd);
+    if (!status.reminder?.needsReminder) continue;
+    const hd1Id = String(status.openCycle?.halfDay1?.id ?? "").trim();
+    if (!hd1Id) continue;
+    const already = await queryOne(
+      "SELECT id FROM half_day_reminder_log WHERE user_id = ? AND half_day1_request_id = ? AND reminder_ymd = ?",
+      userId,
+      hd1Id,
+      todayYmd
+    );
+    if (already) continue;
+    const body = halfDay2ReminderMessage(status.reminder.deadlineYmd, status.reminder.daysLeft);
+    await execute(
+      "INSERT INTO half_day_reminder_log (id, user_id, half_day1_request_id, reminder_ymd, sent_at) VALUES (?, ?, ?, ?, ?)",
+      `hdr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      userId,
+      hd1Id,
+      todayYmd,
+      new Date().toISOString()
+    );
+    await createNotificationsForUserIds({
+      userIds: [userId],
+      type: "HALF_DAY2_DEADLINE",
+      message: body,
+      targetDate: status.reminder.deadlineYmd,
+      leaveRequestId: hd1Id,
+    });
+    await sendPushToUserIds({
+      userIds: [userId],
+      title: "반차 알림",
+      body,
+      url: "#/dashboard?halfDay=1",
+    });
+    sent += 1;
+  }
+  return { todayYmd, sent };
+}
+
+async function ensureHalfDaySeedPushReminders() {
+  const migrationId = "half_day_seed_push_jang_son_v1";
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
+  if (done) return;
+  const names = ["장성필", "손다솜"];
+  const userIds = [];
+  for (const name of names) {
+    const row = await queryOne("SELECT id FROM users WHERE name = ? LIMIT 1", name);
+    if (row?.id) userIds.push(String(row.id));
+  }
+  if (userIds.length) {
+    const result = await runHalfDay2ReminderJob({ forceUserIds: userIds });
+    console.log(`[half-day-reminder] seed push sent=${result.sent} (${userIds.join(", ")})`);
+  }
+  await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+}
+
 async function main() {
   await initDb();
   try {
@@ -3457,6 +3535,11 @@ async function main() {
     await reconcileGoldkeyUsageByPolicy(new Date().toISOString());
   } catch (e) {
     console.error("[goldkeys] startup reconcile failed", e);
+  }
+  try {
+    await ensureHalfDaySeedPushReminders();
+  } catch (e) {
+    console.error("[half-day-reminder] seed push failed", e);
   }
   cron.schedule(
     "1 0 9 * * *",
@@ -3519,62 +3602,8 @@ async function main() {
     "5 0 9 * * *",
     async () => {
       try {
-        const todayYmd = kstYmdPlusDays(0, new Date());
-        const halfDayRows = await queryAll(
-          `SELECT id, user_id, leave_date, leave_type, status, half_day_slot, requested_at
-           FROM requests
-           WHERE leave_type = 'HALF_DAY' AND status = 'APPROVED' AND deleted_at IS NULL`
-        );
-        const mapped = halfDayRows.map((r) => ({
-          id: r.id,
-          userId: r.user_id,
-          leaveDate: String(r.leave_date ?? "").slice(0, 10),
-          leaveType: r.leave_type,
-          status: r.status,
-          halfDaySlot: r.half_day_slot,
-          requestedAt: r.requested_at,
-        }));
-        const targetUsers = await queryAll(
-          `SELECT id, role FROM users WHERE role IN ('NURSE', 'ANESTHESIA')`
-        );
-        for (const u of targetUsers) {
-          const userId = String(u.id ?? "").trim();
-          if (!userId) continue;
-          const status = buildHalfDayStatusForUser(mapped, userId, todayYmd);
-          if (!status.reminder?.needsReminder) continue;
-          const hd1Id = String(status.openCycle?.halfDay1?.id ?? status.openCycle?.halfDay1?.requestId ?? "").trim();
-          if (!hd1Id) continue;
-          const already = await queryOne(
-            "SELECT id FROM half_day_reminder_log WHERE user_id = ? AND half_day1_request_id = ? AND reminder_ymd = ?",
-            userId,
-            hd1Id,
-            todayYmd
-          );
-          if (already) continue;
-          const body = halfDay2ReminderMessage(status.reminder.deadlineYmd);
-          await execute(
-            "INSERT INTO half_day_reminder_log (id, user_id, half_day1_request_id, reminder_ymd, sent_at) VALUES (?, ?, ?, ?, ?)",
-            `hdr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-            userId,
-            hd1Id,
-            todayYmd,
-            new Date().toISOString()
-          );
-          await createNotificationsForUserIds({
-            userIds: [userId],
-            type: "HALF_DAY2_DEADLINE",
-            message: body,
-            targetDate: status.reminder.deadlineYmd,
-            leaveRequestId: hd1Id,
-          });
-          await sendPushToUserIds({
-            userIds: [userId],
-            title: "반차 알림",
-            body,
-            url: "#/dashboard?halfDay=1",
-          });
-        }
-        console.log(`[half-day-reminder] checked ${todayYmd}`);
+        await runHalfDay2ReminderJob();
+        console.log(`[half-day-reminder] daily job done`);
       } catch (err) {
         console.error("[half-day-reminder] failed", err);
       }

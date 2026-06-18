@@ -5046,7 +5046,11 @@ function HalfDayDashboardSection({ requests, users, currentRole, currentUserId, 
   const targetUsers = useMemo(() => {
     const list = Array.isArray(users) ? users : [];
     if (adminView) {
-      if (currentRole === "ADMIN2") return list.filter((u) => u.role === "ANESTHESIA").sort((a, b) => a.name.localeCompare(b.name, "ko"));
+      if (currentRole === "ADMIN2") {
+        return list
+          .filter((u) => u.role === "NURSE" || u.role === "ANESTHESIA")
+          .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+      }
       return list.filter((u) => u.role === "NURSE").sort((a, b) => a.name.localeCompare(b.name, "ko"));
     }
     const me = list.find((u) => u.id === currentUserId);
@@ -5079,13 +5083,16 @@ function HalfDayDashboardSection({ requests, users, currentRole, currentUserId, 
 
   return (
     <section className="card half-day-dashboard">
-      <h2 className="screen-title">반차 사용내역{adminView ? (currentRole === "ADMIN2" ? " (마취과)" : " (수술실)") : ""}</h2>
+      <h2 className="screen-title">
+        반차 사용내역
+        {adminView ? (currentRole === "ADMIN2" ? " (수술실·마취과)" : " (수술실)") : ""}
+      </h2>
       <p className="help page-lead">
         반차1 다음 확정 반차는 반차2로 자동 지정됩니다. 반차2는 반차1 사용 후 3개월 이내 사용을 권장하며, 필요 시 구분을 수정할 수 있습니다.
       </p>
       {!adminView && personalStatus?.reminder?.needsReminder ? (
-        <p className="half-day-reminder-banner" role="status">
-          {halfDay2ReminderMessage(personalStatus.reminder.deadlineYmd)}
+        <p className={`half-day-reminder-banner${personalStatus.reminder.isOverdue ? " half-day-reminder-banner--overdue" : ""}`} role="status">
+          {halfDay2ReminderMessage(personalStatus.reminder.deadlineYmd, personalStatus.reminder.daysLeft)}
         </p>
       ) : null}
       <div className="table-wrap">
@@ -5158,14 +5165,14 @@ function HalfDayDashboardSection({ requests, users, currentRole, currentUserId, 
       </div>
       {adminView ? (
         <div className="half-day-admin-reminders">
-          <h3 className="half-day-admin-reminders__title">반차2 사용기한 임박</h3>
+          <h3 className="half-day-admin-reminders__title">반차2 사용기한 임박·경과</h3>
           <ul className="half-day-admin-reminders__list">
             {targetUsers.map((u) => {
               const st = buildHalfDayStatusForUser(halfDayRows, u.id);
               if (!st.reminder?.needsReminder) return null;
               return (
                 <li key={u.id}>
-                  <strong>{u.name}</strong>: {halfDay2ReminderMessage(st.reminder.deadlineYmd)}
+                  <strong>{u.name}</strong>: {halfDay2ReminderMessage(st.reminder.deadlineYmd, st.reminder.daysLeft)}
                 </li>
               );
             })}

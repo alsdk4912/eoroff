@@ -473,6 +473,7 @@ export async function initDb() {
   await ensureGoldkeyDefaults();
   await backfillGeneralNormalNegotiationOrderFromAppliedOrder();
   await backfillHalfDaySlots();
+  await ensureHalfDayHistoricalRecords();
   return client;
 }
 
@@ -1427,74 +1428,70 @@ async function backfillHalfDaySlots() {
   console.log("[db] half_day_slot_backfill_v1 applied");
 }
 
-async function ensureRequestsHalfDaySlotColumn() {
-  const cols = await queryAll("PRAGMA table_info(requests)");
-  const names = new Set(cols.map((c) => c.name));
-  if (!names.has("half_day_slot")) {
-    await execute("ALTER TABLE requests ADD COLUMN half_day_slot TEXT");
-  }
-}
-
-async function ensureHalfDayReminderLogTable() {
-  await execute(
-    `CREATE TABLE IF NOT EXISTS half_day_reminder_log (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      half_day1_request_id TEXT NOT NULL,
-      reminder_ymd TEXT NOT NULL,
-      sent_at TEXT NOT NULL
-    )`
-  );
-}
-
-/** 기존 확정 반차에 반차1/반차2 슬롯 백필 */
-async function backfillHalfDaySlots() {
-  const migrationId = "half_day_slot_backfill_v1";
+/** 장성필·손다솜 과거 반차1 사용 기록 반영 */
+async function ensureHalfDayHistoricalRecords() {
+  const migrationId = "half_day_historical_jang_son_v1";
   const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
   if (done) return;
 
-  const rows = await queryAll(
-    `SELECT id, user_id, leave_date, leave_type, status, half_day_slot, requested_at
-     FROM requests
-     WHERE leave_type = 'HALF_DAY' AND status = 'APPROVED' AND deleted_at IS NULL
-     ORDER BY user_id ASC, leave_date ASC, requested_at ASC`
-  );
+  const admin = await queryOne("SELECT id FROM users WHERE role = 'ADMIN' ORDER BY id ASC LIMIT 1");
+  const selectedBy = String(admin?.id ?? "u_admin_1");
 
-  const byUser = new Map();
-  for (const r of rows) {
-    const uid = String(r.user_id ?? "");
-    if (!byUser.has(uid)) byUser.set(uid, []);
-    byUser.get(uid).push(r);
-  }
+  const seeds = [
+    { name: "장성필", leaveDate: "2025-12-12", requestId: "req_hd_hist_jang_20251212", selectionId: "sel_hd_hist_jang_20251212" },
+    { name: "손다솜", leaveDate: "2026-04-16", requestId: "req_hd_hist_son_20260416", selectionId: "sel_hd_hist_son_20260416" },
+  ];
 
-  for (const [, userRows] of byUser) {
-    const assigned = [];
-    for (const r of userRows) {
-      if (String(r.half_day_slot ?? "").trim()) {
-        assigned.push({
-          id: r.id,
-          userId: r.user_id,
-          leaveDate: String(r.leave_date ?? "").slice(0, 10),
-          leaveType: "HALF_DAY",
-          status: "APPROVED",
-          halfDaySlot: String(r.half_day_slot),
-        });
-        continue;
-      }
-      const slot = computeAutoHalfDaySlot(assigned, String(r.user_id ?? ""), String(r.leave_date ?? "").slice(0, 10));
-      await execute("UPDATE requests SET half_day_slot = ? WHERE id = ?", slot, r.id);
-      assigned.push({
-        id: r.id,
-        userId: r.user_id,
-        leaveDate: String(r.leave_date ?? "").slice(0, 10),
-        leaveType: "HALF_DAY",
-        status: "APPROVED",
-        halfDaySlot: slot,
-      });
+  for (const seed of seeds) {
+    const user = await queryOne("SELECT id FROM users WHERE name = ? LIMIT 1", seed.name);
+    if (!user?.id) {
+      console.warn(`[db] half_day_historical: user not found — ${seed.name}`);
+      continue;
     }
+    const userId = String(user.id);
+    const existing = await queryOne(
+      `SELECT id FROM requests
+       WHERE user_id = ? AND leave_date = ? AND leave_type = 'HALF_DAY' AND deleted_at IS NULL`,
+      userId,
+      seed.leaveDate
+    );
+    const requestedAt = `${seed.leaveDate}T00:30:00.000Z`;
+    if (existing?.id) {
+      await execute(
+        "UPDATE requests SET status = 'APPROVED', half_day_slot = '1', leave_nature = 'PERSONAL' WHERE id = ?",
+        existing.id
+      );
+      const sel = await queryOne("SELECT id FROM selections WHERE leave_request_id = ? LIMIT 1", existing.id);
+      if (!sel?.id) {
+        await execute(
+          "INSERT INTO selections (id, leave_request_id, selected_by, selected_at) VALUES (?, ?, ?, ?)",
+          `${seed.selectionId}_alt`,
+          existing.id,
+          selectedBy,
+          requestedAt
+        );
+      }
+      continue;
+    }
+    await execute(
+      `INSERT INTO requests (
+         id, user_id, leave_date, leave_type, leave_nature, status, requested_at, memo, half_day_slot
+       ) VALUES (?, ?, ?, 'HALF_DAY', 'PERSONAL', 'APPROVED', ?, '과거 반차1 사용 기록', '1')`,
+      seed.requestId,
+      userId,
+      seed.leaveDate,
+      requestedAt
+    );
+    await execute(
+      "INSERT INTO selections (id, leave_request_id, selected_by, selected_at) VALUES (?, ?, ?, ?)",
+      seed.selectionId,
+      seed.requestId,
+      selectedBy,
+      requestedAt
+    );
   }
 
   await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
-  console.log("[db] half_day_slot_backfill_v1 applied");
+  console.log("[db] half_day_historical_jang_son_v1 applied");
 }
 

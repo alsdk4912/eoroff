@@ -141,7 +141,8 @@ export function buildHalfDayStatusForUser(halfDayRows, userId, nowYmd = null) {
       halfDay1LeaveDate: rowLeaveDate(open.halfDay1),
       deadlineYmd: open.deadlineYmd,
       daysLeft,
-      needsReminder: daysLeft > 0 && daysLeft <= HALF_DAY2_REMINDER_DAYS_BEFORE,
+      isOverdue: daysLeft <= 0,
+      needsReminder: daysLeft <= HALF_DAY2_REMINDER_DAYS_BEFORE,
     };
   }
 
@@ -157,12 +158,22 @@ export function daysBetweenYmd(fromYmd, toYmd) {
   return Math.round((t1 - t0) / (24 * 60 * 60 * 1000));
 }
 
-/** 반차2 기한 알림 문구 */
-export function halfDay2ReminderMessage(deadlineYmd) {
+/** 반차2 기한 알림 문구 (daysLeft ≤ 0 이면 기한 경과 안내) */
+export function halfDay2ReminderMessage(deadlineYmd, daysLeft = null) {
   const p = parseYmd(deadlineYmd);
-  if (!p) return "반차2의 사용기한이 1개월남았습니다.";
-  const label = `${p.month}월 ${p.day}일`;
-  return `반차2의 사용기한이 1개월남았습니다. (${label}까지 사용하세요)`;
+  const label = p ? `${p.month}월 ${p.day}일` : "";
+  const dl =
+    daysLeft != null && Number.isFinite(daysLeft)
+      ? daysLeft
+      : daysBetweenYmd(toYmdFromDate(new Date()), deadlineYmd);
+  if (dl <= 0) {
+    return label
+      ? `반차2 사용 권고기한이 지났습니다. (${label} 권장) 빠른 시일 내 반차2를 사용해 주세요.`
+      : "반차2 사용 권고기한이 지났습니다. 빠른 시일 내 반차2를 사용해 주세요.";
+  }
+  return label
+    ? `반차2의 사용기한이 1개월남았습니다. (${label}까지 사용하세요)`
+    : "반차2의 사용기한이 1개월남았습니다.";
 }
 
 /** 슬롯 수동 변경 유효성 */

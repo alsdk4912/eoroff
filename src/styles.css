@@ -5432,6 +5432,12 @@ tr.request-cancelled-row td button {
   font-weight: 600;
 }
 
+.half-day-reminder-banner--overdue {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #991b1b;
+}
+
 .half-day-table th,
 .half-day-table td {
   white-space: nowrap;
