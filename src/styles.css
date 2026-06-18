@@ -2333,35 +2333,24 @@ tbody tr:last-child td {
   padding-bottom: 8px;
 }
 
-.notice-detail__collapse-bar {
+.notice-detail__collapse-toggle {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  justify-content: flex-end;
   width: 100%;
-  margin: 0 0 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--separator);
-  border-radius: 12px;
-  background: #f8fafc;
+  margin: 0 0 8px;
+  padding: 0;
+  border: none;
+  background: transparent;
   cursor: pointer;
-  text-align: left;
 }
 
-.notice-detail__collapse-bar:hover {
-  background: #f1f5f9;
-}
-
-.notice-detail__collapse-title {
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.35;
+.notice-detail__collapse-toggle:hover .notice-item__toggle-icon {
   color: var(--text-primary);
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.notice-detail__collapse-toggle .notice-item__toggle-icon {
+  font-size: 12px;
 }
 
 .notice-detail__title {

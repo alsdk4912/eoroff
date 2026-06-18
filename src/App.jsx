@@ -6352,7 +6352,7 @@ function NoticeBoardPage({
         <div className="notice-detail">
           <button
             type="button"
-            className="notice-detail__collapse-bar"
+            className="notice-detail__collapse-toggle"
             onClick={() => {
               setSelectedId("");
               setEditingMode(false);
@@ -6360,7 +6360,6 @@ function NoticeBoardPage({
             aria-expanded="true"
             aria-label="게시글 접기"
           >
-            <span className="notice-detail__collapse-title">{selected.title}</span>
             <span className="notice-item__toggle-icon" aria-hidden="true">
               ▲
             </span>
