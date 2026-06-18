@@ -6239,6 +6239,7 @@ function NoticeBoardPage({
   const [editingContent, setEditingContent] = useState("");
   const [editingImages, setEditingImages] = useState([]);
   const [commentDraft, setCommentDraft] = useState("");
+  const [commentComposeOpen, setCommentComposeOpen] = useState(false);
   const [editingCommentId, setEditingCommentId] = useState("");
   const [editingCommentDraft, setEditingCommentDraft] = useState("");
   const idToName = useMemo(() => new Map((Array.isArray(users) ? users : []).map((u) => [u.id, u.name])), [users]);
@@ -6270,6 +6271,7 @@ function NoticeBoardPage({
 
   useEffect(() => {
     setCommentDraft("");
+    setCommentComposeOpen(false);
     setEditingCommentId("");
     setEditingCommentDraft("");
     setEditingMode(false);
@@ -6503,26 +6505,54 @@ function NoticeBoardPage({
               </ul>
             )}
             {canWriteNoticeComments ? (
-              <div className="notice-comment-compose">
-                <textarea
-                  rows={3}
-                  maxLength={500}
-                  placeholder="댓글을 입력하세요 (500자 이내)"
-                  value={commentDraft}
-                  onChange={(e) => setCommentDraft(e.target.value)}
-                  aria-label="새 댓글"
-                />
-                <button
-                  type="button"
-                  className="notice-comment-submit"
-                  disabled={!commentDraft.trim()}
-                  onClick={async () => {
-                    const ok = await createNoticeComment?.(selected.id, commentDraft);
-                    if (ok) setCommentDraft("");
-                  }}
-                >
-                  댓글 등록
-                </button>
+              <div className="notice-comment-compose-wrap">
+                {!commentComposeOpen ? (
+                  <button
+                    type="button"
+                    className="notice-comment-open-btn"
+                    onClick={() => setCommentComposeOpen(true)}
+                  >
+                    댓글 등록
+                  </button>
+                ) : (
+                  <div className="notice-comment-compose">
+                    <textarea
+                      rows={3}
+                      maxLength={500}
+                      placeholder="댓글을 입력하세요 (500자 이내)"
+                      value={commentDraft}
+                      onChange={(e) => setCommentDraft(e.target.value)}
+                      aria-label="새 댓글"
+                      autoFocus
+                    />
+                    <div className="notice-comment-compose__actions">
+                      <button
+                        type="button"
+                        className="notice-comment-submit"
+                        disabled={!commentDraft.trim()}
+                        onClick={async () => {
+                          const ok = await createNoticeComment?.(selected.id, commentDraft);
+                          if (ok) {
+                            setCommentDraft("");
+                            setCommentComposeOpen(false);
+                          }
+                        }}
+                      >
+                        등록
+                      </button>
+                      <button
+                        type="button"
+                        className="notice-comment-cancel-btn"
+                        onClick={() => {
+                          setCommentComposeOpen(false);
+                          setCommentDraft("");
+                        }}
+                      >
+                        취소
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <p className="help notice-comments-login-hint">댓글을 작성하려면 간호사·마취·관리자 계정으로 로그인하세요.</p>

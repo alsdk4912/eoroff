@@ -2645,8 +2645,26 @@ tbody tr:last-child td {
   gap: 8px;
 }
 
+.notice-comment-compose-wrap {
+  margin-top: 4px;
+}
+
+.notice-comment-open-btn {
+  font-weight: 600;
+}
+
 .notice-comment-compose {
   margin-bottom: 4px;
+}
+
+.notice-comment-compose__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.notice-comment-cancel-btn {
+  color: var(--text-secondary);
 }
 
 .notice-comment-compose textarea {
