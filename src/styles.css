@@ -2331,18 +2331,31 @@ tbody tr:last-child td {
   border-top: 1px solid var(--separator);
   padding-top: 10px;
   padding-bottom: 8px;
+  position: relative;
+}
+
+.notice-detail__sticky-corner {
+  position: sticky;
+  top: calc(env(safe-area-inset-top, 0px) + 52px);
+  z-index: 30;
+  height: 0;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  pointer-events: none;
 }
 
 .notice-detail__collapse-toggle {
+  pointer-events: auto;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  width: 100%;
-  margin: 0 0 8px;
-  padding: 0;
+  justify-content: center;
+  margin: 0;
+  padding: 4px 6px;
   border: none;
   background: transparent;
   cursor: pointer;
+  line-height: 1;
 }
 
 .notice-detail__collapse-toggle:hover .notice-item__toggle-icon {
@@ -2351,6 +2364,11 @@ tbody tr:last-child td {
 
 .notice-detail__collapse-toggle .notice-item__toggle-icon {
   font-size: 12px;
+  text-shadow: 0 0 6px #fff, 0 0 10px #fff;
+}
+
+.notice-detail__inner {
+  padding-right: 4px;
 }
 
 .notice-detail__title {

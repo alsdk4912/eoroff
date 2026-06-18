@@ -6350,20 +6350,23 @@ function NoticeBoardPage({
 
       {selected ? (
         <div className="notice-detail">
-          <button
-            type="button"
-            className="notice-detail__collapse-toggle"
-            onClick={() => {
-              setSelectedId("");
-              setEditingMode(false);
-            }}
-            aria-expanded="true"
-            aria-label="게시글 접기"
-          >
-            <span className="notice-item__toggle-icon" aria-hidden="true">
-              ▲
-            </span>
-          </button>
+          <div className="notice-detail__sticky-corner">
+            <button
+              type="button"
+              className="notice-detail__collapse-toggle"
+              onClick={() => {
+                setSelectedId("");
+                setEditingMode(false);
+              }}
+              aria-expanded="true"
+              aria-label="게시글 접기"
+            >
+              <span className="notice-item__toggle-icon" aria-hidden="true">
+                ▲
+              </span>
+            </button>
+          </div>
+          <div className="notice-detail__inner">
           {editingMode ? (
             <div className="grid">
               <input type="text" maxLength={80} value={editingTitle} onChange={(e) => setEditingTitle(e.target.value)} />
@@ -6524,6 +6527,7 @@ function NoticeBoardPage({
             ) : (
               <p className="help notice-comments-login-hint">댓글을 작성하려면 간호사·마취·관리자 계정으로 로그인하세요.</p>
             )}
+          </div>
           </div>
         </div>
       ) : null}
