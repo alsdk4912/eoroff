@@ -107,6 +107,7 @@ import {
   hideCalendarAllDeptPanelOnOffDay,
   isOrLeaveAdminRole,
   canRunLadderGame,
+  canViewLadderResultsDashboard,
   isEmergencyOrRole,
   isHolidayDutyContactViewer,
   isDeptHeadRole,
@@ -5518,7 +5519,7 @@ function DashboardPage({
               반차내역
             </button>
           ) : null}
-          {isAdmin ? (
+          {canViewLadderResultsDashboard(currentRole) ? (
             <button
               type="button"
               role="tab"
@@ -5600,7 +5601,7 @@ function DashboardPage({
           onUpdateHalfDaySlot={onUpdateHalfDaySlot}
         />
       ) : null}
-      {isAdmin && !isScheduleOnlyDashboardRole(currentRole) && dashTab === "ladder-results" ? (
+      {canViewLadderResultsDashboard(currentRole) && dashTab === "ladder-results" ? (
         <section className="card">
           <h2 className="screen-title">저장된 사다리 결과</h2>
           <div className="ladder-results-list">

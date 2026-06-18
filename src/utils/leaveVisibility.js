@@ -172,6 +172,12 @@ export function canRunLadderGame(role) {
   return isOrLeaveAdminRole(role);
 }
 
+/** 현황 탭 사다리 결과 조회 — 수술실 간호사·관리자·부서파트장 */
+export function canViewLadderResultsDashboard(role) {
+  const r = String(role ?? "").trim();
+  return r === "NURSE" || r === "ADMIN" || r === "DEPT_HEAD";
+}
+
 export function isAnesthesiaLeaveAdminRole(role) {
   return role === "ADMIN2";
 }
