@@ -103,6 +103,27 @@ function goldkeyIdsNeedingNegotiation(rows, options = {}) {
   return new Set();
 }
 
+function staffRoleForRequest(row, users) {
+  const uid = String(row?.userId ?? row?.user_id ?? "");
+  const u = (Array.isArray(users) ? users : []).find((x) => String(x.id) === uid);
+  const role = String(u?.role ?? "NURSE");
+  if (role === "ANESTHESIA" || role === "CHIEF") return role;
+  return "NURSE";
+}
+
+/** 신청순 자동 순번: 수술실·마취과·주임끼리만 경쟁 (타 부서 순번과 공유하지 않음) */
+function autoRankWithinStaffRole(sortedPeers, row, users) {
+  const role = staffRoleForRequest(row, users);
+  const sameRolePeers = sortedPeers.filter((x) => staffRoleForRequest(x, users) === role);
+  if (role === "ANESTHESIA" || role === "CHIEF") {
+    if (sameRolePeers.length < 2) return null;
+  } else if (sameRolePeers.length === 1) {
+    return 1;
+  }
+  const idx = sameRolePeers.findIndex((x) => x.id === row.id);
+  return idx >= 0 ? idx + 1 : null;
+}
+
 /**
  * 같은 휴가일·같은 유형 기준 협의/신청순 판정 (캘린더 칩·상세 목록 공통).
  * @returns {Map<string, { mode: string, autoRank?: number }>}
@@ -155,7 +176,8 @@ export function buildNegotiationMetaByRequestId(dayRequests, leaveDateYmd, optio
         if (isGoldkeyNegotiationWindowOpen(anchorMs, nowMs)) {
           map.set(String(only.id), { mode: "waitingWindow" });
         } else {
-          map.set(String(only.id), { mode: "auto", autoRank: 1 });
+          const autoRank = autoRankWithinStaffRole([only], only, options.users);
+          map.set(String(only.id), { mode: "auto", autoRank });
         }
         continue;
       }
@@ -188,7 +210,7 @@ export function buildNegotiationMetaByRequestId(dayRequests, leaveDateYmd, optio
         continue;
       }
       if (lt === "GOLDKEY") {
-        const autoRankGlobal = sortedAll.findIndex((x) => x.id === r.id) + 1;
+        const autoRank = autoRankWithinStaffRole(sortedAll, r, options.users);
         if (gkLadderDone) {
           map.set(String(r.id), { mode: "negotiate", ladderDone: true });
         } else if (goldkeyNegotiateIds.has(String(r.id))) {
@@ -200,18 +222,18 @@ export function buildNegotiationMetaByRequestId(dayRequests, leaveDateYmd, optio
         ) {
           map.set(String(r.id), { mode: "waitingWindow" });
         } else {
-          map.set(String(r.id), { mode: "auto", autoRank: autoRankGlobal });
+          map.set(String(r.id), { mode: "auto", autoRank });
         }
         continue;
       }
 
       const myDay = toLocalYMD(new Date(reqAt));
       const sameSubmitDayPeers = list.filter((x) => toLocalYMD(new Date(x.requestedAt ?? x.requested_at)) === myDay);
-      const autoRankGlobal = sortedAll.findIndex((x) => x.id === r.id) + 1;
+      const autoRank = autoRankWithinStaffRole(sortedAll, r, options.users);
       if (sameSubmitDayPeers.length >= 2) {
         map.set(String(r.id), { mode: "negotiate" });
       } else {
-        map.set(String(r.id), { mode: "auto", autoRank: autoRankGlobal });
+        map.set(String(r.id), { mode: "auto", autoRank });
       }
     }
   }

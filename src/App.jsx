@@ -7634,8 +7634,8 @@ function CalendarPage({
 
   const ladderDoneKeySet = useMemo(() => buildLadderDoneKeySet(ladderResults), [ladderResults]);
   const negotiationMetaByRequestId = useMemo(
-    () => buildNegotiationMetaByRequestId(dayRequests, selectedYmd, { ladderDoneKeys: ladderDoneKeySet }),
-    [selectedYmd, dayRequests, ladderDoneKeySet]
+    () => buildNegotiationMetaByRequestId(dayRequests, selectedYmd, { ladderDoneKeys: ladderDoneKeySet, users }),
+    [selectedYmd, dayRequests, ladderDoneKeySet, users]
   );
 
   const quickLadderTargets = useMemo(() => {
@@ -9011,6 +9011,7 @@ function buildMonthMatrix(
     const activeNurseDay = nurseReqs.filter((r) => r.status !== "CANCELLED");
     const nurseNegotiationMeta = buildNegotiationMetaByRequestId(activeNurseDay, iso, {
       ladderDoneKeys: ladderDoneKeys ?? new Set(),
+      users,
     });
     const displayApplicants = mapRequestsToCalendarApplicants(nurseReqs, users, nurseNegotiationMeta);
     const anesthesiaDisplayApplicants = mapRequestsToCalendarApplicants(anesReqs, users);
