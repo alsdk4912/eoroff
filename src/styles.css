@@ -2327,8 +2327,41 @@ tbody tr:last-child td {
 
 .notice-detail {
   margin-top: 10px;
+  margin-bottom: 24px;
   border-top: 1px solid var(--separator);
   padding-top: 10px;
+  padding-bottom: 8px;
+}
+
+.notice-detail__collapse-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--separator);
+  border-radius: 12px;
+  background: #f8fafc;
+  cursor: pointer;
+  text-align: left;
+}
+
+.notice-detail__collapse-bar:hover {
+  background: #f1f5f9;
+}
+
+.notice-detail__collapse-title {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--text-primary);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .notice-detail__title {
@@ -2605,6 +2638,10 @@ tbody tr:last-child td {
   gap: 8px;
 }
 
+.notice-comment-compose {
+  margin-bottom: 4px;
+}
+
 .notice-comment-compose textarea {
   width: 100%;
   margin-bottom: 8px;
@@ -2612,6 +2649,7 @@ tbody tr:last-child td {
 
 .notice-comment-submit {
   font-weight: 600;
+  margin-bottom: 4px;
 }
 
 .work-schedule-custom-input {

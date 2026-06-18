@@ -6350,6 +6350,21 @@ function NoticeBoardPage({
 
       {selected ? (
         <div className="notice-detail">
+          <button
+            type="button"
+            className="notice-detail__collapse-bar"
+            onClick={() => {
+              setSelectedId("");
+              setEditingMode(false);
+            }}
+            aria-expanded="true"
+            aria-label="게시글 접기"
+          >
+            <span className="notice-detail__collapse-title">{selected.title}</span>
+            <span className="notice-item__toggle-icon" aria-hidden="true">
+              ▲
+            </span>
+          </button>
           {editingMode ? (
             <div className="grid">
               <input type="text" maxLength={80} value={editingTitle} onChange={(e) => setEditingTitle(e.target.value)} />
