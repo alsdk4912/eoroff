@@ -7527,6 +7527,9 @@ function CalendarPage({
   const skipNextCalendarTapRef = useRef(false);
   const calendarTopRef = useRef(null);
   const deptHeadHolidayViewer = isDeptHeadRole(viewerRole);
+  /** 평일 캘린더: 간호사와 동일하게 신청 현황·대체자만 열람(확정·대체지정 UI 없음) */
+  const deptHeadWeekdayCalendarReadonly =
+    deptHeadHolidayViewer && selectedYmd && selectedCell?.inMonth && !selectedCell?.isOffDay;
   const holidayDutyContactViewer = isHolidayDutyContactViewer(viewerRole);
   const showHolidayDutyPanel = showHolidayDutyPanelRole(viewerRole);
   const showHolidayDutyHistory = showHolidayDutyHistoryRole(viewerRole);
@@ -7646,7 +7649,7 @@ function CalendarPage({
     adminDayMemos,
     adminMemoDraft,
     onAdminMemoDraftChange: setAdminMemoDraft,
-    isOrLeaveAdmin,
+    isOrLeaveAdmin: isOrLeaveAdmin && !deptHeadWeekdayCalendarReadonly,
     onSaveAdminMemo: saveAdminDayMemo,
     selectedDayComments: visibleDayComments,
     users,
@@ -8253,7 +8256,7 @@ function CalendarPage({
                         <p className="help">이 날짜에 등록된 신청이 없습니다.</p>
                       ) : (
                         <>
-                          {isOrLeaveAdmin && quickLadderTargets.length > 0 ? (
+                          {isOrLeaveAdmin && !deptHeadWeekdayCalendarReadonly && quickLadderTargets.length > 0 ? (
                             <div className="calendar-ladder-quick-bar">
                               {quickLadderTargets.map((t) => (
                                 (() => {
@@ -8337,7 +8340,7 @@ function CalendarPage({
 
                               const adminTopText = `${prefix}${nm} · ${typeFullLabel(r.leaveType)}`;
                               const adminBottomText = `${leaveNatureLabel(r.leaveNature)} · ${statusLabel(r.status)}`;
-                              const manageRow = canManageRequest(r);
+                              const manageRow = canManageRequest(r) && !deptHeadWeekdayCalendarReadonly;
                               const lineText = manageRow
                                 ? `${adminTopText} · ${adminBottomText}`
                                 : `${prefix}${nm} · ${typeFullLabel(r.leaveType)} · ${statusLabel(r.status)}`;
@@ -8434,6 +8437,7 @@ function CalendarPage({
                         </>
                       )}
                       {substituteSectionMeta &&
+                      !deptHeadWeekdayCalendarReadonly &&
                       !isEmergencyOrViewer &&
                       !hideCalendarAllDeptPanelOnOffDay(viewerRole, selectedIsOffDay) ? (
                         <div className={`admin-calendar-substitute-section ${substituteSectionMeta.sectionClass}`.trim()}>
