@@ -8250,7 +8250,37 @@ function CalendarPage({
                       </button>
                     ) : null}
                   </div>
-                  {detailTab === "list" || isLeaveManager ? (
+                  {detailTab === "apply" && showApplyTab ? (
+                    <div className="calendar-detail-body calendar-detail-body--apply" role="tabpanel">
+                      <p className="help">선택한 날짜: {selectedYmd} (아래에서 연·월·일을 바꿀 수 있습니다)</p>
+                      <form className="grid calendar-apply-form" onSubmit={submitRequest}>
+                        <label className="field-label">휴가 구분</label>
+                        {isChiefViewer ? (
+                          <p className="help" style={{ margin: 0 }}>
+                            휴가 (주임은 단일 유형으로 신청합니다)
+                          </p>
+                        ) : (
+                        <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)} aria-label="휴가 구분">
+                          {leaveTypesForApplicantRole(viewerRole).map((t) => (
+                            <option key={t} value={t}>
+                              {leaveTypeLabel(t)}
+                            </option>
+                          ))}
+                        </select>
+                        )}
+                        <div className="calendar-apply-ymd">
+                          <span className="help">휴가일</span>
+                          <YmdSplitInput value={leaveDate} onChange={setLeaveDate} />
+                        </div>
+                        <input type="text" placeholder="신청 메모" value={memo} onChange={(e) => setMemo(e.target.value)} />
+                        <button type="submit">신청</button>
+                      </form>
+                      {(viewerRole === "NURSE" || viewerRole === "ANESTHESIA") && myGoldkey ? (
+                        <p className="help">내 골드키 잔여: {myGoldkey?.remainingCount ?? 0} / {myGoldkey?.quotaTotal ?? 0}</p>
+                      ) : null}
+                      {message ? <p className="msg">{message}</p> : null}
+                    </div>
+                  ) : (
                     <div className="calendar-detail-body" role="tabpanel">
                       {!hasAnyDayRequest ? (
                         <p className="help">이 날짜에 등록된 신청이 없습니다.</p>
@@ -8510,36 +8540,6 @@ function CalendarPage({
                           ) : null}
                         </div>
                       ) : null}
-                    </div>
-                  ) : (
-                    <div className="calendar-detail-body calendar-detail-body--apply" role="tabpanel">
-                      <p className="help">선택한 날짜: {selectedYmd} (아래에서 연·월·일을 바꿀 수 있습니다)</p>
-                      <form className="grid calendar-apply-form" onSubmit={submitRequest}>
-                        <label className="field-label">휴가 구분</label>
-                        {isChiefViewer ? (
-                          <p className="help" style={{ margin: 0 }}>
-                            휴가 (주임은 단일 유형으로 신청합니다)
-                          </p>
-                        ) : (
-                        <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)} aria-label="휴가 구분">
-                          {leaveTypesForApplicantRole(viewerRole).map((t) => (
-                            <option key={t} value={t}>
-                              {leaveTypeLabel(t)}
-                            </option>
-                          ))}
-                        </select>
-                        )}
-                        <div className="calendar-apply-ymd">
-                          <span className="help">휴가일</span>
-                          <YmdSplitInput value={leaveDate} onChange={setLeaveDate} />
-                        </div>
-                        <input type="text" placeholder="신청 메모" value={memo} onChange={(e) => setMemo(e.target.value)} />
-                        <button type="submit">신청</button>
-                      </form>
-                      {(viewerRole === "NURSE" || viewerRole === "ANESTHESIA") && myGoldkey ? (
-                        <p className="help">내 골드키 잔여: {myGoldkey?.remainingCount ?? 0} / {myGoldkey?.quotaTotal ?? 0}</p>
-                      ) : null}
-                      {message ? <p className="msg">{message}</p> : null}
                     </div>
                   )}
                 </>

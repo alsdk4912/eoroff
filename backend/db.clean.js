@@ -474,6 +474,7 @@ export async function initDb() {
   await backfillGeneralNormalNegotiationOrderFromAppliedOrder();
   await backfillHalfDaySlots();
   await ensureHalfDayHistoricalRecords();
+  await ensureChiefLeechanjooLeave20260630();
   return client;
 }
 
@@ -1493,5 +1494,43 @@ async function ensureHalfDayHistoricalRecords() {
 
   await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
   console.log("[db] half_day_historical_jang_son_v1 applied");
+}
+
+/** 이찬주 주임 2026-06-30 휴가 신청 */
+async function ensureChiefLeechanjooLeave20260630() {
+  const migrationId = "chief_leechanjoo_leave_20260630_v1";
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
+  if (done) return;
+
+  const user = await queryOne("SELECT id FROM users WHERE name = ? AND role = 'CHIEF' LIMIT 1", "이찬주");
+  if (!user?.id) {
+    console.warn("[db] chief_leechanjoo_leave_20260630: user not found — 이찬주");
+    await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+    return;
+  }
+
+  const userId = String(user.id);
+  const leaveDate = "2026-06-30";
+  const requestId = "req_chief_lee_20260630";
+  const existing = await queryOne(
+    `SELECT id FROM requests
+     WHERE user_id = ? AND leave_date = ? AND leave_type = 'CHIEF_LEAVE' AND deleted_at IS NULL`,
+    userId,
+    leaveDate
+  );
+  if (!existing?.id) {
+    await execute(
+      `INSERT INTO requests (
+         id, user_id, leave_date, leave_type, leave_nature, status, requested_at, memo
+       ) VALUES (?, ?, ?, 'CHIEF_LEAVE', 'PERSONAL', 'APPLIED', ?, '')`,
+      requestId,
+      userId,
+      leaveDate,
+      `${leaveDate}T09:00:00.000Z`
+    );
+  }
+
+  await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+  console.log("[db] chief_leechanjoo_leave_20260630_v1 applied");
 }
 
