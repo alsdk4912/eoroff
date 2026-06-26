@@ -453,6 +453,23 @@ function ymdAddDays(ymd, deltaDays) {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 }
 
+function isWeekendYmd(ymd) {
+  const p = parseStrictYmd(ymd);
+  if (!p) return false;
+  const dow = new Date(Date.UTC(p.year, p.month - 1, p.day)).getUTCDay();
+  return dow === 0 || dow === 6;
+}
+
+/** 휴가일 직전 영업일(주말 제외). 6/29(월) → 6/26(금) */
+function previousBusinessDayBeforeYmd(ymd) {
+  let cur = ymdAddDays(ymd, -1);
+  for (let i = 0; i < 14 && cur; i += 1) {
+    if (!isWeekendYmd(cur)) return cur;
+    cur = ymdAddDays(cur, -1);
+  }
+  return cur;
+}
+
 /** 해당 KST 날짜 09:00 시각(UTC ms). KST 09:00 = 당일 00:00 UTC */
 function kstNineAmMs(ymd) {
   const p = parseStrictYmd(ymd);
@@ -461,14 +478,14 @@ function kstNineAmMs(ymd) {
 }
 
 /**
- * 일반휴가-후순위: 휴가일 전날 09:00(KST)부터 사다리 실행 가능.
- * 예) 5/15 휴가 확정 → 5/14 09:00 이후 사다리 가능.
+ * 일반휴가-후순위: 휴가일 전 영업일 09:00(KST)부터 사다리 실행 가능.
+ * 예) 6/29(월) 휴가 → 6/26(금) 09:00 이후 (주말 건너뜀)
  */
 export function isGeneralNormalLadderUnlocked(leaveDateYmd, now = new Date()) {
   const ld = String(leaveDateYmd ?? "").slice(0, 10);
-  const prevYmd = ymdAddDays(ld, -1);
-  if (!prevYmd) return true;
-  const unlockMs = kstNineAmMs(prevYmd);
+  const prevBusinessYmd = previousBusinessDayBeforeYmd(ld);
+  if (!prevBusinessYmd) return true;
+  const unlockMs = kstNineAmMs(prevBusinessYmd);
   if (!Number.isFinite(unlockMs)) return true;
   return now.getTime() >= unlockMs;
 }
@@ -480,10 +497,10 @@ export function isGeneralNormalLadderTimeLocked(leaveDateYmd, leaveType, now = n
 
 export function generalNormalLadderLockedMessage(leaveDateYmd) {
   const ld = String(leaveDateYmd ?? "").slice(0, 10);
-  const prevYmd = ymdAddDays(ld, -1);
-  if (!prevYmd || !ld) {
-    return "일반휴가-후순위는 휴가 전날 09:00 이후부터 사다리를 실행할 수 있습니다.";
+  const prevBusinessYmd = previousBusinessDayBeforeYmd(ld);
+  if (!prevBusinessYmd || !ld) {
+    return "일반휴가-후순위는 휴가 전 영업일 09:00 이후부터 사다리를 실행할 수 있습니다.";
   }
-  return `일반휴가-후순위(${ld})는 전날(${prevYmd}) 09:00 이후부터 사다리를 실행할 수 있습니다.`;
+  return `일반휴가-후순위(${ld})는 전 영업일(${prevBusinessYmd}) 09:00 이후부터 사다리를 실행할 수 있습니다.`;
 }
 
