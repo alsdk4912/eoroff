@@ -375,6 +375,45 @@ async function createNotificationsForAllNurses({ type, message, targetDate = "",
   }
 }
 
+/** 같은 날짜·유형(확정/반려) 알림·푸시 중복 방지 — 연속 확정 시 한 번만 발송 */
+const LEAVE_BROADCAST_DEDUP_MS = 30 * 60 * 1000;
+
+async function hasRecentLeaveBroadcast({ type, targetDate, windowMs = LEAVE_BROADCAST_DEDUP_MS }) {
+  const td = String(targetDate ?? "").slice(0, 10);
+  const t = String(type ?? "").trim();
+  if (!td || !t) return false;
+  const since = new Date(Date.now() - windowMs).toISOString();
+  const row = await queryOne(
+    `SELECT id FROM notifications WHERE type = ? AND target_date = ? AND created_at >= ? LIMIT 1`,
+    t,
+    td,
+    since
+  );
+  return Boolean(row?.id);
+}
+
+async function broadcastLeaveStatusToAllNurses({
+  type,
+  message,
+  targetDate = "",
+  leaveRequestId = "",
+  pushUrl,
+}) {
+  const msg = String(message ?? "").trim();
+  if (!msg) return { skipped: true };
+  const td = String(targetDate ?? "").slice(0, 10);
+  if (await hasRecentLeaveBroadcast({ type, targetDate: td })) {
+    return { skipped: true, reason: "dedup" };
+  }
+  await createNotificationsForAllNurses({ type, message: msg, targetDate: td, leaveRequestId });
+  await sendPushToAllNurses({
+    title: msg,
+    body: msg,
+    url: pushUrl ?? `#/calendar?ymd=${encodeURIComponent(td)}&detail=1`,
+  });
+  return { skipped: false };
+}
+
 async function createNotificationsForUserIds({ userIds, type, message, targetDate = "", leaveRequestId = "" }) {
   const msg = String(message ?? "").trim();
   if (!msg) return;
@@ -2938,16 +2977,12 @@ app.post("/api/requests/:id/select", async (req, res) => {
       });
     });
 
-    await createNotificationsForAllNurses({
+    await broadcastLeaveStatusToAllNurses({
       type: "REQUEST_APPROVED",
       message: `${row.leave_date} 휴가자 발표`,
       targetDate: row.leave_date,
       leaveRequestId: row.id,
-    });
-    await sendPushToAllNurses({
-      title: `${row.leave_date} 휴가자 발표`,
-      body: `${row.leave_date} 휴가자 발표`,
-      url: `#/calendar?ymd=${encodeURIComponent(row.leave_date)}&detail=1`,
+      pushUrl: `#/calendar?ymd=${encodeURIComponent(row.leave_date)}&detail=1`,
     });
     res.json({ ok: true });
   } catch (err) {
@@ -3072,16 +3107,12 @@ app.post("/api/requests/:id/reject", async (req, res) => {
       });
     });
 
-    await createNotificationsForAllNurses({
+    await broadcastLeaveStatusToAllNurses({
       type: "REQUEST_REJECTED",
       message: `${row.leave_date} 휴가 반려`,
       targetDate: row.leave_date,
       leaveRequestId: row.id,
-    });
-    await sendPushToAllNurses({
-      title: `${row.leave_date} 휴가 반려`,
-      body: `${row.leave_date} 휴가 반려`,
-      url: `#/calendar?ymd=${encodeURIComponent(row.leave_date)}&detail=1`,
+      pushUrl: `#/calendar?ymd=${encodeURIComponent(row.leave_date)}&detail=1`,
     });
     if (String(row.leave_type ?? "") === "GOLDKEY") {
       await reconcileGoldkeyUsageByPolicy(new Date().toISOString());

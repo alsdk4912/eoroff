@@ -757,17 +757,36 @@ function App() {
     const nowIso = new Date().toISOString();
     const msg = String(message ?? "").trim();
     if (!msg) return;
-    const rows = nurseIds.map((uid, idx) => ({
-      id: `ntf_${Date.now()}_${idx}`,
-      userId: uid,
-      message: msg,
-      type: String(payload.type ?? "INFO"),
-      targetDate: payload.targetDate ? String(payload.targetDate) : "",
-      leaveRequestId: payload.leaveRequestId ? String(payload.leaveRequestId) : "",
-      createdAt: nowIso,
-      readAt: "",
-    }));
-    setNotifications((prev) => [...rows, ...(Array.isArray(prev) ? prev : [])].slice(0, 800));
+    const type = String(payload.type ?? "INFO");
+    const targetDate = payload.targetDate ? String(payload.targetDate) : "";
+    const leaveRequestId = payload.leaveRequestId ? String(payload.leaveRequestId) : "";
+    const dedupLeaveTypes = new Set(["REQUEST_APPROVED", "REQUEST_REJECTED"]);
+    const dedupWindowMs = 30 * 60 * 1000;
+    setNotifications((prev) => {
+      if (
+        dedupLeaveTypes.has(type) &&
+        targetDate &&
+        (Array.isArray(prev) ? prev : []).some(
+          (n) =>
+            n.type === type &&
+            n.targetDate === targetDate &&
+            Date.now() - new Date(n.createdAt || 0).getTime() < dedupWindowMs
+        )
+      ) {
+        return prev;
+      }
+      const rows = nurseIds.map((uid, idx) => ({
+        id: `ntf_${Date.now()}_${idx}`,
+        userId: uid,
+        message: msg,
+        type,
+        targetDate,
+        leaveRequestId,
+        createdAt: nowIso,
+        readAt: "",
+      }));
+      return [...rows, ...(Array.isArray(prev) ? prev : [])].slice(0, 800);
+    });
   }
 
   async function markAllNotificationsRead() {
