@@ -3127,6 +3127,70 @@ app.post("/api/requests/:id/reject", async (req, res) => {
   }
 });
 
+app.post("/api/requests/:id/unreject", async (req, res) => {
+  try {
+    const requestId = decodeURIComponent(String(req.params.id ?? ""));
+    const idem = getIdempotencyKey(req);
+    if (idem) {
+      const prev = await auditRowByIdempotencyKey(idem);
+      if (prev) return res.json({ ok: true, idempotentReplay: true, leaveRequestId: prev.leave_request_id });
+    }
+
+    const actorUserId = String(req.body?.actorUserId ?? "").trim();
+    if (!actorUserId) return res.status(400).json({ error: "actorUserId가 필요합니다." });
+
+    const row = await queryOne(
+      `SELECT id, user_id, leave_date, leave_type, status FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`,
+      requestId
+    );
+    if (!row) return res.status(404).json({ error: "요청을 찾을 수 없습니다." });
+    if (String(row.status) === "APPLIED") {
+      return res.json({ ok: true, alreadyApplied: true });
+    }
+    if (String(row.status) !== "REJECTED") {
+      return res.status(400).json({ error: "반려 상태인 신청만 복원할 수 있습니다." });
+    }
+
+    try {
+      await assertActorCanManageLeaveRequest(actorUserId, row.user_id);
+    } catch (authErr) {
+      return res.status(authErr.statusCode || 403).json({ error: String(authErr?.message || authErr) });
+    }
+
+    await runTransaction(async (tx) => {
+      const cur = await tx.queryOne(
+        `SELECT status FROM requests WHERE id = ? AND ${SQL_REQ_ACTIVE}`,
+        requestId
+      );
+      if (!cur || String(cur.status) !== "REJECTED") {
+        throw Object.assign(new Error("상태 충돌"), { code: "STATUS_CONFLICT" });
+      }
+      await tx.execute("UPDATE requests SET status = 'APPLIED' WHERE id = ?", requestId);
+      await insertLeaveRequestAuditRow(tx, {
+        leaveRequestId: requestId,
+        action: "UNREJECT",
+        fromStatus: "REJECTED",
+        toStatus: "APPLIED",
+        actorUserId,
+        reason: String(req.body?.reason ?? "").trim() || null,
+        idempotencyKey: idem || null,
+        metadataJson: null,
+      });
+    });
+
+    if (String(row.leave_type ?? "") === "GOLDKEY") {
+      await reconcileGoldkeyUsageByPolicy(new Date().toISOString());
+    }
+    return res.json({ ok: true });
+  } catch (err) {
+    if (err?.code === "STATUS_CONFLICT") {
+      return res.status(409).json({ error: "다른 요청에 의해 상태가 바뀌었습니다. 목록을 새로고침 후 다시 시도하세요." });
+    }
+    console.error("POST /api/requests/:id/unreject", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
 app.post("/api/notes", async (req, res) => {
   await execute(
     "INSERT INTO notes (id, leave_request_id, content, agreed_order) VALUES (?, ?, ?, ?)",

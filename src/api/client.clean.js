@@ -133,6 +133,8 @@ export const api = {
     requestJson(`/requests/${id}/unselect`, { method: "POST", body: JSON.stringify(payload) }),
   rejectRequest: (id, payload = {}) =>
     requestJson(`/requests/${encodeURIComponent(id)}/reject`, { method: "POST", body: JSON.stringify(payload) }),
+  unrejectRequest: (id, payload) =>
+    requestJson(`/requests/${encodeURIComponent(id)}/unreject`, { method: "POST", body: JSON.stringify(payload) }),
   addNote: (payload) => requestJson("/notes", { method: "POST", body: JSON.stringify(payload) }),
   updateGoldkey: (userId, payload) =>
     requestJson(`/goldkeys/${userId}`, { method: "PATCH", body: JSON.stringify(payload) }),

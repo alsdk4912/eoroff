@@ -2190,6 +2190,30 @@ function App() {
     }
   }
 
+  async function unrejectRequest(requestId, { skipConfirm = false } = {}) {
+    const target = requests.find((r) => r.id === requestId);
+    if (!target || !canViewerApproveRequest(viewerRole, target.userId, users)) {
+      window.alert?.("반려 복원 권한이 없습니다.");
+      return false;
+    }
+    if (!target || target.status !== "REJECTED") return false;
+    if (!skipConfirm && !window.confirm("반려를 취소하고 신청 상태로 되돌리시겠습니까?")) return false;
+    const prevSnapshot = requests;
+    setRequests((prev) => prev.map((r) => (r.id === requestId ? { ...r, status: "APPLIED" } : r)));
+    if (serverMode) {
+      try {
+        await api.unrejectRequest(requestId, { actorUserId: auth.userId });
+        await bootstrap();
+        return true;
+      } catch (e) {
+        window.alert?.(`반려 복원 실패: ${e?.message || e}`);
+        setRequests(prevSnapshot);
+        return false;
+      }
+    }
+    return true;
+  }
+
   async function addPriorityNote(requestId) {
     const content = window.prompt("협의 메모를 입력하세요");
     if (!content) return;
@@ -2856,6 +2880,7 @@ function App() {
               selectRequest={selectRequest}
               unselectRequest={unselectRequest}
               rejectRequest={rejectRequest}
+              unrejectRequest={unrejectRequest}
               substituteAssignments={substituteAssignments}
               saveSubstituteForApprovedRequest={saveSubstituteForApprovedRequest}
               saveStandaloneSubstituteAssignments={saveStandaloneSubstituteAssignments}
@@ -4381,6 +4406,7 @@ function AdminDayRequestCard({
   selectRequest,
   unselectRequest,
   rejectRequest,
+  unrejectRequest,
   saveSubstituteForApprovedRequest,
   substituteLayout = "default",
 }) {
@@ -4572,13 +4598,18 @@ function AdminDayRequestCard({
         </div>
       ) : null}
       {requestRow.status === "REJECTED" ? (
-        <p className="help">반려된 신청입니다.</p>
+        <div className="admin-day-actions">
+          <p className="help admin-day-hint">반려된 신청입니다. 복원 후 다시 확정할 수 있습니다.</p>
+          <button type="button" className="admin-day-primary-btn" onClick={() => void unrejectRequest(requestRow.id)}>
+            반려 복원
+          </button>
+        </div>
       ) : null}
     </div>
   );
 }
 
-function AdminDayReviewTab({ users, requests, substituteAssignments, selectRequest, unselectRequest, rejectRequest, saveSubstituteForApprovedRequest }) {
+function AdminDayReviewTab({ users, requests, substituteAssignments, selectRequest, unselectRequest, rejectRequest, unrejectRequest, saveSubstituteForApprovedRequest }) {
   const [dayYmd, setDayYmd] = useState(() => toLocalYMD(new Date()));
   const nurseUsers = useMemo(() => users.filter((u) => u.role === "NURSE").sort((a, b) => a.name.localeCompare(b.name, "ko")), [users]);
   const dayReqs = useMemo(() => {
@@ -4612,6 +4643,7 @@ function AdminDayReviewTab({ users, requests, substituteAssignments, selectReque
                 selectRequest={selectRequest}
                 unselectRequest={unselectRequest}
                 rejectRequest={rejectRequest}
+                unrejectRequest={unrejectRequest}
                 saveSubstituteForApprovedRequest={saveSubstituteForApprovedRequest}
               />
             </li>
@@ -7385,6 +7417,7 @@ function CalendarPage({
   selectRequest,
   unselectRequest,
   rejectRequest,
+  unrejectRequest,
   substituteAssignments,
   saveSubstituteForApprovedRequest,
   saveStandaloneSubstituteAssignments,
@@ -8453,6 +8486,17 @@ function CalendarPage({
                                       </button>
                                       <button type="button" className="admin-calendar-btn admin-calendar-btn--reject" onClick={() => void rejectRequest(r.id)}>
                                         반려
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                  {manageRow && r.status === "REJECTED" ? (
+                                    <div className="admin-calendar-applicant-actions">
+                                      <button
+                                        type="button"
+                                        className="admin-calendar-btn admin-calendar-btn--approve"
+                                        onClick={() => void unrejectRequest(r.id)}
+                                      >
+                                        반려 복원
                                       </button>
                                     </div>
                                   ) : null}
