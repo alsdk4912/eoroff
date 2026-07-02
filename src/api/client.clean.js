@@ -146,7 +146,8 @@ export const api = {
     requestJson("/me/phone", { method: "PATCH", body: JSON.stringify(payload) }),
   resetPasswordByIdentity: (payload) =>
     requestJson("/password-reset", { method: "POST", body: JSON.stringify(payload) }),
-  listUsers: () => requestJson("/admin/users"),
+  listUsers: (actorUserId) =>
+    requestJson(`/admin/users?actorUserId=${encodeURIComponent(String(actorUserId ?? ""))}`),
   listRegistrationRequests: ({ adminUserId, status = "PENDING" }) =>
     requestJson(
       `/admin/registration-requests?adminUserId=${encodeURIComponent(String(adminUserId ?? ""))}&status=${encodeURIComponent(status)}`
@@ -163,6 +164,16 @@ export const api = {
     }),
   resetUserPassword: (targetUserId, payload) =>
     requestJson(`/admin/users/${targetUserId}/reset-password`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  deactivateUser: (targetUserId, payload) =>
+    requestJson(`/admin/users/${encodeURIComponent(targetUserId)}/deactivate`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  activateUser: (targetUserId, payload) =>
+    requestJson(`/admin/users/${encodeURIComponent(targetUserId)}/activate`, {
       method: "POST",
       body: JSON.stringify(payload),
     }),

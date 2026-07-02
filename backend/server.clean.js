@@ -270,22 +270,34 @@ function isOrLeaveAdminRoleServer(role) {
 async function requireAdminUser(actorUserId) {
   const uid = String(actorUserId ?? "").trim();
   if (!uid) return null;
-  return await queryOne("SELECT id FROM users WHERE id = ? AND role = 'ADMIN'", uid);
+  return await queryOne("SELECT id FROM users WHERE id = ? AND role = 'ADMIN' AND IFNULL(is_active, 1) = 1", uid);
+}
+
+async function requireOrLeaveAdminUser(actorUserId) {
+  const uid = String(actorUserId ?? "").trim();
+  if (!uid) return null;
+  return await queryOne(
+    "SELECT id, role FROM users WHERE id = ? AND role IN ('ADMIN', 'DEPT_HEAD') AND IFNULL(is_active, 1) = 1",
+    uid
+  );
 }
 
 async function deptHeadUserIds() {
-  const rows = await queryAll("SELECT id FROM users WHERE role = 'DEPT_HEAD'");
+  const rows = await queryAll("SELECT id FROM users WHERE role = 'DEPT_HEAD' AND IFNULL(is_active, 1) = 1");
   return rows.map((r) => String(r.id ?? "").trim()).filter(Boolean);
 }
 
 async function requireAdmin2User(actorUserId) {
   const uid = String(actorUserId ?? "").trim();
   if (!uid) return null;
-  return await queryOne("SELECT id FROM users WHERE id = ? AND role = 'ADMIN2'", uid);
+  return await queryOne("SELECT id FROM users WHERE id = ? AND role = 'ADMIN2' AND IFNULL(is_active, 1) = 1", uid);
 }
 
 async function userRoleById(userId) {
-  const row = await queryOne("SELECT role FROM users WHERE id = ?", String(userId ?? "").trim());
+  const row = await queryOne(
+    "SELECT role FROM users WHERE id = ? AND IFNULL(is_active, 1) = 1",
+    String(userId ?? "").trim()
+  );
   return String(row?.role ?? "").trim();
 }
 
@@ -591,7 +603,9 @@ app.get("/api/bootstrap", async (_, res) => {
     await reconcileGoldkeyUsageByPolicy(new Date().toISOString());
     const auditCountRow = await queryOne("SELECT COUNT(*) AS c FROM leave_request_audit");
     res.json({
-      users: await queryAll("SELECT id, name, employee_no, role, phone FROM users"),
+      users: await queryAll(
+        "SELECT id, name, employee_no, role, phone, IFNULL(is_active, 1) AS is_active, inactive_reason, inactive_at FROM users"
+      ),
       goldkeys: await queryAll("SELECT * FROM goldkeys"),
       requests: await queryAll(`SELECT * FROM requests WHERE ${SQL_REQ_ACTIVE}`),
       substituteAssignments: await queryAll("SELECT * FROM substitute_assignments"),
@@ -1244,11 +1258,25 @@ app.post("/api/login", async (req, res) => {
   }
 
   const rows = await queryAll(
-    "SELECT id, name, employee_no, role, phone FROM users WHERE REPLACE(name, ' ', '') = REPLACE(?, ' ', '') AND password = ?",
+    `SELECT id, name, employee_no, role, phone, IFNULL(is_active, 1) AS is_active
+     FROM users
+     WHERE REPLACE(name, ' ', '') = REPLACE(?, ' ', '') AND password = ?`,
     name,
     password
   );
   if (rows.length === 0) {
+    const inactive = await queryOne(
+      `SELECT id
+       FROM users
+       WHERE REPLACE(name, ' ', '') = REPLACE(?, ' ', '')
+         AND password = ?
+         AND IFNULL(is_active, 1) <> 1`,
+      name,
+      password
+    );
+    if (inactive?.id) {
+      return res.status(403).json({ error: "비활성화된 계정입니다. 부서파트장에게 문의해주세요." });
+    }
     const pending = await queryOne(
       `SELECT id FROM registration_requests
        WHERE status = 'PENDING' AND REPLACE(name, ' ', '') = REPLACE(?, ' ', '')`,
@@ -1262,6 +1290,9 @@ app.post("/api/login", async (req, res) => {
     return res.status(401).json({ error: "이름 또는 비밀번호가 올바르지 않습니다." });
   }
   if (rows.length > 1) return res.status(409).json({ error: "동명이인이 있어 로그인할 수 없습니다." });
+  if (Number(rows[0]?.is_active ?? 1) !== 1) {
+    return res.status(403).json({ error: "비활성화된 계정입니다. 부서파트장에게 문의해주세요." });
+  }
   return res.json({ ok: true, user: rows[0] });
 });
 
@@ -1404,7 +1435,11 @@ app.post("/api/change-password", async (req, res) => {
   if (!newPassword || String(newPassword).length < 4) {
     return res.status(400).json({ error: "새 비밀번호는 4자 이상이어야 합니다." });
   }
-  const user = await queryOne("SELECT id FROM users WHERE id = ? AND password = ?", userId, currentPassword);
+  const user = await queryOne(
+    "SELECT id FROM users WHERE id = ? AND password = ? AND IFNULL(is_active, 1) = 1",
+    userId,
+    currentPassword
+  );
   if (!user) return res.status(401).json({ error: "현재 비밀번호가 올바르지 않습니다." });
   await execute("UPDATE users SET password = ? WHERE id = ?", newPassword, userId);
   return res.json({ ok: true });
@@ -1417,7 +1452,7 @@ app.patch("/api/me/phone", async (req, res) => {
   if (digits.length < 9 || digits.length > 11) {
     return res.status(400).json({ error: "전화번호는 9~11자리 숫자로 입력해 주세요." });
   }
-  const user = await queryOne("SELECT id FROM users WHERE id = ?", userId);
+  const user = await queryOne("SELECT id FROM users WHERE id = ? AND IFNULL(is_active, 1) = 1", userId);
   if (!user) return res.status(404).json({ error: "사용자를 찾을 수 없습니다." });
   await execute("UPDATE users SET phone = ? WHERE id = ?", digits, userId);
   return res.json({ ok: true, phone: digits });
@@ -1431,7 +1466,11 @@ app.post("/api/password-reset", async (req, res) => {
   if (!empNo) return res.status(400).json({ error: "사번을 입력해주세요." });
 
   const rows = await queryAll(
-    "SELECT id FROM users WHERE REPLACE(name, ' ', '') = REPLACE(?, ' ', '') AND UPPER(REPLACE(employee_no, ' ', '')) = UPPER(REPLACE(?, ' ', ''))",
+    `SELECT id
+     FROM users
+     WHERE REPLACE(name, ' ', '') = REPLACE(?, ' ', '')
+       AND UPPER(REPLACE(employee_no, ' ', '')) = UPPER(REPLACE(?, ' ', ''))
+       AND IFNULL(is_active, 1) = 1`,
     name,
     empNo
   );
@@ -1442,18 +1481,89 @@ app.post("/api/password-reset", async (req, res) => {
   return res.json({ ok: true, temporaryPassword: "1234" });
 });
 
-app.get("/api/admin/users", async (_, res) => {
+app.get("/api/admin/users", async (req, res) => {
+  const actorUserId = String(req.query?.actorUserId ?? "").trim();
+  const actor = await requireOrLeaveAdminUser(actorUserId);
+  if (!actor) return res.status(403).json({ error: "관리자 또는 부서파트장 권한이 필요합니다." });
   res.json({
-    users: await queryAll("SELECT id, name, employee_no, role, phone FROM users ORDER BY role DESC, name ASC"),
+    users: await queryAll(
+      `SELECT id, name, employee_no, role, phone,
+              IFNULL(is_active, 1) AS is_active, inactive_reason, inactive_at
+       FROM users
+       ORDER BY IFNULL(is_active, 1) DESC, role DESC, name ASC`
+    ),
   });
 });
 
 app.post("/api/admin/users/:id/reset-password", async (req, res) => {
   const { adminUserId, nextPassword } = req.body ?? {};
-  const admin = await queryOne("SELECT id FROM users WHERE id = ? AND role = 'ADMIN'", adminUserId);
-  if (!admin) return res.status(403).json({ error: "관리자 권한이 필요합니다." });
+  const admin = await requireOrLeaveAdminUser(adminUserId);
+  if (!admin) return res.status(403).json({ error: "관리자 또는 부서파트장 권한이 필요합니다." });
   await execute("UPDATE users SET password = ? WHERE id = ?", nextPassword || "1234", req.params.id);
   res.json({ ok: true });
+});
+
+app.post("/api/admin/users/:id/deactivate", async (req, res) => {
+  try {
+    const actorUserId = String(req.body?.actorUserId ?? "").trim();
+    const reason = String(req.body?.reason ?? "").trim();
+    const targetUserId = String(req.params.id ?? "").trim();
+    const actor = await requireOrLeaveAdminUser(actorUserId);
+    if (!actor) return res.status(403).json({ error: "관리자 또는 부서파트장 권한이 필요합니다." });
+    if (!targetUserId) return res.status(400).json({ error: "대상 사용자 id가 필요합니다." });
+    if (actorUserId === targetUserId) return res.status(400).json({ error: "본인 계정은 비활성화할 수 없습니다." });
+
+    const target = await queryOne(
+      "SELECT id, role, IFNULL(is_active, 1) AS is_active FROM users WHERE id = ?",
+      targetUserId
+    );
+    if (!target?.id) return res.status(404).json({ error: "사용자를 찾을 수 없습니다." });
+    if (String(actor.role) === "DEPT_HEAD" && !["NURSE", "ANESTHESIA", "CHIEF"].includes(String(target.role ?? ""))) {
+      return res.status(403).json({ error: "부서파트장은 직원 계정만 비활성화할 수 있습니다." });
+    }
+    if (Number(target.is_active ?? 1) !== 1) return res.json({ ok: true });
+
+    await execute(
+      `UPDATE users
+       SET is_active = 0, inactive_reason = ?, inactive_at = ?, inactive_by = ?
+       WHERE id = ?`,
+      reason || "퇴사/이동",
+      new Date().toISOString(),
+      actorUserId,
+      targetUserId
+    );
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /api/admin/users/:id/deactivate", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
+app.post("/api/admin/users/:id/activate", async (req, res) => {
+  try {
+    const actorUserId = String(req.body?.actorUserId ?? "").trim();
+    const targetUserId = String(req.params.id ?? "").trim();
+    const actor = await requireOrLeaveAdminUser(actorUserId);
+    if (!actor) return res.status(403).json({ error: "관리자 또는 부서파트장 권한이 필요합니다." });
+    if (!targetUserId) return res.status(400).json({ error: "대상 사용자 id가 필요합니다." });
+
+    const target = await queryOne("SELECT id, role FROM users WHERE id = ?", targetUserId);
+    if (!target?.id) return res.status(404).json({ error: "사용자를 찾을 수 없습니다." });
+    if (String(actor.role) === "DEPT_HEAD" && !["NURSE", "ANESTHESIA", "CHIEF"].includes(String(target.role ?? ""))) {
+      return res.status(403).json({ error: "부서파트장은 직원 계정만 복구할 수 있습니다." });
+    }
+
+    await execute(
+      `UPDATE users
+       SET is_active = 1, inactive_reason = NULL, inactive_at = NULL, inactive_by = NULL
+       WHERE id = ?`,
+      targetUserId
+    );
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /api/admin/users/:id/activate", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
 });
 
 /** 단일 휴가 요청 소프트 삭제(목록·부트스트랩에서 제외). 운영 데이터 정리용. */

@@ -881,6 +881,9 @@ function App() {
         role: u.role,
         employeeNo: u.employee_no,
         phone: String(u.phone ?? "").trim(),
+        isActive: Number(u.is_active ?? 1) === 1,
+        inactiveReason: String(u.inactive_reason ?? "").trim(),
+        inactiveAt: u.inactive_at ?? null,
       }))
     );
     const mappedReqs = (data.requests ?? []).map(mapRequestRow);
@@ -1078,7 +1081,7 @@ function App() {
   async function reloadAdminUserManagement() {
     if (!serverMode || !auth?.userId) return;
     try {
-      const userList = await api.listUsers();
+      const userList = await api.listUsers(auth.userId);
       setManagedUsers(
         userList.users.map((u) => ({
           id: u.id,
@@ -1086,6 +1089,9 @@ function App() {
           employeeNo: u.employee_no,
           role: u.role,
           phone: String(u.phone ?? "").trim(),
+          isActive: Number(u.is_active ?? 1) === 1,
+          inactiveReason: String(u.inactive_reason ?? "").trim(),
+          inactiveAt: u.inactive_at ?? null,
         }))
       );
     } catch {
@@ -1110,6 +1116,14 @@ function App() {
     if (!isLoggedIn || !isAdmin || !serverMode) return;
     void reloadAdminUserManagement();
   }, [isLoggedIn, isAdmin, serverMode, auth?.userId]);
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    if (currentUser && currentUser.isActive === false) {
+      window.alert?.("비활성화된 계정입니다. 다시 로그인할 수 없습니다.");
+      setAuth(null);
+    }
+  }, [isLoggedIn, currentUser?.isActive]);
 
   useEffect(() => {
     if (!isLoggedIn || !canUseWebPushRole(currentUser?.role) || !serverMode) {
@@ -2637,6 +2651,24 @@ function App() {
     setAccountMessage("선택한 사용자의 비밀번호를 1234로 초기화했습니다.");
   }
 
+  async function handleDeactivateUser(targetUserId) {
+    const reason = window.prompt?.("비활성화 사유를 입력하세요.", "퇴사/이동");
+    if (reason === null) return;
+    await api.deactivateUser(targetUserId, { actorUserId: auth.userId, reason: reason.trim() || "퇴사/이동" });
+    await reloadAdminUserManagement();
+    const data = await api.bootstrap();
+    applyBootstrapPayload(data);
+    setAccountMessage("선택한 사용자를 비활성화했습니다.");
+  }
+
+  async function handleActivateUser(targetUserId) {
+    await api.activateUser(targetUserId, { actorUserId: auth.userId });
+    await reloadAdminUserManagement();
+    const data = await api.bootstrap();
+    applyBootstrapPayload(data);
+    setAccountMessage("선택한 사용자를 다시 활성화했습니다.");
+  }
+
   if (!isLoggedIn) {
     return (
       <LoginPage
@@ -2954,6 +2986,8 @@ function App() {
                 onRestore={handleRestoreSql}
                 managedUsers={managedUsers}
                 onResetPassword={handleResetPassword}
+                onDeactivateUser={handleDeactivateUser}
+                onActivateUser={handleActivateUser}
                 accountMessage={accountMessage}
                 onResetLeaveData={handleResetLeaveData}
                 resetDataMessage={resetDataMessage}
@@ -8949,6 +8983,8 @@ function RegistrationApprovalRow({ row, onApprove, onReject }) {
 function SettingsPage({
   managedUsers,
   onResetPassword,
+  onDeactivateUser,
+  onActivateUser,
   accountMessage,
   pendingRegistrations,
   onApproveRegistration,
@@ -8985,10 +9021,22 @@ function SettingsPage({
           <li key={u.id} className="settings-password-reset-row">
             <span className="settings-password-reset-name">{u.name}</span>
             <span className="settings-password-reset-emp">{u.employeeNo}</span>
-            <span className="settings-password-reset-role">{u.role}</span>
+            <span className="settings-password-reset-role">
+              {u.role}
+              {u.isActive ? " / 활성" : ` / 비활성${u.inactiveReason ? `(${u.inactiveReason})` : ""}`}
+            </span>
             <button type="button" className="settings-password-reset-btn" onClick={() => onResetPassword(u.id)}>
               비밀번호 1234로 초기화
             </button>
+            {u.isActive ? (
+              <button type="button" className="settings-password-reset-btn" onClick={() => onDeactivateUser(u.id)}>
+                접속 차단
+              </button>
+            ) : (
+              <button type="button" className="settings-password-reset-btn" onClick={() => onActivateUser(u.id)}>
+                접속 복구
+              </button>
+            )}
           </li>
         ))}
       </ul>

@@ -70,7 +70,7 @@ export function shiftOptionsForUserId(userId, users) {
 
 /** 월간 근무표 — 정수영 아래 마취과, 윤지민 아래 주임 */
 export const ANESTHESIA_MONTHLY_NAMES = ["김인자", "이지현", "박현정", "윤지민"];
-export const CHIEF_MONTHLY_NAMES = ["방현석", "최무영", "김보람", "이찬주", "오세연"];
+export const CHIEF_MONTHLY_NAMES = ["방현석", "최무영", "김보람", "오문환", "오세연"];
 
 export function emptyScheduleMonthValues(monthCount) {
   const n = Math.max(0, Number(monthCount) || 0);

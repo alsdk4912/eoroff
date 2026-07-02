@@ -126,7 +126,11 @@ CREATE TABLE IF NOT EXISTS users (
   employee_no TEXT NOT NULL,
   role TEXT NOT NULL,
   password TEXT NOT NULL,
-  phone TEXT
+  phone TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  inactive_reason TEXT,
+  inactive_at TEXT,
+  inactive_by TEXT
 );
 
 CREATE TABLE IF NOT EXISTS goldkeys (
@@ -452,6 +456,7 @@ export async function initDb() {
   await ensureWeeklyCellOverridesTable();
   await ensureRegistrationRequestsTable();
   await ensureUsersPhoneColumn();
+  await ensureUsersActiveColumns();
   await ensureNoticesImagesColumn();
   await ensureWorkSchedulesTable();
 
@@ -476,6 +481,7 @@ export async function initDb() {
   await ensureHalfDayHistoricalRecords();
   await ensureChiefLeechanjooLeave20260630();
   await ensureAnesthesiaLeeJihyunGoldkeys20260724_27();
+  await ensureChiefOhMoonhwanAndDeactivateLeechanjoo();
   return client;
 }
 
@@ -831,16 +837,22 @@ async function ensureAdmin2User() {
   );
 }
 
-/** 주임(김보람·방현석·최무영·이찬주·오세연) */
+/** 주임(김보람·방현석·최무영·오문환·오세연) */
 async function ensureChiefUsers() {
-  const names = ["김보람", "방현석", "최무영", "이찬주", "오세연"];
-  for (let idx = 0; idx < names.length; idx++) {
-    const name = names[idx];
+  const chiefs = [
+    { id: "u_chief_1", name: "김보람" },
+    { id: "u_chief_2", name: "방현석" },
+    { id: "u_chief_3", name: "최무영" },
+    { id: "u_chief_6", name: "오문환" },
+    { id: "u_chief_5", name: "오세연" },
+  ];
+  for (let idx = 0; idx < chiefs.length; idx++) {
+    const { id, name } = chiefs[idx];
     const row = await queryOne("SELECT id FROM users WHERE name = ? AND role = 'CHIEF'", name);
     if (row?.id) continue;
     await execute(
-      "INSERT INTO users (id, name, employee_no, role, password) VALUES (?, ?, ?, ?, ?)",
-      `u_chief_${idx + 1}`,
+      "INSERT INTO users (id, name, employee_no, role, password, is_active) VALUES (?, ?, ?, ?, ?, 1)",
+      id,
       name,
       resolveEmployeeNo(name, `C${String(idx + 1).padStart(4, "0")}`),
       "CHIEF",
@@ -878,6 +890,24 @@ async function ensureUsersPhoneColumn() {
     if (!/duplicate column/i.test(msg)) throw e;
   }
   await execute("INSERT INTO app_migrations (id) VALUES (?)", "users_phone_v1");
+}
+
+async function ensureUsersActiveColumns() {
+  const cols = await queryAll("PRAGMA table_info(users)");
+  const names = new Set(cols.map((c) => String(c.name ?? "").trim()));
+  if (!names.has("is_active")) {
+    await execute("ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1");
+  }
+  if (!names.has("inactive_reason")) {
+    await execute("ALTER TABLE users ADD COLUMN inactive_reason TEXT");
+  }
+  if (!names.has("inactive_at")) {
+    await execute("ALTER TABLE users ADD COLUMN inactive_at TEXT");
+  }
+  if (!names.has("inactive_by")) {
+    await execute("ALTER TABLE users ADD COLUMN inactive_by TEXT");
+  }
+  await execute("UPDATE users SET is_active = 1 WHERE is_active IS NULL");
 }
 
 async function ensureUserPhones() {
@@ -1625,5 +1655,53 @@ async function ensureAnesthesiaLeeJihyunGoldkeys20260724_27() {
 
   await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
   console.log("[db] anesthesia_leejihyun_goldkeys_20260724_27_v1 applied");
+}
+
+/** 이찬주 비활성 유지 + 오문환 주임 신규 추가 */
+async function ensureChiefOhMoonhwanAndDeactivateLeechanjoo() {
+  const migrationId = "chief_ohmoonhwan_replace_leechanjoo_v1";
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
+  if (done) return;
+
+  const nowIso = new Date().toISOString();
+  const lee = await queryOne("SELECT id FROM users WHERE name = ? AND role = 'CHIEF' LIMIT 1", "이찬주");
+  if (lee?.id) {
+    await execute(
+      `UPDATE users
+       SET is_active = 0,
+           inactive_reason = COALESCE(NULLIF(inactive_reason, ''), ?),
+           inactive_at = COALESCE(inactive_at, ?),
+           inactive_by = COALESCE(inactive_by, ?)
+       WHERE id = ?`,
+      "퇴사",
+      nowIso,
+      "system_migration",
+      String(lee.id)
+    );
+  }
+
+  const oh = await queryOne("SELECT id FROM users WHERE name = ? AND role = 'CHIEF' LIMIT 1", "오문환");
+  if (!oh?.id) {
+    await execute(
+      "INSERT INTO users (id, name, employee_no, role, password, is_active) VALUES (?, ?, ?, 'CHIEF', ?, 1)",
+      "u_chief_6",
+      "오문환",
+      resolveEmployeeNo("오문환", "C0004"),
+      "1234"
+    );
+  } else {
+    await execute(
+      `UPDATE users
+       SET is_active = 1,
+           inactive_reason = NULL,
+           inactive_at = NULL,
+           inactive_by = NULL
+       WHERE id = ?`,
+      String(oh.id)
+    );
+  }
+
+  await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+  console.log("[db] chief_ohmoonhwan_replace_leechanjoo_v1 applied");
 }
 
