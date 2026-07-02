@@ -44,6 +44,8 @@ import {
   ANESTHESIA_MONTHLY_NAMES,
   CHIEF_MONTHLY_NAMES,
   chiefScheduleRowCandidateNames,
+  fixedChiefShiftCodeForName,
+  isFixedChiefShiftStaff,
   canEditMonthlyScheduleCell,
   canEditWeeklyScheduleCell,
   canUseWeeklyScheduleEditor,
@@ -3817,6 +3819,8 @@ function addDaysToYmd(ymd, deltaDays) {
 }
 
 function baseMonthCodeForNurseName(name, ymd, workScheduleByYear) {
+  const fixedChief = fixedChiefShiftCodeForName(name);
+  if (fixedChief) return fixedChief;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd ?? "").trim());
   if (!m) return "—";
   const year = Number(m[1]);
@@ -4189,6 +4193,12 @@ function WeeklyScheduleTab({
   }
 
   function onCellOverrideChange(userId, ymd, val) {
+    const staffUser = (Array.isArray(users) ? users : []).find((u) => String(u.id) === String(userId));
+    const auto = staffUser ? computedCell(staffUser, ymd) : null;
+    if (staffUser && isFixedChiefShiftStaff(staffUser.name) && auto?.kind !== "leave") {
+      window.alert?.("오세연 주임은 휴가일에만 번표를 수정할 수 있습니다.");
+      return;
+    }
     const key = weeklyCellKey(userId, ymd);
     const parsed = parseWeeklyOverrideSelectValue(val);
     setWeeklyMsg("");
@@ -4203,6 +4213,12 @@ function WeeklyScheduleTab({
   }
 
   function onWeeklyCustomBaseChange(userId, ymd, text) {
+    const staffUser = (Array.isArray(users) ? users : []).find((u) => String(u.id) === String(userId));
+    const auto = staffUser ? computedCell(staffUser, ymd) : null;
+    if (staffUser && isFixedChiefShiftStaff(staffUser.name) && auto?.kind !== "leave") {
+      window.alert?.("오세연 주임은 휴가일에만 번표를 수정할 수 있습니다.");
+      return;
+    }
     const key = weeklyCellKey(userId, ymd);
     setWeeklyMsg("");
     setDraftOverrides((prev) => ({
@@ -4298,7 +4314,7 @@ function WeeklyScheduleTab({
               const prevName = rowIdx > 0 ? rows[rowIdx - 1]?.name : null;
               const sep = separatorBeforeMonthlyRow(u.name, prevName);
               const sec = monthlyRowSection(u.name);
-              const cellEditable = canEditWeeklyScheduleCell(viewerRole, u, viewerUserId);
+              const baseCellEditable = canEditWeeklyScheduleCell(viewerRole, u, viewerUserId);
               const out = [];
               if (sep) {
                 out.push(
@@ -4321,10 +4337,12 @@ function WeeklyScheduleTab({
                   <td className="weekly-name">{u.name}</td>
                   {days.map((d) => {
                     const cell = displayCell(u, d);
+                    const auto = computedCell(u, d);
+                    const cellEditable =
+                      baseCellEditable && (!isFixedChiefShiftStaff(u.name) || auto?.kind === "leave");
                     const key = weeklyCellKey(u.id, d);
                     const ov = draftOverrides[key];
                     const selVal = weeklyOverrideSelectValue(ov);
-                    const auto = computedCell(u, d);
                     const autoMain = normalizeWeeklyLeaveMark(auto?.main ?? "");
                     const autoLabel = weeklyCellDisplayLine(auto);
                     const showCustomInput =

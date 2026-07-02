@@ -50,7 +50,14 @@ export function normalizeWorkScheduleRowsForAnesthesia(rows) {
 }
 
 /** 주임 */
-export const CHIEF_SHIFT_OPTIONS = ["", "D0", "D1", "9-5", "E"];
+export const CHIEF_SHIFT_OPTIONS = ["", "D0", "D1", "9-5", "10-2시", "E"];
+const FIXED_CHIEF_SHIFT_BY_NAME = {
+  오세연: "10-2시",
+};
+
+export function fixedChiefShiftCodeForName(name) {
+  return FIXED_CHIEF_SHIFT_BY_NAME[String(name ?? "").trim()] ?? "";
+}
 
 export function shiftOptionsForRole(role) {
   const r = String(role ?? "").trim();
@@ -122,14 +129,24 @@ export function mergeWorkScheduleRows(saved, templateRows) {
   return template.map((t) => {
     const len = (t.values || []).length;
     const hit = map.get(t.name);
-    if (!hit) return { name: t.name, values: emptyScheduleMonthValues(len) };
+    const fixedChief = fixedChiefShiftCodeForName(t.name);
+    if (!hit) {
+      return {
+        name: t.name,
+        values: fixedChief ? Array.from({ length: len }, () => fixedChief) : emptyScheduleMonthValues(len),
+      };
+    }
     const vals = Array.isArray(hit.values) ? hit.values : [];
-    const values = Array.from({ length: len }, (_, i) => String(vals[i] ?? ""));
+    const values = Array.from({ length: len }, (_, i) => {
+      if (fixedChief) return fixedChief;
+      return String(vals[i] ?? "");
+    });
     return { name: t.name, values };
   });
 }
 
 export function canEditMonthlyScheduleCell(viewerRole, rowName) {
+  if (fixedChiefShiftCodeForName(rowName)) return false;
   const role = String(viewerRole ?? "").trim();
   const sec = monthlyRowSection(rowName);
   if (role === "ADMIN" || role === "DEPT_HEAD") return true;
@@ -155,6 +172,10 @@ export function canEditWeeklyScheduleCell(viewerRole, staffUser, viewerUserId) {
   if (tr === "CHIEF") return vr === "CHIEF";
   if (tr === "NURSE") return vr === "NURSE" || vr === "ADMIN" || vr === "DEPT_HEAD";
   return false;
+}
+
+export function isFixedChiefShiftStaff(name) {
+  return Boolean(fixedChiefShiftCodeForName(name));
 }
 
 export function canUseWeeklyScheduleEditor(viewerRole) {
