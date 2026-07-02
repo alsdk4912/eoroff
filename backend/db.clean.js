@@ -482,6 +482,7 @@ export async function initDb() {
   await ensureChiefLeechanjooLeave20260630();
   await ensureAnesthesiaLeeJihyunGoldkeys20260724_27();
   await ensureChiefOhMoonhwanAndDeactivateLeechanjoo();
+  await ensureChiefKangMyunghoFrom20260625();
   return client;
 }
 
@@ -837,7 +838,7 @@ async function ensureAdmin2User() {
   );
 }
 
-/** 주임(김보람·방현석·최무영·오문환·오세연) */
+/** 주임(김보람·방현석·최무영·오문환·오세연·강명호) */
 async function ensureChiefUsers() {
   const chiefs = [
     { id: "u_chief_1", name: "김보람" },
@@ -845,6 +846,7 @@ async function ensureChiefUsers() {
     { id: "u_chief_3", name: "최무영" },
     { id: "u_chief_6", name: "오문환" },
     { id: "u_chief_5", name: "오세연" },
+    { id: "u_chief_7", name: "강명호" },
   ];
   for (let idx = 0; idx < chiefs.length; idx++) {
     const { id, name } = chiefs[idx];
@@ -1703,5 +1705,36 @@ async function ensureChiefOhMoonhwanAndDeactivateLeechanjoo() {
 
   await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
   console.log("[db] chief_ohmoonhwan_replace_leechanjoo_v1 applied");
+}
+
+/** 강명호 주임 2026-06-25부터 활성 */
+async function ensureChiefKangMyunghoFrom20260625() {
+  const migrationId = "chief_kangmyungho_from_20260625_v1";
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
+  if (done) return;
+
+  const existing = await queryOne("SELECT id FROM users WHERE name = ? AND role = 'CHIEF' LIMIT 1", "강명호");
+  if (!existing?.id) {
+    await execute(
+      "INSERT INTO users (id, name, employee_no, role, password, is_active) VALUES (?, ?, ?, 'CHIEF', ?, 1)",
+      "u_chief_7",
+      "강명호",
+      resolveEmployeeNo("강명호", "C0007"),
+      "1234"
+    );
+  } else {
+    await execute(
+      `UPDATE users
+       SET is_active = 1,
+           inactive_reason = NULL,
+           inactive_at = NULL,
+           inactive_by = NULL
+       WHERE id = ?`,
+      String(existing.id)
+    );
+  }
+
+  await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+  console.log("[db] chief_kangmyungho_from_20260625_v1 applied");
 }
 

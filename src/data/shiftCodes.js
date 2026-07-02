@@ -70,7 +70,28 @@ export function shiftOptionsForUserId(userId, users) {
 
 /** 월간 근무표 — 정수영 아래 마취과, 윤지민 아래 주임 */
 export const ANESTHESIA_MONTHLY_NAMES = ["김인자", "이지현", "박현정", "윤지민"];
-export const CHIEF_MONTHLY_NAMES = ["방현석", "최무영", "김보람", "오문환", "오세연"];
+export const CHIEF_MONTHLY_NAMES = ["방현석", "최무영", "김보람", "오문환", "오세연", "강명호"];
+const LEGACY_CHIEF_MONTHLY_NAMES = ["이찬주"];
+const CHIEF_REPLACEMENT_CUTOFF_YMD = "2026-07-01";
+const CHIEF_REPLACEMENT_NAMES = new Set(["이찬주", "오문환"]);
+const CHIEF_FUTURE_START_NAMES = new Set(["강명호"]);
+
+function chiefNamesForYmd(ymd) {
+  const base = ["방현석", "최무영", "김보람"];
+  const tail = String(ymd ?? "").slice(0, 10) >= "2026-06-25" ? ["오세연", "강명호"] : ["오세연"];
+  if (String(ymd ?? "").slice(0, 10) < CHIEF_REPLACEMENT_CUTOFF_YMD) {
+    return [...base, "이찬주", ...tail];
+  }
+  return [...base, "오문환", ...tail];
+}
+
+export function chiefScheduleRowCandidateNames(name, ymd) {
+  const n = String(name ?? "").trim();
+  const base = String(ymd ?? "").slice(0, 10);
+  if (n === "이찬주") return base >= CHIEF_REPLACEMENT_CUTOFF_YMD ? ["오문환", "이찬주"] : ["이찬주", "오문환"];
+  if (n === "오문환") return base < CHIEF_REPLACEMENT_CUTOFF_YMD ? ["이찬주", "오문환"] : ["오문환", "이찬주"];
+  return [n];
+}
 
 export function emptyScheduleMonthValues(monthCount) {
   const n = Math.max(0, Number(monthCount) || 0);
@@ -80,7 +101,7 @@ export function emptyScheduleMonthValues(monthCount) {
 export function monthlyRowSection(name) {
   const n = String(name ?? "").trim();
   if (ANESTHESIA_MONTHLY_NAMES.includes(n)) return "anesthesia";
-  if (CHIEF_MONTHLY_NAMES.includes(n)) return "chief";
+  if (CHIEF_MONTHLY_NAMES.includes(n) || LEGACY_CHIEF_MONTHLY_NAMES.includes(n)) return "chief";
   return "or";
 }
 
@@ -153,20 +174,22 @@ export function mergeMonthlySaveDraft(saved, draft, templateRows, viewerRole) {
 }
 
 /** 주간 번표에 표시할 인원(보는 사람 역할 기준) — 구역별만 볼 때 */
-export function weeklyStaffForViewer(users, viewerRole) {
+export function weeklyStaffForViewer(users, viewerRole, anchorYmd = "") {
   const list = Array.isArray(users) ? users : [];
   const role = String(viewerRole ?? "").trim();
   if (role === "ANESTHESIA" || role === "ADMIN2") {
-    return list.filter((u) => u.role === "ANESTHESIA").sort((a, b) => a.name.localeCompare(b.name, "ko"));
+    return list.filter((u) => u.role === "ANESTHESIA" && u.isActive !== false).sort((a, b) => a.name.localeCompare(b.name, "ko"));
   }
   if (role === "CHIEF") {
-    return list.filter((u) => u.role === "CHIEF").sort((a, b) => a.name.localeCompare(b.name, "ko"));
+    return chiefNamesForYmd(anchorYmd)
+      .map((n) => list.find((u) => u.role === "CHIEF" && u.name === n))
+      .filter(Boolean);
   }
-  return list.filter((u) => u.role === "NURSE").sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  return list.filter((u) => u.role === "NURSE" && u.isActive !== false).sort((a, b) => a.name.localeCompare(b.name, "ko"));
 }
 
 /** 주간 번표: 수술실 → 마취과 → 주임 (월간근무표와 동일 순서) */
-export function weeklyRosterAllSections(users) {
+export function weeklyRosterAllSections(users, anchorYmd = "") {
   const list = Array.isArray(users) ? users : [];
   const byName = (a, b) => a.name.localeCompare(b.name, "ko");
   const pickInOrder = (names, role) =>
@@ -174,10 +197,25 @@ export function weeklyRosterAllSections(users) {
       .map((n) => list.find((u) => u.role === role && u.name === n))
       .filter(Boolean)
       .concat(
-        list.filter((u) => u.role === role && !names.includes(u.name)).sort(byName)
+        list.filter((u) => u.role === role && u.isActive !== false && !names.includes(u.name)).sort(byName)
       );
-  const or = list.filter((u) => u.role === "NURSE").sort(byName);
+  const or = list.filter((u) => u.role === "NURSE" && u.isActive !== false).sort(byName);
   const anesthesia = pickInOrder(ANESTHESIA_MONTHLY_NAMES, "ANESTHESIA");
-  const chief = pickInOrder(CHIEF_MONTHLY_NAMES, "CHIEF");
+  const chiefNames = chiefNamesForYmd(anchorYmd);
+  const chief = chiefNames
+    .map((n) => list.find((u) => u.role === "CHIEF" && u.name === n))
+    .filter(Boolean)
+    .concat(
+      list
+        .filter(
+          (u) =>
+            u.role === "CHIEF" &&
+            u.isActive !== false &&
+            !chiefNames.includes(u.name) &&
+            !CHIEF_REPLACEMENT_NAMES.has(u.name) &&
+            !CHIEF_FUTURE_START_NAMES.has(u.name)
+        )
+        .sort(byName)
+    );
   return [...or, ...anesthesia, ...chief];
 }

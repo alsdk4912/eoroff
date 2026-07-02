@@ -43,6 +43,7 @@ import {
   weeklyRosterAllSections,
   ANESTHESIA_MONTHLY_NAMES,
   CHIEF_MONTHLY_NAMES,
+  chiefScheduleRowCandidateNames,
   canEditMonthlyScheduleCell,
   canEditWeeklyScheduleCell,
   canUseWeeklyScheduleEditor,
@@ -3827,11 +3828,15 @@ function baseMonthCodeForNurseName(name, ymd, workScheduleByYear) {
   const monthLen = SCHEDULE_MONTH_COUNT;
   if (month < 1 || month > monthLen) return "—";
   const mi = month - 1;
-  const row = (Array.isArray(rows) ? rows : []).find((r) => r.name === name);
-  const raw = row?.values?.[mi];
-  if (raw == null || String(raw).trim() === "") return "—";
-  if (isCustomShiftCodeValue(raw)) return customShiftText(raw).trim() || "—";
-  return String(raw).trim();
+  const names = chiefScheduleRowCandidateNames(name, ymd);
+  for (const candidate of names) {
+    const row = (Array.isArray(rows) ? rows : []).find((r) => r.name === candidate);
+    const raw = row?.values?.[mi];
+    if (raw == null || String(raw).trim() === "") continue;
+    if (isCustomShiftCodeValue(raw)) return customShiftText(raw).trim() || "—";
+    return String(raw).trim();
+  }
+  return "—";
 }
 
 /**
@@ -4140,7 +4145,7 @@ function WeeklyScheduleTab({
   const mon = mondayOfWeekContaining(weekAnchor);
   const days = Array.from({ length: 7 }, (_, i) => addDaysToYmd(mon, i));
   const dayLabels = ["월", "화", "수", "목", "금", "토", "일"];
-  const rosterRows = weeklyRosterAllSections(users);
+  const rosterRows = weeklyRosterAllSections(users, weekAnchor);
   const viewerScheduleName = useMemo(
     () => (Array.isArray(users) ? users.find((u) => u.id === viewerUserId)?.name : "") ?? "",
     [users, viewerUserId]
