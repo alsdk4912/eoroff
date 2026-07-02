@@ -353,7 +353,7 @@ export function validateRequest({
       }
     }
 
-    if (targetMonth < plus2) return "골드키는 현재월+2달부터 신청 가능합니다.";
+    if (targetMonth < plus1) return "골드키는 현재달+1달부터 신청 가능합니다.";
     if ((remainingGoldkey ?? 0) <= 0) return "잔여 골드키가 없습니다.";
     return "";
   }

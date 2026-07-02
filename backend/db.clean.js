@@ -475,6 +475,7 @@ export async function initDb() {
   await backfillHalfDaySlots();
   await ensureHalfDayHistoricalRecords();
   await ensureChiefLeechanjooLeave20260630();
+  await ensureAnesthesiaLeeJihyunGoldkeys20260724_27();
   return client;
 }
 
@@ -1532,5 +1533,97 @@ async function ensureChiefLeechanjooLeave20260630() {
 
   await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
   console.log("[db] chief_leechanjoo_leave_20260630_v1 applied");
+}
+
+/** 이지현 마취과 골드키 2026-07-24, 2026-07-27 신청 + 사용량 재집계 */
+async function ensureAnesthesiaLeeJihyunGoldkeys20260724_27() {
+  const migrationId = "anesthesia_leejihyun_goldkeys_20260724_27_v1";
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
+  if (done) return;
+
+  const user = await queryOne("SELECT id FROM users WHERE name = ? AND role = 'ANESTHESIA' LIMIT 1", "이지현");
+  if (!user?.id) {
+    console.warn("[db] anesthesia_leejihyun_goldkeys_20260724_27: user not found - 이지현");
+    await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+    return;
+  }
+
+  const userId = String(user.id);
+  const leaveDates = ["2026-07-24", "2026-07-27"];
+
+  for (const leaveDate of leaveDates) {
+    const existing = await queryOne(
+      `SELECT id FROM requests
+       WHERE user_id = ? AND leave_date = ? AND deleted_at IS NULL
+       ORDER BY requested_at DESC LIMIT 1`,
+      userId,
+      leaveDate
+    );
+
+    if (existing?.id) {
+      await execute(
+        `UPDATE requests
+         SET leave_type = 'GOLDKEY',
+             leave_nature = 'PERSONAL',
+             status = 'APPLIED'
+         WHERE id = ?`,
+        String(existing.id)
+      );
+      continue;
+    }
+
+    await execute(
+      `INSERT INTO requests (
+         id, user_id, leave_date, leave_type, leave_nature, status, requested_at, memo
+       ) VALUES (?, ?, ?, 'GOLDKEY', 'PERSONAL', 'APPLIED', ?, ?)`,
+      `req_anesthesia_leejihyun_goldkey_${leaveDate.replaceAll("-", "")}`,
+      userId,
+      leaveDate,
+      `${leaveDate}T09:00:00.000Z`,
+      "이지현 골드키 신청 반영"
+    );
+  }
+
+  const quota = defaultGoldkeyQuotaForName("이지현");
+  const reqRows = await queryAll(
+    `SELECT id, leave_date, status
+     FROM requests
+     WHERE user_id = ? AND leave_type = 'GOLDKEY' AND deleted_at IS NULL`,
+    userId
+  );
+  const cancelRows = await queryAll(
+    `SELECT c.leave_request_id, IFNULL(c.deduction_exempt, 0) AS deduction_exempt
+     FROM cancellations c
+     JOIN requests r ON r.id = c.leave_request_id
+     WHERE r.user_id = ? AND r.leave_type = 'GOLDKEY' AND r.deleted_at IS NULL AND c.revoked_at IS NULL`,
+    userId
+  );
+  const exemptCancelled = new Set(
+    cancelRows.filter((c) => Number(c.deduction_exempt) === 1).map((c) => String(c.leave_request_id))
+  );
+  const usedDates = new Set();
+  for (const row of reqRows) {
+    const status = String(row.status ?? "").trim();
+    if (status === "REJECTED") continue;
+    if (status === "CANCELLED" && exemptCancelled.has(String(row.id))) continue;
+    if (status === "APPLIED" || status === "SELECTED" || status === "APPROVED" || status === "CANCELLED") {
+      const leaveDate = String(row.leave_date ?? "").trim().slice(0, 10);
+      if (leaveDate) usedDates.add(leaveDate);
+    }
+  }
+  const used = usedDates.size;
+  const remaining = Math.max(0, quota - used);
+  await execute(
+    `UPDATE goldkeys
+     SET quota_total = ?, used_count = ?, remaining_count = ?
+     WHERE user_id = ?`,
+    quota,
+    used,
+    remaining,
+    userId
+  );
+
+  await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+  console.log("[db] anesthesia_leejihyun_goldkeys_20260724_27_v1 applied");
 }
 
