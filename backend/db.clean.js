@@ -9,6 +9,7 @@ import {
   buildAutoHolidayDutyPlan,
   buildFullAutoHolidayDutyPlansForYears,
   OR_DUTY_RULES_EFFECTIVE_FROM,
+  OR_DUTY_ROTATION_EFFECTIVE_FROM,
 } from "../src/utils/holidayDutyPlan.clean.js";
 import { computeAutoHalfDaySlot } from "../src/utils/halfDayLeave.clean.js";
 
@@ -474,6 +475,7 @@ export async function initDb() {
   await ensureOrDutyRulesV2June2026();
   await ensureHolidayDutiesAutoFrom2027();
   await ensureAnesthesiaDutyFrom2026Nov7();
+  await ensureOrDutyRotationFrom20261225();
   await backfillLongTermGoldkeyCancellationExemptions();
   await ensureGoldkeyDefaults();
   await backfillGeneralNormalNegotiationOrderFromAppliedOrder();
@@ -1227,7 +1229,7 @@ async function ensureAnesthesiaDutyFrom2026Nov7() {
     }
 
     const year = Number(hd.slice(0, 4));
-    const orPlan = buildAutoHolidayDutyPlan({ year, users, holidays, holidayDuties });
+    const { plan: orPlan } = buildAutoHolidayDutyPlan({ year, users, holidays, holidayDuties });
     const orRow = orPlan.find((r) => r.holidayDate === hd);
     if (!orRow?.nurse1UserId || !orRow?.nurse2UserId) continue;
 
@@ -1253,6 +1255,88 @@ async function ensureAnesthesiaDutyFrom2026Nov7() {
 
   await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
   console.log(`[db] anesthesia duty reassigned from ${assignFrom}: ${updated} rows`);
+}
+
+/** 2026-12-25~ 당직 순번 재정의(정수영→최종선→…) 및 공휴·주말 재배정 — 11월까지 유지 */
+async function ensureOrDutyRotationFrom20261225() {
+  const migrationId = "or_duty_rotation_20261225_v1";
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
+  if (done) return;
+
+  const assignFrom = OR_DUTY_ROTATION_EFFECTIVE_FROM;
+  const endYear = new Date().getFullYear() + 3;
+
+  const users = await queryAll("SELECT id, name, role, IFNULL(is_active, 1) AS is_active FROM users");
+  const holidayRows = await queryAll(
+    "SELECT holiday_date, holiday_name, is_holiday FROM holidays WHERE holiday_date >= ? AND holiday_date <= ?",
+    "2026-01-01",
+    `${endYear}-12-31`
+  );
+  const holidays = holidayRows.map((h) => ({
+    holidayDate: String(h.holiday_date ?? "").slice(0, 10),
+    holidayName: h.holiday_name ?? "",
+    isHoliday: Boolean(h.is_holiday),
+  }));
+
+  const dutyRows = await queryAll("SELECT * FROM holiday_duties WHERE holiday_date >= ?", "2026-01-01");
+  const holidayDuties = {};
+  for (const d of dutyRows) {
+    const hd = String(d.holiday_date ?? "").slice(0, 10);
+    if (!hd) continue;
+    holidayDuties[hd] = {
+      nurse1UserId: d.nurse1_user_id ?? "",
+      nurse2UserId: d.nurse2_user_id ?? "",
+      anesthesiaUserId: d.anesthesia_user_id ?? "",
+    };
+  }
+
+  const plan = buildFullAutoHolidayDutyPlansForYears({
+    startYear: 2026,
+    endYear,
+    users: users.map((u) => ({ ...u, isActive: Number(u.is_active ?? 1) === 1 })),
+    holidays,
+    holidayDuties,
+    preserveBeforeYmd: assignFrom,
+    overwriteOrFromYmd: assignFrom,
+    overwriteExisting: true,
+  });
+
+  let upserted = 0;
+  for (const row of plan) {
+    const hd = String(row.holidayDate ?? "").slice(0, 10);
+    if (!hd || hd < assignFrom) continue;
+
+    const n1 = String(row.nurse1UserId ?? "").trim();
+    const n2 = String(row.nurse2UserId ?? "").trim();
+    if (!n1 || !n2) continue;
+
+    const existing = await queryOne(
+      "SELECT anesthesia_user_id FROM holiday_duties WHERE holiday_date = ?",
+      hd
+    );
+    const anes = String(row.anesthesiaUserId ?? existing?.anesthesia_user_id ?? "").trim();
+
+    await execute(
+      `INSERT INTO holiday_duties (holiday_date, nurse1_user_id, nurse2_user_id, anesthesia_user_id)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(holiday_date) DO UPDATE SET
+         nurse1_user_id = excluded.nurse1_user_id,
+         nurse2_user_id = excluded.nurse2_user_id,
+         anesthesia_user_id = CASE
+           WHEN holiday_duties.anesthesia_user_id IS NULL OR TRIM(holiday_duties.anesthesia_user_id) = ''
+           THEN excluded.anesthesia_user_id
+           ELSE holiday_duties.anesthesia_user_id
+         END`,
+      hd,
+      n1,
+      n2,
+      anes || null
+    );
+    upserted += 1;
+  }
+
+  await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+  console.log(`[db] OR duty rotation from ${assignFrom}: ${upserted} rows updated`);
 }
 
 async function backfillLongTermGoldkeyCancellationExemptions() {
