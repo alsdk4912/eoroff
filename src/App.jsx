@@ -54,8 +54,8 @@ import {
   canEditWeeklyScheduleCell,
   canUseWeeklyScheduleEditor,
   mergeWeeklyCellOverridesForViewer,
-  weeklyOverridesChangedForViewer,
   weeklyOverridesSnapshotDiffersFromSaved,
+  weeklyCellOverridesDirtyForViewer,
   normalizeWeeklyOverrideForCompare,
   canSaveMonthlyWorkSchedule,
   emptyScheduleMonthValues,
@@ -4257,12 +4257,13 @@ function WeeklyScheduleTab({
 }) {
   const [weekAnchor, setWeekAnchor] = useState(() => toLocalYMD(new Date()));
   const [draftOverrides, setDraftOverrides] = useState(() => ({ ...(weeklyCellOverrides || {}) }));
+  const draftOverridesRef = useRef({ ...(weeklyCellOverrides || {}) });
   const [weeklyMsg, setWeeklyMsg] = useState("");
   const userEditedRef = useRef(false);
 
   const dirty = useMemo(
     () =>
-      weeklyOverridesChangedForViewer(
+      weeklyCellOverridesDirtyForViewer(
         weeklyCellOverrides,
         draftOverrides,
         viewerRole,
@@ -4274,7 +4275,9 @@ function WeeklyScheduleTab({
 
   useEffect(() => {
     if (userEditedRef.current) return;
-    setDraftOverrides({ ...(weeklyCellOverrides || {}) });
+    const next = { ...(weeklyCellOverrides || {}) };
+    draftOverridesRef.current = next;
+    setDraftOverrides(next);
   }, [weeklyCellOverrides]);
 
   const mon = mondayOfWeekContaining(weekAnchor);
@@ -4339,6 +4342,7 @@ function WeeklyScheduleTab({
       else if (val === CUSTOM_SHIFT_SENTINEL && next[key]?.mode === "manual" && isCustomShiftCodeValue(next[key]?.main)) {
         next[key] = { mode: "manual", kind: "base", main: next[key].main, sub: "" };
       } else next[key] = parsed;
+      draftOverridesRef.current = next;
       return next;
     });
   }
@@ -4349,10 +4353,14 @@ function WeeklyScheduleTab({
     const key = weeklyCellKey(userId, ymd);
     setWeeklyMsg("");
     userEditedRef.current = true;
-    setDraftOverrides((prev) => ({
-      ...(prev || {}),
-      [key]: { mode: "manual", kind: "base", main: toCustomShiftCode(text), sub: "" },
-    }));
+    setDraftOverrides((prev) => {
+      const next = {
+        ...(prev || {}),
+        [key]: { mode: "manual", kind: "base", main: toCustomShiftCode(text), sub: "" },
+      };
+      draftOverridesRef.current = next;
+      return next;
+    });
   }
 
   function exportOfficialWeeklyDocument(overrideMapForExport) {
@@ -4374,15 +4382,20 @@ function WeeklyScheduleTab({
   }
 
   async function saveWeeklyDraft() {
+    const draft = draftOverridesRef.current;
+    if (!weeklyCellOverridesDirtyForViewer(weeklyCellOverrides, draft, viewerRole, users, viewerUserId)) {
+      window.alert?.("변경된 항목이 없습니다.");
+      return;
+    }
     const snapshot = mergeWeeklyCellOverridesForViewer(
       weeklyCellOverrides,
-      draftOverrides,
+      draft,
       viewerRole,
       users,
       viewerUserId
     );
     if (!weeklyOverridesSnapshotDiffersFromSaved(weeklyCellOverrides, snapshot)) {
-      window.alert?.("변경된 항목이 없습니다.");
+      window.alert?.("변경 사항을 저장할 수 없습니다. 권한이 없거나 동기화할 내용이 없습니다.");
       return;
     }
     const serverSync = typeof persistWeeklyCellOverridesToServer === "function";
