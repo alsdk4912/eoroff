@@ -112,7 +112,7 @@ export const OFFICIAL_KR_HOLIDAYS_BY_YEAR = {
 /** Nager API만 쓸 때 연도별 제거(오표기·비공식) */
 const NAGER_REMOVE_DATES_BY_YEAR = {
   2026: ["2026-05-01", "2026-09-28"],
-  2027: ["2027-05-03", "2027-07-19", "2027-08-16", "2027-10-04", "2027-10-11"],
+  2027: ["2027-05-03", "2027-08-16", "2027-10-04", "2027-10-11"],
   2028: ["2028-05-01", "2028-10-03"],
   2029: ["2029-05-01", "2029-09-24"],
 };
@@ -130,16 +130,20 @@ function normalizeHolidayName(name) {
   return NAME_NORMALIZE.get(n) ?? n;
 }
 
-/** 제헌절(7/17)이 주말이면 대체공휴일: 토→전날 금, 일→다음날 월 */
+/** 제헌절(7/17)이 주말이면 대체공휴일: 토→다음 월요일, 일→다음날 월요일 */
 export function withConstitutionDaySubstitutes(entries) {
   const map = new Map(entries);
   for (const [date, name] of entries) {
     if (!String(name ?? "").includes("제헌")) continue;
     const y = Number(String(date).slice(0, 4));
     if (!y) continue;
-    const dow = new Date(y, 6, 17).getDay();
-    if (dow === 6) map.set(`${y}-07-16`, "대체공휴일");
-    else if (dow === 0) map.set(`${y}-07-18`, "대체공휴일");
+    const d = new Date(y, 6, 17);
+    const dow = d.getDay();
+    if (dow === 6) d.setDate(d.getDate() + 2);
+    else if (dow === 0) d.setDate(d.getDate() + 1);
+    else continue;
+    const subYmd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    map.set(subYmd, "대체공휴일");
   }
   return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 }

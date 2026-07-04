@@ -1423,14 +1423,19 @@ async function ensureOrDutyFestivalSubstituteFix20270209() {
   console.log(`[db] OR duty festival substitute fix from ${assignFrom}: ${upserted} rows updated`);
 }
 
-/** 2027-07-16 제헌절(토) 대체공휴일 당직 배정 */
+/** 2027-07-19 제헌절(토) 대체공휴일 — 7/16 오반영 정정 */
 async function ensureConstitutionDaySubstituteDuty20270716() {
-  const migrationId = "constitution_day_substitute_20270716_v2";
+  const migrationId = "constitution_day_substitute_20270719_v3";
   const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
   if (done) return;
 
-  const substituteYmd = "2027-07-16";
+  const wrongYmd = "2027-07-16";
+  const substituteYmd = "2027-07-19";
   const nowIso = new Date().toISOString();
+
+  await execute("DELETE FROM holiday_duties WHERE holiday_date = ?", wrongYmd);
+  await execute("DELETE FROM holidays WHERE holiday_date = ?", wrongYmd);
+
   await execute(
     "INSERT INTO holidays (holiday_date, holiday_name, is_holiday, synced_at) VALUES (?, ?, 1, ?) ON CONFLICT(holiday_date) DO UPDATE SET holiday_name = excluded.holiday_name, is_holiday = 1, synced_at = excluded.synced_at",
     substituteYmd,
@@ -1438,7 +1443,7 @@ async function ensureConstitutionDaySubstituteDuty20270716() {
     nowIso
   );
 
-  const assignFrom = substituteYmd;
+  const assignFrom = "2027-07-17";
   const endYear = new Date().getFullYear() + 3;
 
   const users = await queryAll("SELECT id, name, role, IFNULL(is_active, 1) AS is_active FROM users");
@@ -1511,7 +1516,7 @@ async function ensureConstitutionDaySubstituteDuty20270716() {
   }
 
   await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
-  console.log(`[db] constitution day substitute duty from ${assignFrom}: ${upserted} rows updated`);
+  console.log(`[db] constitution day substitute ${substituteYmd} (removed wrong ${wrongYmd}): ${upserted} duty rows`);
 }
 
 async function backfillLongTermGoldkeyCancellationExemptions() {
