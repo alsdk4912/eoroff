@@ -186,6 +186,20 @@ export function canSaveMonthlyWorkSchedule(viewerRole) {
   return ["ADMIN", "DEPT_HEAD", "ANESTHESIA", "ADMIN2", "CHIEF"].includes(role);
 }
 
+/** 주간 번표 셀 선택박스 편집 (역할·본인 행 기준) */
+export function canEditWeeklyScheduleCell(viewerRole, staffUser, viewerUserId) {
+  const vr = String(viewerRole ?? "").trim();
+  const tr = String(staffUser?.role ?? "").trim();
+  const sid = String(staffUser?.id ?? "");
+  const vid = String(viewerUserId ?? "");
+  if (vr === "ADMIN" || vr === "DEPT_HEAD") return true;
+  if (sid && vid && sid === vid) return true;
+  if (tr === "ANESTHESIA") return vr === "ANESTHESIA" || vr === "ADMIN2";
+  if (tr === "CHIEF") return vr === "CHIEF";
+  if (tr === "NURSE") return vr === "NURSE" || vr === "ADMIN" || vr === "DEPT_HEAD";
+  return false;
+}
+
 /** 주간 번표 오버라이드 비교·병합용 정규화 */
 export function normalizeWeeklyOverrideForCompare(raw) {
   const entry = raw && typeof raw === "object" ? raw : null;
@@ -229,20 +243,6 @@ export function weeklyCellOverridesDirtyForViewer(saved, draft, viewerRole, user
     const b = normalizeWeeklyOverrideForCompare(draft?.[key]);
     if (JSON.stringify(a) !== JSON.stringify(b)) return true;
   }
-  return false;
-}
-
-/** 주간 번표 셀 선택박스 편집 (역할·본인 행 기준) */
-export function canEditWeeklyScheduleCell(viewerRole, staffUser, viewerUserId) {
-  const vr = String(viewerRole ?? "").trim();
-  const tr = String(staffUser?.role ?? "").trim();
-  const sid = String(staffUser?.id ?? "");
-  const vid = String(viewerUserId ?? "");
-  if (vr === "ADMIN" || vr === "DEPT_HEAD") return true;
-  if (sid && vid && sid === vid) return true;
-  if (tr === "ANESTHESIA") return vr === "ANESTHESIA" || vr === "ADMIN2";
-  if (tr === "CHIEF") return vr === "CHIEF";
-  if (tr === "NURSE") return vr === "NURSE" || vr === "ADMIN" || vr === "DEPT_HEAD";
   return false;
 }
 

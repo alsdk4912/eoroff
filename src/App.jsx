@@ -1640,23 +1640,18 @@ function App() {
     [requestsRawVisible, users]
   );
   const getWeeklyStaffCell = useCallback(
-    (userId, nurseName, ymd) => {
-      const key = weeklyCellKey(userId, ymd);
-      const o = weeklyCellOverrides?.[key];
-      if (o && o.mode === "manual") {
-        return { kind: o.kind || "base", main: o.main ?? "—", sub: o.sub ?? "" };
-      }
-      return effectiveWeeklyCell(
+    (userId, nurseName, ymd) =>
+      resolveWeeklyStaffCellDisplay(
         userId,
         nurseName,
         ymd,
+        weeklyCellOverrides,
         workScheduleByYear,
         requestsForWeeklyRoster,
         substituteAssignments,
         holidays,
         holidayDuties
-      );
-    },
+      ),
     [weeklyCellOverrides, workScheduleByYear, requestsForWeeklyRoster, substituteAssignments, holidays, holidayDuties]
   );
   const myRequests = useMemo(
@@ -4044,6 +4039,35 @@ function isAllowedFixedChiefWeeklyOverride(name, val) {
 
 function weeklyCellKey(userId, ymd) {
   return `${userId}|${String(ymd).slice(0, 10)}`;
+}
+
+/** 주간·캘린더 공통: 오버라이드 반영 셀 표시 */
+function resolveWeeklyStaffCellDisplay(
+  userId,
+  nurseName,
+  ymd,
+  weeklyCellOverrides,
+  workScheduleByYear,
+  requests,
+  substituteAssignments,
+  holidays,
+  holidayDuties
+) {
+  const key = weeklyCellKey(userId, ymd);
+  const o = weeklyCellOverrides?.[key];
+  if (o && o.mode === "manual") {
+    return { kind: o.kind || "base", main: o.main ?? "—", sub: o.sub ?? "" };
+  }
+  return effectiveWeeklyCell(
+    userId,
+    nurseName,
+    ymd,
+    workScheduleByYear,
+    requests,
+    substituteAssignments,
+    holidays,
+    holidayDuties
+  );
 }
 
 function parseWeeklyOverrideSelectValue(val) {
