@@ -69,13 +69,20 @@ export function normalizeWorkScheduleRowsForAnesthesia(rows) {
 }
 
 /** 주임 */
-export const CHIEF_SHIFT_OPTIONS = ["", "D0", "D1", "9-5", "10-2시", "E"];
+export const CHIEF_SHIFT_OPTIONS = ["", "D0", "D1", "9-5", "10-2", "E"];
 const FIXED_CHIEF_SHIFT_BY_NAME = {
-  오세연: "10-2시",
+  오세연: "10-2",
 };
 
+export function normalizeChiefShiftCode(value) {
+  const s = String(value ?? "").trim();
+  if (s === "10-2시") return "10-2";
+  return s;
+}
+
 export function fixedChiefShiftCodeForName(name) {
-  return FIXED_CHIEF_SHIFT_BY_NAME[String(name ?? "").trim()] ?? "";
+  const raw = FIXED_CHIEF_SHIFT_BY_NAME[String(name ?? "").trim()] ?? "";
+  return normalizeChiefShiftCode(raw);
 }
 
 export function shiftOptionsForRole(role) {

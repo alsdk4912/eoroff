@@ -48,6 +48,7 @@ import {
   CHIEF_MONTHLY_NAMES,
   chiefScheduleRowCandidateNames,
   fixedChiefShiftCodeForName,
+  normalizeChiefShiftCode,
   isFixedChiefShiftStaff,
   canEditMonthlyScheduleCell,
   canEditWeeklyScheduleCell,
@@ -3996,8 +3997,19 @@ function effectiveWeeklyCell(
   return { kind: "base", main: baseMonthCodeForNurseName(nurseName, ld, workScheduleByYear), sub: "" };
 }
 
-function weeklyCellKey(userId, ymd) {
-  return `${userId}|${String(ymd).slice(0, 10)}`;
+function isAllowedFixedChiefWeeklyOverride(name, val) {
+  const fixed = fixedChiefShiftCodeForName(name);
+  if (!fixed) return true;
+  const parsed = parseWeeklyOverrideSelectValue(val);
+  if (!parsed) return true;
+  if (parsed.kind === "leave") return true;
+  if (parsed.kind === "base") {
+    const main = normalizeChiefShiftCode(
+      isCustomShiftCodeValue(parsed.main) ? customShiftText(parsed.main) : String(parsed.main ?? "").trim()
+    );
+    return main === fixed;
+  }
+  return false;
 }
 
 function parseWeeklyOverrideSelectValue(val) {
@@ -4051,7 +4063,10 @@ function mapWeeklyOverrideRowsToClient(rows) {
     o[`${uid}|${ymd}`] = {
       mode: r.mode || "manual",
       kind: r.kind,
-      main: r.kind === "leave" ? normalizeWeeklyLeaveMark(r.main) : r.main,
+      main:
+        r.kind === "leave"
+          ? normalizeWeeklyLeaveMark(r.main)
+          : normalizeChiefShiftCode(r.main ?? ""),
       sub: r.sub ?? "",
     };
   }
@@ -4061,7 +4076,7 @@ function mapWeeklyOverrideRowsToClient(rows) {
 /** 주간 번표: 번표 코드(안D0, 3D2 등)·휴가·당직만 한 줄로 표시(부가 문구 없음) */
 function weeklyCellDisplayLine(cell) {
   if (!cell) return "—";
-  const m = String(cell.main ?? "").trim();
+  const m = normalizeChiefShiftCode(String(cell.main ?? "").trim());
   if (!m) return "—";
   if (isCustomShiftCodeValue(m)) return customShiftText(m).trim() || "—";
   return normalizeWeeklyLeaveMark(m);
@@ -4224,9 +4239,8 @@ function WeeklyScheduleTab({
 
   function onCellOverrideChange(userId, ymd, val) {
     const staffUser = (Array.isArray(users) ? users : []).find((u) => String(u.id) === String(userId));
-    const auto = staffUser ? computedCell(staffUser, ymd) : null;
-    if (staffUser && isFixedChiefShiftStaff(staffUser.name) && auto?.kind !== "leave") {
-      window.alert?.("오세연 주임은 휴가일에만 번표를 수정할 수 있습니다.");
+    if (staffUser && isFixedChiefShiftStaff(staffUser.name) && !isAllowedFixedChiefWeeklyOverride(staffUser.name, val)) {
+      window.alert?.(`오세연 주임은 ${fixedChiefShiftCodeForName(staffUser.name)} 또는 휴가 표시만 선택할 수 있습니다.`);
       return;
     }
     const key = weeklyCellKey(userId, ymd);
@@ -4244,11 +4258,7 @@ function WeeklyScheduleTab({
 
   function onWeeklyCustomBaseChange(userId, ymd, text) {
     const staffUser = (Array.isArray(users) ? users : []).find((u) => String(u.id) === String(userId));
-    const auto = staffUser ? computedCell(staffUser, ymd) : null;
-    if (staffUser && isFixedChiefShiftStaff(staffUser.name) && auto?.kind !== "leave") {
-      window.alert?.("오세연 주임은 휴가일에만 번표를 수정할 수 있습니다.");
-      return;
-    }
+    if (staffUser && isFixedChiefShiftStaff(staffUser.name)) return;
     const key = weeklyCellKey(userId, ymd);
     setWeeklyMsg("");
     setDraftOverrides((prev) => ({
@@ -4368,8 +4378,8 @@ function WeeklyScheduleTab({
                   {days.map((d) => {
                     const cell = displayCell(u, d);
                     const auto = computedCell(u, d);
-                    const cellEditable =
-                      baseCellEditable && (!isFixedChiefShiftStaff(u.name) || auto?.kind === "leave");
+                    const cellEditable = baseCellEditable;
+                    const fixedChiefShift = isFixedChiefShiftStaff(u.name) ? fixedChiefShiftCodeForName(u.name) : "";
                     const key = weeklyCellKey(u.id, d);
                     const ov = draftOverrides[key];
                     const selVal = weeklyOverrideSelectValue(ov);
@@ -4415,25 +4425,33 @@ function WeeklyScheduleTab({
                                   {mark}
                                 </option>
                               ))}
-                              {shiftOptionsForRole(u.role)
-                                .filter(
-                                  (x) =>
-                                    x &&
-                                    !WEEKLY_LEAVE_MARK_OPTIONS.includes(x) &&
-                                    x !== LEGACY_WEEKLY_REQUIRED_TRAINING_MARK &&
-                                    x !== autoMain
-                                )
-                                .map((opt) => (
-                                  <option key={`base-${opt}`} value={`__base__:${opt}`}>
-                                    {opt}
-                                  </option>
-                                ))}
-                              {extraBaseOpts.map((opt) => (
-                                <option key={`base-extra-${opt}`} value={`__base__:${opt}`}>
-                                  {opt}
-                                </option>
-                              ))}
-                              <option value={CUSTOM_SHIFT_SENTINEL}>직접입력</option>
+                              {!fixedChiefShift
+                                ? shiftOptionsForRole(u.role)
+                                    .filter(
+                                      (x) =>
+                                        x &&
+                                        !WEEKLY_LEAVE_MARK_OPTIONS.includes(x) &&
+                                        x !== LEGACY_WEEKLY_REQUIRED_TRAINING_MARK &&
+                                        x !== autoMain
+                                    )
+                                    .map((opt) => (
+                                      <option key={`base-${opt}`} value={`__base__:${opt}`}>
+                                        {opt}
+                                      </option>
+                                    ))
+                                : fixedChiefShift && fixedChiefShift !== autoMain ? (
+                                    <option key={`base-${fixedChiefShift}`} value={`__base__:${fixedChiefShift}`}>
+                                      {fixedChiefShift}
+                                    </option>
+                                  ) : null}
+                              {!fixedChiefShift
+                                ? extraBaseOpts.map((opt) => (
+                                    <option key={`base-extra-${opt}`} value={`__base__:${opt}`}>
+                                      {opt}
+                                    </option>
+                                  ))
+                                : null}
+                              {!fixedChiefShift ? <option value={CUSTOM_SHIFT_SENTINEL}>직접입력</option> : null}
                             </select>
                             {showCustomInput ? (
                               <input
