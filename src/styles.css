@@ -825,6 +825,11 @@ button.app-header-update-btn:hover {
   margin-bottom: 0;
 }
 
+.goldkey-year-toolbar {
+  margin: 0 0 12px;
+  align-items: center;
+}
+
 /* 캘린더: 그리드와 상세 영역 분리 → 세로 스크롤 부담 완화 */
 .calendar-page {
   display: flex;

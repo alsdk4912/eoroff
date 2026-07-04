@@ -3657,7 +3657,34 @@ function isSpecialLongTermGoldkeyRequestForDashboardOctober(r) {
 }
 
 /** 종합현황 표시용 골드키 차감 집계(서버 reconcile와 동일: 동일 휴가일 1회만, 취소 차감 유지·면제 예외) */
-function countGoldkeyApplyUse(requests, userId, nowLike = new Date().toISOString(), cancellations = []) {
+function effectiveNowForGoldkeyQuotaYear(nowLike, quotaYear) {
+  if (quotaYear == null || !Number.isFinite(quotaYear)) return nowLike;
+  const currentY = toKstParts(nowLike)?.year ?? new Date().getFullYear();
+  if (quotaYear < currentY) return `${quotaYear}-12-31T23:59:59+09:00`;
+  if (quotaYear > currentY) return `${quotaYear}-01-01T00:00:00+09:00`;
+  return nowLike;
+}
+
+/** 골드키 집계 연도 목록(휴가일 기준, 최신순) */
+function listGoldkeyQuotaYears(requests) {
+  const nowY = new Date().getFullYear();
+  const years = new Set([nowY]);
+  for (const r of requests || []) {
+    if (r.leaveType !== "GOLDKEY") continue;
+    const y = Number(String(r.leaveDate ?? "").slice(0, 4));
+    if (Number.isFinite(y) && y >= 2020 && y <= nowY + 1) years.add(y);
+  }
+  return [...years].sort((a, b) => b - a);
+}
+
+function countGoldkeyApplyUse(
+  requests,
+  userId,
+  nowLike = new Date().toISOString(),
+  cancellations = [],
+  quotaYear = null
+) {
+  const effectiveNow = effectiveNowForGoldkeyQuotaYear(nowLike, quotaYear);
   const exemptCancelledIds = new Set();
   for (const c of cancellations || []) {
     if (c.revokedAt) continue;
@@ -3673,15 +3700,17 @@ function countGoldkeyApplyUse(requests, userId, nowLike = new Date().toISOString
     else if (st === "APPLIED" || st === "SELECTED" || st === "APPROVED") {
       if (isSpecialLongTermGoldkeyRequestForDashboardApril(r)) {
         const leave = parseYmdLoose(r.leaveDate);
-        counts = !leave ? true : isAfterApril10(nowLike, leave.year);
+        counts = !leave ? true : isAfterApril10(effectiveNow, leave.year);
       } else if (isSpecialLongTermGoldkeyRequestForDashboardOctober(r)) {
         const req = toKstParts(r.requestedAt);
-        counts = !req ? true : isAfterOctober10ForRequestYear(nowLike, req.year);
+        counts = !req ? true : isAfterOctober10ForRequestYear(effectiveNow, req.year);
       } else counts = true;
     }
     if (!counts) continue;
     const ymd = String(r.leaveDate ?? "").trim().replace(/\//g, "-").slice(0, 10);
-    if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) dates.add(ymd);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) continue;
+    if (quotaYear != null && Number(ymd.slice(0, 4)) !== quotaYear) continue;
+    dates.add(ymd);
   }
   return dates.size;
 }
@@ -5333,6 +5362,18 @@ function DashboardPage({
   const [ladderResultModal, setLadderResultModal] = useState(null);
   const [schedulePlanKey, setSchedulePlanKey] = useState("base_2026");
   const [scheduleYearFilter, setScheduleYearFilter] = useState("all");
+  const [goldkeyYear, setGoldkeyYear] = useState(() => new Date().getFullYear());
+
+  const goldkeyYearOptions = useMemo(
+    () => listGoldkeyQuotaYears(requestsForGoldkey ?? requests),
+    [requestsForGoldkey, requests]
+  );
+
+  useEffect(() => {
+    if (!goldkeyYearOptions.includes(goldkeyYear)) {
+      setGoldkeyYear(goldkeyYearOptions[0] ?? new Date().getFullYear());
+    }
+  }, [goldkeyYearOptions, goldkeyYear]);
 
   useEffect(() => {
     const hashQuery = String(location.hash ?? "").split("?")[1] ?? "";
@@ -5658,7 +5699,24 @@ function DashboardPage({
       {dashTab === "summary" && (currentRole === "NURSE" || currentRole === "ADMIN" || currentRole === "DEPT_HEAD" || currentRole === "ANESTHESIA" || currentRole === "ADMIN2") ? (
         <section className="card">
           <h2 className="screen-title">골드키{currentRole === "ANESTHESIA" || currentRole === "ADMIN2" ? " (마취과)" : ""}</h2>
+          <div className="row wrap goldkey-year-toolbar">
+            <label className="weekly-date-label">
+              집계 연도
+              <select
+                value={goldkeyYear}
+                onChange={(e) => setGoldkeyYear(Number(e.target.value))}
+                aria-label="골드키 집계 연도"
+              >
+                {goldkeyYearOptions.map((y) => (
+                  <option key={y} value={y}>
+                    {y}년
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           <p className="help page-lead goldkey-policy-note">
+            <span>골드키 사용량은 선택한 연도의 휴가일(1월 1일~12월 31일) 기준으로 집계됩니다.</span>
             <span>상반기 장기휴가 신청기간(1~6월) : 전년도 10월 1일 ~ 10일</span>
             <span>하반기 장기휴가 신청기간(7~12월) : 해당년도 4월 1일 ~ 10일</span>
             <span>모든 장기휴가는 신청기간 이후 일괄 적용되어 골드키 차감됩니다.</span>
@@ -5687,7 +5745,8 @@ function DashboardPage({
                       requestsForGoldkey ?? requests,
                       u.id,
                       new Date().toISOString(),
-                      cancellations
+                      cancellations,
+                      goldkeyYear
                     );
                     const remaining = Math.max(0, quotaTotal - applyUse);
                     return (
