@@ -1059,6 +1059,7 @@ function App() {
     setWeeklyCellOverrides(snapshot);
     const data = await fetchBootstrapPayload();
     if (data) applyBootstrapPayload(data);
+    setWeeklyCellOverrides(snapshot);
   }
 
   useEffect(() => {
@@ -4067,9 +4068,24 @@ function resolveWeeklyStaffCellDisplay(
 ) {
   const key = weeklyCellKey(userId, ymd);
   const o = weeklyCellOverrides?.[key];
+  const ld = String(ymd).slice(0, 10);
+
+  if (o && o.mode === "manual" && String(o.kind ?? "") !== "leave") {
+    return { kind: o.kind || "base", main: o.main ?? "—", sub: o.sub ?? "" };
+  }
+
+  const sub = (substituteAssignments || []).find(
+    (s) => s.substituteUserId === userId && String(s.leaveDate ?? "").slice(0, 10) === ld
+  );
+  if (sub) {
+    const shiftCode = String(sub.shiftCode ?? "").trim();
+    if (shiftCode) return { kind: "sub", main: shiftCode, sub: "" };
+  }
+
   if (o && o.mode === "manual") {
     return { kind: o.kind || "base", main: o.main ?? "—", sub: o.sub ?? "" };
   }
+
   return effectiveWeeklyCell(
     userId,
     nurseName,
@@ -4257,8 +4273,8 @@ function WeeklyScheduleTab({
   viewerUserId,
 }) {
   const [weekAnchor, setWeekAnchor] = useState(() => toLocalYMD(new Date()));
-  const [draftOverrides, setDraftOverrides] = useState(() => ({ ...(weeklyCellOverrides || {}) }));
-  const draftOverridesRef = useRef({ ...(weeklyCellOverrides || {}) });
+  const [draftOverrides, setDraftOverrides] = useState(() => ({}));
+  const draftOverridesRef = useRef({});
   const [weeklyMsg, setWeeklyMsg] = useState("");
   const userEditedRef = useRef(false);
 
@@ -4281,9 +4297,8 @@ function WeeklyScheduleTab({
 
   useEffect(() => {
     if (userEditedRef.current) return;
-    const next = { ...(weeklyCellOverrides || {}) };
-    draftOverridesRef.current = next;
-    setDraftOverrides(next);
+    draftOverridesRef.current = {};
+    setDraftOverrides({});
   }, [weeklyCellOverrides]);
 
   const mon = mondayOfWeekContaining(weekAnchor);
@@ -4315,12 +4330,17 @@ function WeeklyScheduleTab({
   }
 
   function displayCellWithOverrideMap(u, d, ovMap) {
-    const key = weeklyCellKey(u.id, d);
-    const o = (ovMap || {})[key];
-    if (o && o.mode === "manual") {
-      return { kind: o.kind || "base", main: o.main ?? "—", sub: o.sub ?? "" };
-    }
-    return computedCell(u, d);
+    return resolveWeeklyStaffCellDisplay(
+      u.id,
+      u.name,
+      d,
+      ovMap || {},
+      workScheduleByYear,
+      requests,
+      substituteAssignments,
+      holidays,
+      holidayDuties
+    );
   }
 
   function displayCell(u, d) {
@@ -4424,7 +4444,9 @@ function WeeklyScheduleTab({
       setWeeklyCellOverrides(snapshot);
     }
     userEditedRef.current = false;
-    setDraftOverrides(snapshot);
+    draftOverridesRef.current = {};
+    setDraftOverrides({});
+    if (!serverSync) setWeeklyCellOverrides(snapshot);
     setWeeklyMsg(serverSync ? "서버에 저장했습니다. 모든 계정에서 동일하게 보입니다." : "저장했습니다.");
     notifyDone("저장되었습니다.");
     if (isAdmin) {
@@ -4501,7 +4523,15 @@ function WeeklyScheduleTab({
                     const fixedChiefShift = isFixedChiefShiftStaff(u.name) ? fixedChiefShiftCodeForName(u.name) : "";
                     const key = weeklyCellKey(u.id, d);
                     const ov = displayOverrides[key];
-                    const selVal = weeklyOverrideSelectValue(ov);
+                    const selVal = (() => {
+                      if (ov?.mode === "manual" && String(ov.kind ?? "") !== "leave") {
+                        return weeklyOverrideSelectValue(ov);
+                      }
+                      if (ov?.mode === "manual" && ov.kind === "leave" && cell.kind !== "leave") {
+                        return "__auto__";
+                      }
+                      return weeklyOverrideSelectValue(ov);
+                    })();
                     const autoMain =
                       sec === "chief"
                         ? normalizeChiefShiftCode(auto?.main ?? "")

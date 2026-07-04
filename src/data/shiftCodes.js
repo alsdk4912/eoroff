@@ -226,12 +226,11 @@ export function normalizeWeeklyOverrideForCompare(raw) {
   return { mode: "manual", kind, main, sub: entry.sub ?? "" };
 }
 
-/** 역할별로 편집 가능한 셀만 draft를 서버 맵에 병합 */
+/** 역할별로 편집 가능한 셀만 draft(변경분)를 서버 맵에 병합 */
 export function mergeWeeklyCellOverridesForViewer(saved, draft, viewerRole, users, viewerUserId) {
   const out = { ...(saved && typeof saved === "object" ? saved : {}) };
   const d = draft && typeof draft === "object" ? draft : {};
-  const keys = new Set([...Object.keys(out), ...Object.keys(d)]);
-  for (const key of keys) {
+  for (const key of Object.keys(d)) {
     const uid = String(key.split("|")[0] ?? "");
     const u = (Array.isArray(users) ? users : []).find((x) => String(x.id) === uid);
     if (!u || !canEditWeeklyScheduleCell(viewerRole, u, viewerUserId)) continue;
@@ -242,15 +241,15 @@ export function mergeWeeklyCellOverridesForViewer(saved, draft, viewerRole, user
   return out;
 }
 
-/** 역할별 편집 가능 셀만 비교해 dirty 여부 판단 */
+/** 역할별 편집 가능 셀만 비교해 dirty 여부 판단(draft에 있는 키만) */
 export function weeklyCellOverridesDirtyForViewer(saved, draft, viewerRole, users, viewerUserId) {
-  const keys = new Set([...Object.keys(saved || {}), ...Object.keys(draft || {})]);
-  for (const key of keys) {
+  const d = draft && typeof draft === "object" ? draft : {};
+  for (const key of Object.keys(d)) {
     const uid = String(key.split("|")[0] ?? "");
     const u = (Array.isArray(users) ? users : []).find((x) => String(x.id) === uid);
     if (!u || !canEditWeeklyScheduleCell(viewerRole, u, viewerUserId)) continue;
     const a = normalizeWeeklyOverrideForCompare(saved?.[key]);
-    const b = normalizeWeeklyOverrideForCompare(draft?.[key]);
+    const b = normalizeWeeklyOverrideForCompare(d[key]);
     if (JSON.stringify(a) !== JSON.stringify(b)) return true;
   }
   return false;
