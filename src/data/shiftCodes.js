@@ -1,5 +1,24 @@
 /** 수술실·마취과·주임 주간/대체 번표 코드 (역할별 상이) */
 
+export function isUserActive(u) {
+  if (!u) return false;
+  return Number(u.isActive ?? u.is_active ?? 1) === 1;
+}
+
+/** 재직자만 — 대체·번표·당직 선택 등 */
+export function staffUsersByRole(users, role) {
+  return (Array.isArray(users) ? users : [])
+    .filter((u) => String(u.role ?? "") === String(role) && isUserActive(u))
+    .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+}
+
+export function staffUsersByRoles(users, roles) {
+  const roleSet = new Set((Array.isArray(roles) ? roles : []).map(String));
+  return (Array.isArray(users) ? users : [])
+    .filter((u) => roleSet.has(String(u.role ?? "")) && isUserActive(u))
+    .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+}
+
 /** 수술실 간호사 (대체·월간·주간 번표 드롭다운 순서) */
 export const NURSE_SHIFT_OPTIONS = [
   "",
@@ -199,14 +218,14 @@ export function weeklyStaffForViewer(users, viewerRole, anchorYmd = "") {
   const list = Array.isArray(users) ? users : [];
   const role = String(viewerRole ?? "").trim();
   if (role === "ANESTHESIA" || role === "ADMIN2") {
-    return list.filter((u) => u.role === "ANESTHESIA" && u.isActive !== false).sort((a, b) => a.name.localeCompare(b.name, "ko"));
+    return staffUsersByRole(list, "ANESTHESIA");
   }
   if (role === "CHIEF") {
     return chiefNamesForYmd(anchorYmd)
-      .map((n) => list.find((u) => u.role === "CHIEF" && u.name === n))
+      .map((n) => list.find((u) => u.role === "CHIEF" && u.name === n && isUserActive(u)))
       .filter(Boolean);
   }
-  return list.filter((u) => u.role === "NURSE" && u.isActive !== false).sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  return staffUsersByRole(list, "NURSE");
 }
 
 /** 주간 번표: 수술실 → 마취과 → 주임 (월간근무표와 동일 순서) */
@@ -215,23 +234,23 @@ export function weeklyRosterAllSections(users, anchorYmd = "") {
   const byName = (a, b) => a.name.localeCompare(b.name, "ko");
   const pickInOrder = (names, role) =>
     names
-      .map((n) => list.find((u) => u.role === role && u.name === n))
+      .map((n) => list.find((u) => u.role === role && u.name === n && isUserActive(u)))
       .filter(Boolean)
       .concat(
-        list.filter((u) => u.role === role && u.isActive !== false && !names.includes(u.name)).sort(byName)
+        list.filter((u) => u.role === role && isUserActive(u) && !names.includes(u.name)).sort(byName)
       );
-  const or = list.filter((u) => u.role === "NURSE" && u.isActive !== false).sort(byName);
+  const or = staffUsersByRole(list, "NURSE");
   const anesthesia = pickInOrder(ANESTHESIA_MONTHLY_NAMES, "ANESTHESIA");
   const chiefNames = chiefNamesForYmd(anchorYmd);
   const chief = chiefNames
-    .map((n) => list.find((u) => u.role === "CHIEF" && u.name === n))
+    .map((n) => list.find((u) => u.role === "CHIEF" && u.name === n && isUserActive(u)))
     .filter(Boolean)
     .concat(
       list
         .filter(
           (u) =>
             u.role === "CHIEF" &&
-            u.isActive !== false &&
+            isUserActive(u) &&
             !chiefNames.includes(u.name) &&
             !CHIEF_REPLACEMENT_NAMES.has(u.name) &&
             !CHIEF_FUTURE_START_NAMES.has(u.name)

@@ -39,6 +39,9 @@ import {
   NURSE_SHIFT_OPTIONS,
   shiftOptionSetForRole,
   shiftOptionsForRole,
+  isUserActive,
+  staffUsersByRole,
+  staffUsersByRoles,
   weeklyStaffForViewer,
   weeklyRosterAllSections,
   ANESTHESIA_MONTHLY_NAMES,
@@ -755,7 +758,7 @@ function App() {
     // 2단계: 서버 모드에서는 백엔드가 알림을 생성/동기화하므로
     // 프런트 로컬 알림을 추가로 만들지 않음(중복 방지)
     if (serverMode) return;
-    const nurseIds = users.filter((u) => u.role === "NURSE").map((u) => u.id);
+    const nurseIds = staffUsersByRole(users, "NURSE").map((u) => u.id);
     if (nurseIds.length === 0) return;
     const nowIso = new Date().toISOString();
     const msg = String(message ?? "").trim();
@@ -4483,10 +4486,7 @@ function AdminDayRequestCard({
   const leaveUser = users.find((u) => u.id === requestRow.userId);
   const leaveRole = leaveUser?.role ?? "NURSE";
   const substitutePool = useMemo(
-    () =>
-      users
-        .filter((u) => u.role === leaveRole)
-        .sort((a, b) => a.name.localeCompare(b.name, "ko")),
+    () => staffUsersByRole(users, leaveRole),
     [users, leaveRole]
   );
   const shiftOpts = shiftOptionsForRole(leaveRole);
@@ -4666,7 +4666,7 @@ function AdminDayRequestCard({
 
 function AdminDayReviewTab({ users, requests, substituteAssignments, selectRequest, unselectRequest, rejectRequest, unrejectRequest, saveSubstituteForApprovedRequest }) {
   const [dayYmd, setDayYmd] = useState(() => toLocalYMD(new Date()));
-  const nurseUsers = useMemo(() => users.filter((u) => u.role === "NURSE").sort((a, b) => a.name.localeCompare(b.name, "ko")), [users]);
+  const nurseUsers = useMemo(() => staffUsersByRole(users, "NURSE"), [users]);
   const dayReqs = useMemo(() => {
     const ld = String(dayYmd).slice(0, 10);
     return (requests || [])
@@ -5153,14 +5153,12 @@ function HalfDayDashboardSection({ requests, users, currentRole, currentUserId, 
     const list = Array.isArray(users) ? users : [];
     if (adminView) {
       if (currentRole === "ADMIN2") {
-        return list
-          .filter((u) => u.role === "NURSE" || u.role === "ANESTHESIA")
-          .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+        return staffUsersByRoles(list, ["NURSE", "ANESTHESIA"]);
       }
-      return list.filter((u) => u.role === "NURSE").sort((a, b) => a.name.localeCompare(b.name, "ko"));
+      return staffUsersByRole(list, "NURSE");
     }
     const me = list.find((u) => u.id === currentUserId);
-    return me ? [me] : [];
+    return me && isUserActive(me) ? [me] : [];
   }, [users, adminView, currentRole, currentUserId]);
 
   const personalStatus = useMemo(() => {
@@ -5518,7 +5516,7 @@ function DashboardPage({
     setGeneratorMsg("생성 중입니다...");
     try {
       await new Promise((resolve) => window.setTimeout(resolve, 0));
-      const nurseNames = users.filter((u) => u.role === "NURSE").map((u) => u.name).sort((a, b) => a.localeCompare(b, "ko"));
+      const nurseNames = staffUsersByRole(users, "NURSE").map((u) => u.name);
       const year = Number(generatorStartYm);
       const startYm = `${Number.isInteger(year) ? year : new Date().getFullYear()}-03`;
       const result = buildYearlyRoster(startYm, nurseNames);
@@ -6764,10 +6762,7 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
     return () => mq.removeListener(onChange);
   }, []);
 
-  const nurseUsers = useMemo(
-    () => users.filter((u) => u.role === "NURSE").sort((a, b) => a.name.localeCompare(b.name, "ko")),
-    [users]
-  );
+  const nurseUsers = useMemo(() => staffUsersByRole(users, "NURSE"), [users]);
 
   const idToName = useMemo(() => new Map(users.map((u) => [u.id, u.name])), [users]);
   const applicantsForTarget = useMemo(
@@ -7556,9 +7551,9 @@ function CalendarPage({
   }, [location.pathname, location.search, selectedYmd, navigate]);
 
   const selectedCell = selectedYmd ? calendarData.find((c) => c.date === selectedYmd) : null;
-  const nurseUsers = users.filter((u) => u.role === "NURSE").sort((a, b) => a.name.localeCompare(b.name, "ko"));
-  const anesthesiaUsers = users.filter((u) => u.role === "ANESTHESIA").sort((a, b) => a.name.localeCompare(b.name, "ko"));
-  const chiefUsers = users.filter((u) => u.role === "CHIEF").sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  const nurseUsers = staffUsersByRole(users, "NURSE");
+  const anesthesiaUsers = staffUsersByRole(users, "ANESTHESIA");
+  const chiefUsers = staffUsersByRole(users, "CHIEF");
   const showApplyTab = canApplyLeaveRole(viewerRole);
   const isChiefViewer = viewerRole === "CHIEF";
   const dayRequestsByRole = useMemo(() => {
@@ -9013,55 +9008,121 @@ function SettingsPage({
   registrationAdminMessage,
   serverMode,
 }) {
+  const [tab, setTab] = useState("registration");
+  const activeStaff = managedUsers.filter((u) => u.isActive !== false);
+  const inactiveStaff = managedUsers.filter((u) => u.isActive === false);
+
   return (
     <section className="card">
       <h2 className="screen-title">설정</h2>
 
-      <h3 className="settings-subheading">회원가입 승인</h3>
-      {!serverMode ? (
-        <p className="help">서버 연결 시에만 가입 요청을 확인할 수 있습니다.</p>
-      ) : pendingRegistrations.length === 0 ? (
-        <p className="help">대기 중인 가입 요청이 없습니다.</p>
-      ) : (
-        <ul className="registration-approval-list">
-          {pendingRegistrations.map((row) => (
-            <RegistrationApprovalRow
-              key={row.id}
-              row={row}
-              onApprove={onApproveRegistration}
-              onReject={onRejectRegistration}
-            />
-          ))}
-        </ul>
-      )}
-      {registrationAdminMessage ? <p className="help">{registrationAdminMessage}</p> : null}
+      <div className="settings-tabs" role="tablist" aria-label="설정 하위 메뉴">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "registration"}
+          className={`settings-tab${tab === "registration" ? " settings-tab--active" : ""}`}
+          onClick={() => setTab("registration")}
+        >
+          회원가입 승인
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "active"}
+          className={`settings-tab${tab === "active" ? " settings-tab--active" : ""}`}
+          onClick={() => setTab("active")}
+        >
+          재직자 관리
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "inactive"}
+          className={`settings-tab${tab === "inactive" ? " settings-tab--active" : ""}`}
+          onClick={() => setTab("inactive")}
+        >
+          퇴직자 관리
+        </button>
+      </div>
 
-      <h3 className="settings-subheading">사용자 비밀번호 초기화</h3>
-      <ul className="settings-password-reset-list">
-        {managedUsers.map((u) => (
-          <li key={u.id} className="settings-password-reset-row">
-            <span className="settings-password-reset-name">{u.name}</span>
-            <span className="settings-password-reset-emp">{u.employeeNo}</span>
-            <span className="settings-password-reset-role">
-              {u.role}
-              {u.isActive ? " / 활성" : ` / 비활성${u.inactiveReason ? `(${u.inactiveReason})` : ""}`}
-            </span>
-            <button type="button" className="settings-password-reset-btn" onClick={() => onResetPassword(u.id)}>
-              비밀번호 1234로 초기화
-            </button>
-            {u.isActive ? (
-              <button type="button" className="settings-password-reset-btn" onClick={() => onDeactivateUser(u.id)}>
-                접속 차단
-              </button>
-            ) : (
-              <button type="button" className="settings-password-reset-btn" onClick={() => onActivateUser(u.id)}>
-                접속 복구
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
-      {accountMessage ? <p className="msg">{accountMessage}</p> : null}
+      {tab === "registration" ? (
+        <>
+          <h3 className="settings-subheading">회원가입 승인</h3>
+          {!serverMode ? (
+            <p className="help">서버 연결 시에만 가입 요청을 확인할 수 있습니다.</p>
+          ) : pendingRegistrations.length === 0 ? (
+            <p className="help">대기 중인 가입 요청이 없습니다.</p>
+          ) : (
+            <ul className="registration-approval-list">
+              {pendingRegistrations.map((row) => (
+                <RegistrationApprovalRow
+                  key={row.id}
+                  row={row}
+                  onApprove={onApproveRegistration}
+                  onReject={onRejectRegistration}
+                />
+              ))}
+            </ul>
+          )}
+          {registrationAdminMessage ? <p className="help">{registrationAdminMessage}</p> : null}
+        </>
+      ) : null}
+
+      {tab === "active" ? (
+        <>
+          <h3 className="settings-subheading">재직자 관리</h3>
+          <p className="help">비밀번호 초기화 및 퇴직 처리(접속 차단)를 할 수 있습니다.</p>
+          {activeStaff.length === 0 ? (
+            <p className="help">재직 중인 사용자가 없습니다.</p>
+          ) : (
+            <ul className="settings-password-reset-list">
+              {activeStaff.map((u) => (
+                <li key={u.id} className="settings-password-reset-row">
+                  <span className="settings-password-reset-name">{u.name}</span>
+                  <span className="settings-password-reset-emp">{u.employeeNo}</span>
+                  <span className="settings-password-reset-role">{u.role}</span>
+                  <button type="button" className="settings-password-reset-btn" onClick={() => onResetPassword(u.id)}>
+                    비밀번호 1234로 초기화
+                  </button>
+                  <button type="button" className="settings-password-reset-btn" onClick={() => onDeactivateUser(u.id)}>
+                    퇴직 처리
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {accountMessage ? <p className="msg">{accountMessage}</p> : null}
+        </>
+      ) : null}
+
+      {tab === "inactive" ? (
+        <>
+          <h3 className="settings-subheading">퇴직자 관리</h3>
+          <p className="help">접속이 차단된 직원입니다. 복구 시 재직자 관리 탭으로 이동합니다.</p>
+          {inactiveStaff.length === 0 ? (
+            <p className="help">퇴직 처리된 사용자가 없습니다.</p>
+          ) : (
+            <ul className="settings-password-reset-list">
+              {inactiveStaff.map((u) => (
+                <li key={u.id} className="settings-password-reset-row settings-password-reset-row--inactive">
+                  <span className="settings-password-reset-name">{u.name}</span>
+                  <span className="settings-password-reset-emp">{u.employeeNo}</span>
+                  <span className="settings-password-reset-role">
+                    {u.role}
+                    {u.inactiveReason ? ` · ${u.inactiveReason}` : ""}
+                    {u.inactiveAt ? ` · ${String(u.inactiveAt).slice(0, 10)}` : ""}
+                  </span>
+                  <button type="button" className="settings-password-reset-btn" onClick={() => onActivateUser(u.id)}>
+                    접속 복구
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {accountMessage ? <p className="msg">{accountMessage}</p> : null}
+        </>
+      ) : null}
     </section>
   );
 }
@@ -9133,7 +9194,9 @@ function dedupeRequestsForCalendarChips(sortedDayReqs) {
 }
 
 function mapRequestsToCalendarApplicants(roleReqs, users, negotiationMetaByRequestId) {
-  const sorted = [...roleReqs].sort((a, b) => compareSameLeaveDateRequests(a, b, users));
+  const sorted = [...roleReqs]
+    .filter((r) => isUserActive(users.find((u) => u.id === r.userId)))
+    .sort((a, b) => compareSameLeaveDateRequests(a, b, users));
   return dedupeRequestsForCalendarChips(sorted).map((r) => {
     const goldkeyMeta = negotiationMetaByRequestId?.get?.(String(r.id));
     return {

@@ -6,6 +6,8 @@
  * - 순번: 가나다순, 최유리↔최종선 위치 교환, 허정숙 다음 김해림
  */
 
+import { isUserActive } from "../data/shiftCodes.js";
+
 /** 로컬 달력 기준 YYYY-MM-DD */
 function toLocalYMD(d) {
   const y = d.getFullYear();
@@ -290,7 +292,7 @@ function shouldOverwrite(ymd, options) {
  * @param {{ year: number, users: any[], holidays: any[], holidayDuties: Record<string, any>, options?: { preserveBeforeYmd?: string, overwriteExisting?: boolean } }} p
  */
 export function buildAutoHolidayDutyPlan({ year, users, holidays, holidayDuties, options = {} }) {
-  const nurseUsers = (users ?? []).filter((u) => u.role === "NURSE" || !u.role);
+  const nurseUsers = (users ?? []).filter((u) => (u.role === "NURSE" || !u.role) && isUserActive(u));
   const baseOrder = buildBaseDutyOrder(nurseUsers);
   if (baseOrder.length < 2) return [];
 
@@ -426,7 +428,7 @@ export const ANESTHESIA_DUTY_ANCHOR_WEEKEND_SAT = "2026-10-31";
 export const ANESTHESIA_DUTY_ANCHOR_NAME = "김인자";
 
 export function buildAnesthesiaDutyOrder(users) {
-  const anesthesiaUsers = (users ?? []).filter((u) => u.role === "ANESTHESIA");
+  const anesthesiaUsers = (users ?? []).filter((u) => u.role === "ANESTHESIA" && isUserActive(u));
   const byName = new Map(anesthesiaUsers.map((u) => [u.name, u]));
   return ANESTHESIA_DUTY_ROTATION_NAMES.map((name) => byName.get(name)).filter(Boolean);
 }

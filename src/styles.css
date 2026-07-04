@@ -1020,6 +1020,42 @@ button.app-header-update-btn:hover {
   margin-top: 4px;
 }
 
+.settings-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 5px;
+  margin: 12px 0 16px;
+  border-radius: 14px;
+  background: var(--fill-secondary, #eef2f6);
+}
+
+.settings-tab {
+  flex: 1;
+  border: none;
+  border-radius: 11px;
+  padding: 10px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary, #64748b);
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.settings-tab--active {
+  background: var(--surface, #fff);
+  color: var(--text-primary, #0f172a);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+}
+
+.settings-password-reset-row--inactive {
+  opacity: 0.92;
+}
+
+.settings-password-reset-row--inactive .settings-password-reset-role {
+  color: var(--text-secondary, #64748b);
+}
+
 /* 설정: 사용자당 비밀번호 초기화 한 줄(가로) */
 .settings-password-reset-list {
   list-style: none;
