@@ -131,6 +131,16 @@ export function emptyScheduleMonthValues(monthCount) {
   return Array.from({ length: n }, () => "");
 }
 
+export function isChiefMonthlyScheduleName(name) {
+  const n = String(name ?? "").trim();
+  return CHIEF_MONTHLY_NAMES.includes(n) || LEGACY_CHIEF_MONTHLY_NAMES.includes(n);
+}
+
+/** 월간 근무표에 넣지 않는 행(주임은 주간·2주 고정 번표만 사용) */
+export function filterMonthlyWorkScheduleRows(rows) {
+  return (Array.isArray(rows) ? rows : []).filter((r) => !isChiefMonthlyScheduleName(r?.name));
+}
+
 export function monthlyRowSection(name) {
   const n = String(name ?? "").trim();
   if (ANESTHESIA_MONTHLY_NAMES.includes(n)) return "anesthesia";
@@ -183,7 +193,7 @@ export function canEditMonthlyScheduleCell(viewerRole, rowName) {
 
 export function canSaveMonthlyWorkSchedule(viewerRole) {
   const role = String(viewerRole ?? "").trim();
-  return ["ADMIN", "DEPT_HEAD", "ANESTHESIA", "ADMIN2", "CHIEF"].includes(role);
+  return ["ADMIN", "DEPT_HEAD", "ANESTHESIA", "ADMIN2"].includes(role);
 }
 
 /** 주간 번표 셀 선택박스 편집 (역할·본인 행 기준) */

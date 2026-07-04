@@ -1,4 +1,9 @@
-import { emptyScheduleMonthValues, mergeWorkScheduleRows, normalizeWorkScheduleRowsForAnesthesia } from "./shiftCodes.js";
+import {
+  emptyScheduleMonthValues,
+  filterMonthlyWorkScheduleRows,
+  mergeWorkScheduleRows,
+  normalizeWorkScheduleRowsForAnesthesia,
+} from "./shiftCodes.js";
 
 export const WORK_SCHEDULE_MONTH_LABELS = [
   "1월",
@@ -107,12 +112,14 @@ export function normalizeWorkScheduleByYear(byYear, templates) {
 
 export function mapWorkScheduleRowsFromServer(rows) {
   return normalizeWorkScheduleRowsForAnesthesia(
-    (Array.isArray(rows) ? rows : [])
-      .map((row) => ({
-        name: String(row?.name ?? ""),
-        values: Array.isArray(row?.values) ? row.values.map((v) => String(v ?? "")) : [],
-      }))
-      .filter((row) => row.name)
+    filterMonthlyWorkScheduleRows(
+      (Array.isArray(rows) ? rows : [])
+        .map((row) => ({
+          name: String(row?.name ?? ""),
+          values: Array.isArray(row?.values) ? row.values.map((v) => String(v ?? "")) : [],
+        }))
+        .filter((row) => row.name)
+    )
   );
 }
 

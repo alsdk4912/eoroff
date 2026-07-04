@@ -760,18 +760,21 @@ function normalizeAnesthesiaShiftCodeServer(value) {
 }
 
 const ANESTHESIA_MONTHLY_NAMES = ["김인자", "이지현", "박현정", "윤지민"];
+const CHIEF_MONTHLY_SCHEDULE_NAMES = ["방현석", "최무영", "김보람", "오문환", "오세연", "강명호", "이찬주"];
 
 function normalizeWorkScheduleRowsServer(rows) {
-  return (Array.isArray(rows) ? rows : []).map((row) => {
-    const name = String(row?.name ?? "").trim();
-    if (!name) return null;
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) => {
+      const name = String(row?.name ?? "").trim();
+      if (!name || CHIEF_MONTHLY_SCHEDULE_NAMES.includes(name)) return null;
     const vals = Array.isArray(row?.values) ? row.values : [];
     const values =
       ANESTHESIA_MONTHLY_NAMES.includes(name)
         ? vals.map((v) => normalizeAnesthesiaShiftCodeServer(v))
         : vals.map((v) => String(v ?? ""));
     return { name, values };
-  }).filter(Boolean);
+  })
+    .filter(Boolean);
 }
 
 app.post("/api/work-schedules/:year/sync", async (req, res) => {

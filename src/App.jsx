@@ -45,8 +45,8 @@ import {
   weeklyStaffForViewer,
   weeklyRosterAllSections,
   ANESTHESIA_MONTHLY_NAMES,
-  CHIEF_MONTHLY_NAMES,
   chiefScheduleRowCandidateNames,
+  filterMonthlyWorkScheduleRows,
   fixedChiefShiftCodeForName,
   normalizeChiefShiftCode,
   isFixedChiefShiftStaff,
@@ -3780,7 +3780,6 @@ const WORK_SCHEDULE_2026_ROWS = [
   { name: "최유경", values: ["1D1", "7D1", "7D1", "5D1", "안D0", "안D0", "안E", "수E", "5D1", "6D1", "수E", "PRN"] },
   { name: "정수영", values: ["", "", "6D1", "6D1", "6D1", "6D1", "1D1", "1D1", "1D1", "5D1", "5D1", "5D1"] },
   ...ANESTHESIA_MONTHLY_NAMES.map((name) => ({ name, values: emptyScheduleMonthValues(12) })),
-  ...CHIEF_MONTHLY_NAMES.map((name) => ({ name, values: emptyScheduleMonthValues(12) })),
 ];
 
 /** 2026년 9월(인덱스 8) 로컬 캐시 오입력 → 정정값 */
@@ -3817,7 +3816,6 @@ const WORK_SCHEDULE_2027_ROWS_SEED = [
   { name: "최유경", values: ["7D1", "수E"] },
   { name: "정수영", values: ["3D1", "3D1"] },
   ...ANESTHESIA_MONTHLY_NAMES.map((name) => ({ name, values: ["", ""] })),
-  ...CHIEF_MONTHLY_NAMES.map((name) => ({ name, values: emptyScheduleMonthValues(2) })),
 ];
 const WORK_SCHEDULE_2027_ROWS = WORK_SCHEDULE_2027_ROWS_SEED.map((r) => padScheduleRowValues(r, SCHEDULE_MONTH_COUNT));
 
@@ -3887,6 +3885,7 @@ function addDaysToYmd(ymd, deltaDays) {
 }
 
 function baseMonthCodeForNurseName(name, ymd, workScheduleByYear) {
+  if (monthlyRowSection(name) === "chief") return "—";
   const fixedChief = fixedChiefShiftCodeForName(name);
   if (fixedChief) return fixedChief;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd ?? "").trim());
@@ -5602,7 +5601,7 @@ function DashboardPage({
         saveKey: `base_${baseScheduleYear}`,
         calendarYear: baseScheduleYear,
         months: workScheduleMonthYmds(baseScheduleYear),
-        rows: Array.isArray(draftRows) ? draftRows : activeBaseTemplate,
+        rows: filterMonthlyWorkScheduleRows(Array.isArray(draftRows) ? draftRows : activeBaseTemplate),
         monthCount: SCHEDULE_MONTH_COUNT,
         templateRows: activeBaseTemplate,
       };
@@ -5618,7 +5617,7 @@ function DashboardPage({
       type: "generated",
       saveKey: schedulePlanKey,
       months,
-      rows: Array.isArray(raw?.rows) ? raw.rows : [],
+      rows: filterMonthlyWorkScheduleRows(Array.isArray(raw?.rows) ? raw.rows : []),
       monthCount: months.length,
     };
   }, [schedulePlanKey, generatedMonthlySchedules, draftRows, baseScheduleYear, activeBaseTemplate]);
@@ -6140,7 +6139,7 @@ function DashboardPage({
           </div>
         ) : activePlan.type === "base" ? (
           <p className="help" style={{ marginTop: 10 }}>
-            해당 구역은 관리자·마취과·주임 담당자만 번표를 수정할 수 있습니다.
+            해당 구역은 관리자·마취과 담당자만 번표를 수정할 수 있습니다. 주임 번표는 주간 번표에서 관리합니다.
           </p>
         ) : (
           <p className="help" style={{ marginTop: 10 }}>생성 저장된 번표는 열람 전용입니다.</p>
