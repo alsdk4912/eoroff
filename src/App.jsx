@@ -4393,6 +4393,9 @@ function WeeklyScheduleTab({
                       cellEditable && ov?.mode === "manual" && ov?.kind === "base" && isCustomShiftCodeValue(ov.main);
                     const customPlaceholder =
                       sec === "anesthesia" ? "예: 9-5" : sec === "chief" ? "예: D1" : "예: 3D2";
+                    const weeklyLeaveMarkOptions = WEEKLY_LEAVE_MARK_OPTIONS.filter(
+                      (mark) => !(u.role === "CHIEF" && mark === "off")
+                    );
                     const extraBaseOpts = (() => {
                       const set = new Set();
                       const candidates = [ov?.main, auto?.main, cell?.main];
@@ -4424,7 +4427,7 @@ function WeeklyScheduleTab({
                               aria-label={`${u.name} ${d} 표시`}
                             >
                               <option value="__auto__">{autoLabel || "자동"}</option>
-                              {WEEKLY_LEAVE_MARK_OPTIONS.filter((mark) => mark !== autoMain).map((mark) => (
+                              {weeklyLeaveMarkOptions.filter((mark) => mark !== autoMain).map((mark) => (
                                 <option key={`leave-${mark}`} value={`__leave__:${mark}`}>
                                   {mark}
                                 </option>
