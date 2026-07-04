@@ -4012,6 +4012,10 @@ function isAllowedFixedChiefWeeklyOverride(name, val) {
   return false;
 }
 
+function weeklyCellKey(userId, ymd) {
+  return `${userId}|${String(ymd).slice(0, 10)}`;
+}
+
 function parseWeeklyOverrideSelectValue(val) {
   if (!val || val === "__auto__") return null;
   if (val === "__leave__") return { mode: "manual", kind: "leave", main: "휴가", sub: "" };
