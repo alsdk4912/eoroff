@@ -4602,6 +4602,8 @@ function AdminDayRequestCard({
   saveSubstituteForApprovedRequest,
   substituteLayout = "default",
 }) {
+  const leaveUser = users.find((u) => u.id === requestRow.userId);
+  const leaveRole = leaveUser?.role ?? "NURSE";
   const [subRows, setSubRows] = useState([{ rowId: `sub_row_${requestRow.id}_0`, substituteUserId: "", shiftCode: "" }]);
   useEffect(() => {
     const seeded = Array.isArray(substituteRecs) ? substituteRecs : [];
@@ -4617,8 +4619,6 @@ function AdminDayRequestCard({
     }
     setSubRows([{ rowId: `sub_row_${requestRow.id}_0`, substituteUserId: "", shiftCode: "" }]);
   }, [requestRow.id, substituteRecs, leaveRole]);
-  const leaveUser = users.find((u) => u.id === requestRow.userId);
-  const leaveRole = leaveUser?.role ?? "NURSE";
   const substitutePool = useMemo(
     () => staffUsersByRole(users, leaveRole),
     [users, leaveRole]
@@ -5500,13 +5500,6 @@ function DashboardPage({
     mergeWorkScheduleRows(workScheduleByYear?.["2026"], WORK_SCHEDULE_2026_ROWS)
   );
 
-  useEffect(() => {
-    if (!baseScheduleYear) return;
-    if (scheduleChanges.length > 0) return;
-    const saved = workScheduleByYear?.[String(baseScheduleYear)];
-    setDraftRows(mergeWorkScheduleRows(saved, activeBaseTemplate));
-  }, [baseScheduleYear, workScheduleByYear, activeBaseTemplate, scheduleChanges.length]);
-
   const scheduleChanges = useMemo(() => {
     if (!baseScheduleYear) return [];
     const saved = workScheduleByYear?.[String(baseScheduleYear)] ?? activeBaseTemplate;
@@ -5530,6 +5523,13 @@ function DashboardPage({
     }
     return changes;
   }, [draftRows, workScheduleByYear, baseScheduleYear, activeBaseTemplate]);
+
+  useEffect(() => {
+    if (!baseScheduleYear) return;
+    if (scheduleChanges.length > 0) return;
+    const saved = workScheduleByYear?.[String(baseScheduleYear)];
+    setDraftRows(mergeWorkScheduleRows(saved, activeBaseTemplate));
+  }, [baseScheduleYear, workScheduleByYear, activeBaseTemplate, scheduleChanges.length]);
 
   const baseScheduleYearList = useMemo(
     () => listBaseScheduleYears(workScheduleByYear, 2026, baseScheduleYear),
