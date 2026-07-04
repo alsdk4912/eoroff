@@ -130,6 +130,20 @@ function normalizeHolidayName(name) {
   return NAME_NORMALIZE.get(n) ?? n;
 }
 
+/** 제헌절(7/17)이 주말이면 대체공휴일: 토→전날 금, 일→다음날 월 */
+export function withConstitutionDaySubstitutes(entries) {
+  const map = new Map(entries);
+  for (const [date, name] of entries) {
+    if (!String(name ?? "").includes("제헌")) continue;
+    const y = Number(String(date).slice(0, 4));
+    if (!y) continue;
+    const dow = new Date(y, 6, 17).getDay();
+    if (dow === 6) map.set(`${y}-07-16`, "대체공휴일");
+    else if (dow === 0) map.set(`${y}-07-18`, "대체공휴일");
+  }
+  return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+}
+
 export async function fetchNagerHolidayMap(year) {
   const y = Number(year);
   const url = `https://date.nager.at/api/v3/PublicHolidays/${y}/KR`;
@@ -186,11 +200,11 @@ export async function upsertKoreanHolidaysForYear(year, monthOpt, db) {
   let entries;
   const official = officialEntriesForYear(y, m);
   if (official) {
-    entries = official;
+    entries = withConstitutionDaySubstitutes(official);
   } else {
     const map = await fetchNagerHolidayMap(y);
     applyNagerHolidayCorrections(y, map);
-    entries = [...map.entries()];
+    entries = withConstitutionDaySubstitutes([...map.entries()]);
     if (m != null) entries = entries.filter(([date]) => Number(date.slice(5, 7)) === m);
   }
 
