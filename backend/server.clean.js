@@ -809,26 +809,81 @@ app.post("/api/work-schedules/:year/sync", async (req, res) => {
   }
 });
 
+/** 주간 번표 오버라이드 — 역할별 편집 가능 여부(서버 동기화 병합) */
+function canEditWeeklyOverrideKeyServer(viewerRole, staffUser, viewerUserId) {
+  const vr = String(viewerRole ?? "").trim();
+  const tr = String(staffUser?.role ?? "").trim();
+  const sid = String(staffUser?.id ?? "");
+  const vid = String(viewerUserId ?? "").trim();
+  if (vr === "ADMIN" || vr === "DEPT_HEAD") return true;
+  if (sid && vid && sid === vid) return true;
+  if (tr === "ANESTHESIA") return vr === "ANESTHESIA" || vr === "ADMIN2";
+  if (tr === "CHIEF") return vr === "CHIEF";
+  if (tr === "NURSE") return vr === "NURSE" || vr === "ADMIN" || vr === "DEPT_HEAD";
+  return false;
+}
+
 app.post("/api/weekly-cell-overrides/sync", async (req, res) => {
   try {
     const actorUserId = String(req.body?.actorUserId ?? "").trim();
     const overrides = req.body?.overrides;
     if (!actorUserId) return res.status(400).json({ error: "actorUserId가 필요합니다." });
     const actor = await queryOne(
-      "SELECT id FROM users WHERE id = ? AND role IN ('ADMIN', 'DEPT_HEAD', 'ADMIN2', 'NURSE', 'ANESTHESIA', 'CHIEF')",
+      "SELECT id, role FROM users WHERE id = ? AND role IN ('ADMIN', 'DEPT_HEAD', 'ADMIN2', 'NURSE', 'ANESTHESIA', 'CHIEF')",
       actorUserId
     );
     if (!actor) return res.status(403).json({ error: "권한이 없습니다." });
     if (overrides != null && typeof overrides !== "object") {
       return res.status(400).json({ error: "overrides 형식이 올바르지 않습니다." });
     }
-    const map = overrides && typeof overrides === "object" && !Array.isArray(overrides) ? overrides : {};
+    const incoming =
+      overrides && typeof overrides === "object" && !Array.isArray(overrides) ? overrides : {};
     const now = new Date().toISOString();
+
+    const existingRows = await queryAll("SELECT * FROM weekly_cell_overrides");
+    const merged = {};
+    for (const r of existingRows) {
+      const uid = String(r.user_id ?? "");
+      const ymd = String(r.ymd ?? "").slice(0, 10);
+      if (!uid || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) continue;
+      merged[`${uid}|${ymd}`] = {
+        mode: r.mode || "manual",
+        kind: r.kind,
+        main: r.main != null ? String(r.main) : "",
+        sub: r.sub != null ? String(r.sub) : "",
+      };
+    }
+
+    const staffRoleCache = new Map();
+    async function staffUserForKey(key) {
+      const mk = /^(.+)\|(\d{4}-\d{2}-\d{2})$/.exec(String(key));
+      if (!mk) return null;
+      const uid = mk[1];
+      if (staffRoleCache.has(uid)) return staffRoleCache.get(uid);
+      const row = await queryOne("SELECT id, role FROM users WHERE id = ?", uid);
+      staffRoleCache.set(uid, row);
+      return row;
+    }
+
+    for (const [key, raw] of Object.entries(incoming)) {
+      const staff = await staffUserForKey(key);
+      if (!staff?.id || !canEditWeeklyOverrideKeyServer(actor.role, staff, actorUserId)) continue;
+      const val = raw && typeof raw === "object" ? raw : null;
+      if (val && String(val.mode ?? "") === "manual") {
+        merged[key] = {
+          mode: "manual",
+          kind: String(val.kind ?? "base"),
+          main: val.main != null ? String(val.main) : "",
+          sub: val.sub != null ? String(val.sub) : "",
+        };
+      } else {
+        delete merged[key];
+      }
+    }
 
     await runTransaction(async (tx) => {
       await tx.execute("DELETE FROM weekly_cell_overrides");
-      for (const [key, raw] of Object.entries(map)) {
-        const val = raw && typeof raw === "object" ? raw : null;
+      for (const [key, val] of Object.entries(merged)) {
         if (!val || String(val.mode ?? "") !== "manual") continue;
         const mk = /^(.+)\|(\d{4}-\d{2}-\d{2})$/.exec(String(key));
         if (!mk) continue;
@@ -851,8 +906,8 @@ app.post("/api/weekly-cell-overrides/sync", async (req, res) => {
       }
     });
 
-    await applyWeeklyOverridesToSubstitutes(map, actorUserId);
-    await applyWeeklyLeaveOverridesToRequestNature(map);
+    await applyWeeklyOverridesToSubstitutes(merged, actorUserId);
+    await applyWeeklyLeaveOverridesToRequestNature(merged);
     return res.json({ ok: true });
   } catch (err) {
     console.error("POST /api/weekly-cell-overrides/sync", err);

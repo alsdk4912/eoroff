@@ -246,6 +246,23 @@ export function weeklyCellOverridesDirtyForViewer(saved, draft, viewerRole, user
   return false;
 }
 
+/** 병합 스냅샷이 저장본과 다른지(저장 버튼·서버 동기화 판단) */
+export function weeklyOverridesSnapshotDiffersFromSaved(saved, snapshot) {
+  const keys = new Set([...Object.keys(saved || {}), ...Object.keys(snapshot || {})]);
+  for (const key of keys) {
+    const a = normalizeWeeklyOverrideForCompare(saved?.[key]);
+    const b = normalizeWeeklyOverrideForCompare(snapshot?.[key]);
+    if (JSON.stringify(a) !== JSON.stringify(b)) return true;
+  }
+  return false;
+}
+
+/** draft 반영 병합 결과가 저장본과 다른지 */
+export function weeklyOverridesChangedForViewer(saved, draft, viewerRole, users, viewerUserId) {
+  const snapshot = mergeWeeklyCellOverridesForViewer(saved, draft, viewerRole, users, viewerUserId);
+  return weeklyOverridesSnapshotDiffersFromSaved(saved, snapshot);
+}
+
 export function isFixedChiefShiftStaff(name) {
   return Boolean(fixedChiefShiftCodeForName(name));
 }

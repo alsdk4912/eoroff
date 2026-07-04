@@ -54,7 +54,8 @@ import {
   canEditWeeklyScheduleCell,
   canUseWeeklyScheduleEditor,
   mergeWeeklyCellOverridesForViewer,
-  weeklyCellOverridesDirtyForViewer,
+  weeklyOverridesChangedForViewer,
+  weeklyOverridesSnapshotDiffersFromSaved,
   normalizeWeeklyOverrideForCompare,
   canSaveMonthlyWorkSchedule,
   emptyScheduleMonthValues,
@@ -635,6 +636,7 @@ function App() {
   const [apiReachable, setApiReachable] = useState(() => (isApiConfigured() ? "checking" : "no"));
   /** 첫 bootstrap 완료 전에 서버 저장·덮어쓰기 레이스 방지 */
   const [dataHydrated, setDataHydrated] = useState(false);
+  const bootstrapApplyIdRef = useRef(0);
   const now = new Date();
   const [syncYear, setSyncYear] = useState(String(now.getFullYear()));
   const [syncMonth, setSyncMonth] = useState(String(now.getMonth() + 1).padStart(2, "0"));
@@ -885,6 +887,13 @@ function App() {
     }
   }
 
+  async function fetchBootstrapPayload() {
+    const applyId = ++bootstrapApplyIdRef.current;
+    const data = await api.bootstrap();
+    if (applyId !== bootstrapApplyIdRef.current) return null;
+    return data;
+  }
+
   function applyBootstrapPayload(data) {
     setUsers(
       data.users.map((u) => ({
@@ -1046,8 +1055,9 @@ function App() {
       throw new Error("서버에 연결된 상태에서만 주간 번표를 저장할 수 있습니다.");
     }
     await api.syncWeeklyCellOverrides({ overrides: snapshot, actorUserId: auth.userId });
-    const data = await api.bootstrap();
-    applyBootstrapPayload(data);
+    setWeeklyCellOverrides(snapshot);
+    const data = await fetchBootstrapPayload();
+    if (data) applyBootstrapPayload(data);
   }
 
   useEffect(() => {
@@ -1077,10 +1087,12 @@ function App() {
     setDataHydrated(false);
     void (async () => {
       try {
-        const data = await api.bootstrap();
+        const data = await fetchBootstrapPayload();
         if (cancelled) return;
-        applyBootstrapPayload(data);
-        setServerMode(true);
+        if (data) {
+          applyBootstrapPayload(data);
+          setServerMode(true);
+        }
       } catch {
         if (!cancelled) setServerMode(false);
       } finally {
@@ -4251,7 +4263,7 @@ function WeeklyScheduleTab({
 
   const dirty = useMemo(
     () =>
-      weeklyCellOverridesDirtyForViewer(
+      weeklyOverridesChangedForViewer(
         weeklyCellOverrides,
         draftOverrides,
         viewerRole,
@@ -4315,6 +4327,11 @@ function WeeklyScheduleTab({
     }
     const key = weeklyCellKey(userId, ymd);
     const parsed = parseWeeklyOverrideSelectValue(val);
+    if (parsed?.kind === "base" && staffUser?.role === "CHIEF") {
+      parsed.main = normalizeChiefShiftCode(parsed.main);
+    } else if (parsed?.kind === "base" && staffUser?.role === "ANESTHESIA") {
+      parsed.main = normalizeAnesthesiaShiftCode(parsed.main);
+    }
     setWeeklyMsg("");
     userEditedRef.current = true;
     setDraftOverrides((prev) => {
@@ -4358,7 +4375,14 @@ function WeeklyScheduleTab({
   }
 
   async function saveWeeklyDraft() {
-    if (!dirty) {
+    const snapshot = mergeWeeklyCellOverridesForViewer(
+      weeklyCellOverrides,
+      draftOverrides,
+      viewerRole,
+      users,
+      viewerUserId
+    );
+    if (!weeklyOverridesSnapshotDiffersFromSaved(weeklyCellOverrides, snapshot)) {
       window.alert?.("변경된 항목이 없습니다.");
       return;
     }
@@ -4371,13 +4395,6 @@ function WeeklyScheduleTab({
         "· 근무 칸은 월간 근무표·휴가 확정·대체 근무·달력 당직(주말 / 공휴·대체 / 설·추석 명절)을 반영해 채워집니다."
     );
     if (!ok) return;
-    const snapshot = mergeWeeklyCellOverridesForViewer(
-      weeklyCellOverrides,
-      draftOverrides,
-      viewerRole,
-      users,
-      viewerUserId
-    );
     if (serverSync) {
       try {
         await persistWeeklyCellOverridesToServer(snapshot);
@@ -4467,7 +4484,12 @@ function WeeklyScheduleTab({
                     const key = weeklyCellKey(u.id, d);
                     const ov = draftOverrides[key];
                     const selVal = weeklyOverrideSelectValue(ov);
-                    const autoMain = normalizeWeeklyLeaveMark(auto?.main ?? "");
+                    const autoMain =
+                      sec === "chief"
+                        ? normalizeChiefShiftCode(auto?.main ?? "")
+                        : sec === "anesthesia"
+                          ? normalizeAnesthesiaShiftCode(auto?.main ?? "")
+                          : normalizeWeeklyLeaveMark(auto?.main ?? "");
                     const autoLabel = weeklyCellDisplayLine(auto);
                     const showCustomInput =
                       cellEditable && ov?.mode === "manual" && ov?.kind === "base" && isCustomShiftCodeValue(ov.main);
@@ -4483,6 +4505,19 @@ function WeeklyScheduleTab({
                         const t = isCustomShiftCodeValue(raw) ? customShiftText(raw) : String(raw ?? "").trim();
                         if (!t || WEEKLY_LEAVE_MARK_OPTIONS.includes(t)) continue;
                         if (!shiftOptionSetForRole(u.role).has(t)) set.add(t);
+                      }
+                      if (
+                        ov?.mode === "manual" &&
+                        ov?.kind === "base" &&
+                        !isCustomShiftCodeValue(ov.main)
+                      ) {
+                        const pinned =
+                          sec === "chief"
+                            ? normalizeChiefShiftCode(ov.main)
+                            : sec === "anesthesia"
+                              ? normalizeAnesthesiaShiftCode(ov.main)
+                              : String(ov.main ?? "").trim();
+                        if (pinned) set.add(pinned);
                       }
                       return [...set];
                     })();
