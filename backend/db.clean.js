@@ -1425,11 +1425,20 @@ async function ensureOrDutyFestivalSubstituteFix20270209() {
 
 /** 2027-07-16 제헌절(토) 대체공휴일 당직 배정 */
 async function ensureConstitutionDaySubstituteDuty20270716() {
-  const migrationId = "constitution_day_substitute_20270716_v1";
+  const migrationId = "constitution_day_substitute_20270716_v2";
   const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
   if (done) return;
 
-  const assignFrom = "2027-07-16";
+  const substituteYmd = "2027-07-16";
+  const nowIso = new Date().toISOString();
+  await execute(
+    "INSERT INTO holidays (holiday_date, holiday_name, is_holiday, synced_at) VALUES (?, ?, 1, ?) ON CONFLICT(holiday_date) DO UPDATE SET holiday_name = excluded.holiday_name, is_holiday = 1, synced_at = excluded.synced_at",
+    substituteYmd,
+    "대체공휴일",
+    nowIso
+  );
+
+  const assignFrom = substituteYmd;
   const endYear = new Date().getFullYear() + 3;
 
   const users = await queryAll("SELECT id, name, role, IFNULL(is_active, 1) AS is_active FROM users");
