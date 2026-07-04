@@ -560,7 +560,9 @@ function App() {
     }));
   };
   async function persistWorkScheduleForYearToServer(year, rows) {
-    if (!serverMode || !auth?.userId) return;
+    if (!serverMode || !auth?.userId) {
+      throw new Error("서버에 연결된 상태에서만 근무표를 저장할 수 있습니다.");
+    }
     const y = String(year);
     const merged = mergeWorkScheduleRows(rows, getWorkScheduleTemplateForYear(Number(y), WORK_SCHEDULE_TEMPLATES));
     saveWorkScheduleForYear(y, merged);
@@ -1037,7 +1039,9 @@ function App() {
   }
 
   async function persistWeeklyCellOverridesToServer(snapshot) {
-    if (!serverMode || !auth?.userId) return;
+    if (!serverMode || !auth?.userId) {
+      throw new Error("서버에 연결된 상태에서만 주간 번표를 저장할 수 있습니다.");
+    }
     await api.syncWeeklyCellOverrides({ overrides: snapshot, actorUserId: auth.userId });
     const data = await api.bootstrap();
     applyBootstrapPayload(data);
@@ -3745,6 +3749,7 @@ const WORK_SCHEDULE_2026_ROWS = [
   { name: "최유경", values: ["1D1", "7D1", "7D1", "5D1", "안D0", "안D0", "안E", "수E", "5D1", "6D1", "수E", "PRN"] },
   { name: "정수영", values: ["", "", "6D1", "6D1", "6D1", "6D1", "1D1", "1D1", "1D1", "5D1", "5D1", "5D1"] },
   ...ANESTHESIA_MONTHLY_NAMES.map((name) => ({ name, values: emptyScheduleMonthValues(12) })),
+  ...CHIEF_MONTHLY_NAMES.map((name) => ({ name, values: emptyScheduleMonthValues(12) })),
 ];
 
 /** 2026년 9월(인덱스 8) 로컬 캐시 오입력 → 정정값 */
@@ -3781,6 +3786,7 @@ const WORK_SCHEDULE_2027_ROWS_SEED = [
   { name: "최유경", values: ["7D1", "수E"] },
   { name: "정수영", values: ["3D1", "3D1"] },
   ...ANESTHESIA_MONTHLY_NAMES.map((name) => ({ name, values: ["", ""] })),
+  ...CHIEF_MONTHLY_NAMES.map((name) => ({ name, values: emptyScheduleMonthValues(2) })),
 ];
 const WORK_SCHEDULE_2027_ROWS = WORK_SCHEDULE_2027_ROWS_SEED.map((r) => padScheduleRowValues(r, SCHEDULE_MONTH_COUNT));
 
@@ -4048,12 +4054,30 @@ function weeklyOverrideSelectValue(ov) {
   return "__auto__";
 }
 
+function normalizeWeeklyOverrideEntry(raw) {
+  const entry = raw && typeof raw === "object" ? raw : null;
+  if (!entry || String(entry.mode ?? "") !== "manual") return entry;
+  const kind = String(entry.kind ?? "base");
+  const main =
+    kind === "leave"
+      ? normalizeWeeklyLeaveMark(entry.main)
+      : kind === "base"
+        ? isCustomShiftCodeValue(entry.main)
+          ? entry.main
+          : normalizeChiefShiftCode(entry.main ?? "")
+        : String(entry.main ?? "").trim();
+  return { mode: "manual", kind, main, sub: entry.sub ?? "" };
+}
+
 /** 주간 번표 오버라이드 맵을 키 정렬 후 직렬화 — 저장 여부(dirty) 비교용 */
 function stableStringifyWeeklyOverrides(obj) {
   const o = obj && typeof obj === "object" ? obj : {};
   const keys = Object.keys(o).sort();
   const norm = {};
-  for (const k of keys) norm[k] = o[k];
+  for (const k of keys) {
+    const v = normalizeWeeklyOverrideEntry(o[k]);
+    if (v) norm[k] = v;
+  }
   return JSON.stringify(norm);
 }
 
@@ -4188,12 +4212,9 @@ function WeeklyScheduleTab({
   const [weeklyMsg, setWeeklyMsg] = useState("");
 
   useEffect(() => {
-    const w = weeklyCellOverrides || {};
-    setDraftOverrides((prev) => {
-      if (stableStringifyWeeklyOverrides(prev) === stableStringifyWeeklyOverrides(w)) return prev;
-      return { ...w };
-    });
-  }, [weeklyCellOverrides]);
+    if (dirty) return;
+    setDraftOverrides({ ...(weeklyCellOverrides || {}) });
+  }, [weeklyCellOverrides, dirty]);
 
   const mon = mondayOfWeekContaining(weekAnchor);
   const days = Array.from({ length: 7 }, (_, i) => addDaysToYmd(mon, i));
@@ -4290,6 +4311,10 @@ function WeeklyScheduleTab({
   }
 
   async function saveWeeklyDraft() {
+    if (!dirty) {
+      window.alert?.("변경된 항목이 없습니다.");
+      return;
+    }
     const serverSync = typeof persistWeeklyCellOverridesToServer === "function";
     const ok = window.confirm(
       "저장하시겠습니까?\n\n" +
@@ -4499,7 +4524,7 @@ function WeeklyScheduleTab({
                   인쇄용 HTML 저장
                 </button>
               ) : null}
-              <button type="button" className="weekly-save-btn weekly-save-btn--footer" onClick={() => void saveWeeklyDraft()} disabled={!dirty}>
+              <button type="button" className="weekly-save-btn weekly-save-btn--footer" onClick={() => void saveWeeklyDraft()}>
                 저장
               </button>
             </div>
@@ -5422,9 +5447,10 @@ function DashboardPage({
 
   useEffect(() => {
     if (!baseScheduleYear) return;
+    if (scheduleChanges.length > 0) return;
     const saved = workScheduleByYear?.[String(baseScheduleYear)];
     setDraftRows(mergeWorkScheduleRows(saved, activeBaseTemplate));
-  }, [baseScheduleYear, workScheduleByYear, activeBaseTemplate]);
+  }, [baseScheduleYear, workScheduleByYear, activeBaseTemplate, scheduleChanges.length]);
 
   const scheduleChanges = useMemo(() => {
     if (!baseScheduleYear) return [];
