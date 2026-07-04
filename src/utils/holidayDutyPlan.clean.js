@@ -117,6 +117,10 @@ export function isMajorTraditionalFestivalHolidayName(holidayName) {
   return false;
 }
 
+function isSubstitutePublicHolidayName(holidayName) {
+  return String(holidayName ?? "").trim().includes("대체공휴");
+}
+
 function dutyIds(duty) {
   if (!duty) return { n1: "", n2: "" };
   const n1 = duty.nurse1UserId ?? duty.nurse1_user_id ?? "";
@@ -261,6 +265,23 @@ export function buildFestivalDutyDateSet(year, holidays) {
       out.add(addDaysYmd(clusterEnd, 1));
     }
   }
+
+  /** 설·추석 직후(또는 직전) 대체공휴일 — 명절당직 순번에 포함 */
+  for (const h of holidays ?? []) {
+    if (!h?.isHoliday || typeof h.holidayDate !== "string") continue;
+    const subYmd = String(h.holidayDate).slice(0, 10);
+    if (!subYmd.startsWith(`${year}-`)) continue;
+    if (!isSubstitutePublicHolidayName(h.holidayName)) continue;
+    for (const [clusterStart, clusterEnd] of clusters) {
+      const afterGap = daysBetweenYmd(clusterEnd, subYmd);
+      const beforeGap = daysBetweenYmd(subYmd, clusterStart);
+      if ((afterGap >= 1 && afterGap <= 3) || (beforeGap >= 1 && beforeGap <= 3)) {
+        out.add(subYmd);
+        break;
+      }
+    }
+  }
+
   return out;
 }
 
