@@ -1051,15 +1051,24 @@ function App() {
     }
   }
 
-  async function persistWeeklyCellOverridesToServer(snapshot) {
+  async function persistWeeklyCellOverridesToServer(snapshot, patch) {
     if (!serverMode || !auth?.userId) {
       throw new Error("서버에 연결된 상태에서만 주간 번표를 저장할 수 있습니다.");
     }
-    await api.syncWeeklyCellOverrides({ overrides: snapshot, actorUserId: auth.userId });
+    const delta = patch && typeof patch === "object" ? patch : snapshot;
+    await api.syncWeeklyCellOverrides({ overrides: delta, actorUserId: auth.userId });
     setWeeklyCellOverrides(snapshot);
-    const data = await fetchBootstrapPayload();
-    if (data) applyBootstrapPayload(data);
-    setWeeklyCellOverrides(snapshot);
+    void (async () => {
+      try {
+        const data = await fetchBootstrapPayload();
+        if (data) {
+          applyBootstrapPayload(data);
+          setWeeklyCellOverrides(snapshot);
+        }
+      } catch {
+        /* 저장은 완료됨 — 백그라운드 동기화 실패는 무시 */
+      }
+    })();
   }
 
   useEffect(() => {
@@ -4435,7 +4444,7 @@ function WeeklyScheduleTab({
     if (!ok) return;
     if (serverSync) {
       try {
-        await persistWeeklyCellOverridesToServer(snapshot);
+        await persistWeeklyCellOverridesToServer(snapshot, draft);
       } catch (e) {
         window.alert?.(`서버에 저장하지 못했습니다: ${e?.message || e}`);
         return;
