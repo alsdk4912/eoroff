@@ -267,6 +267,18 @@ export function weeklyOverridesSnapshotDiffersFromSaved(saved, snapshot) {
   return false;
 }
 
+/** 화면 표시용: 서버 저장본 위에 draft 반영(캘린더·주간번표 동일). draft의 auto는 저장 오버라이드 무시 */
+export function mergeWeeklyOverridesForDisplay(saved, draft) {
+  const base = { ...(saved && typeof saved === "object" ? saved : {}) };
+  const d = draft && typeof draft === "object" ? draft : {};
+  for (const key of Object.keys(d)) {
+    const val = d[key];
+    if (val && String(val.mode ?? "") === "manual") base[key] = val;
+    else delete base[key];
+  }
+  return base;
+}
+
 /** draft 반영 병합 결과가 저장본과 다른지 */
 export function weeklyOverridesChangedForViewer(saved, draft, viewerRole, users, viewerUserId) {
   const snapshot = mergeWeeklyCellOverridesForViewer(saved, draft, viewerRole, users, viewerUserId);

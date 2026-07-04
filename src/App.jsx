@@ -54,6 +54,7 @@ import {
   canEditWeeklyScheduleCell,
   canUseWeeklyScheduleEditor,
   mergeWeeklyCellOverridesForViewer,
+  mergeWeeklyOverridesForDisplay,
   weeklyOverridesSnapshotDiffersFromSaved,
   weeklyCellOverridesDirtyForViewer,
   normalizeWeeklyOverrideForCompare,
@@ -4273,6 +4274,11 @@ function WeeklyScheduleTab({
     [draftOverrides, weeklyCellOverrides, viewerRole, users, viewerUserId]
   );
 
+  const displayOverrides = useMemo(
+    () => mergeWeeklyOverridesForDisplay(weeklyCellOverrides, draftOverrides),
+    [weeklyCellOverrides, draftOverrides]
+  );
+
   useEffect(() => {
     if (userEditedRef.current) return;
     const next = { ...(weeklyCellOverrides || {}) };
@@ -4318,7 +4324,7 @@ function WeeklyScheduleTab({
   }
 
   function displayCell(u, d) {
-    return displayCellWithOverrideMap(u, d, draftOverrides);
+    return displayCellWithOverrideMap(u, d, displayOverrides);
   }
 
   function onCellOverrideChange(userId, ymd, val) {
@@ -4338,7 +4344,7 @@ function WeeklyScheduleTab({
     userEditedRef.current = true;
     setDraftOverrides((prev) => {
       const next = { ...(prev || {}) };
-      if (!parsed) delete next[key];
+      if (!parsed) next[key] = { mode: "auto" };
       else if (val === CUSTOM_SHIFT_SENTINEL && next[key]?.mode === "manual" && isCustomShiftCodeValue(next[key]?.main)) {
         next[key] = { mode: "manual", kind: "base", main: next[key].main, sub: "" };
       } else next[key] = parsed;
@@ -4364,7 +4370,7 @@ function WeeklyScheduleTab({
   }
 
   function exportOfficialWeeklyDocument(overrideMapForExport) {
-    const ov = overrideMapForExport ?? draftOverrides;
+    const ov = overrideMapForExport ?? displayOverrides;
     const nurseRows = rosterRows.map((u) => ({
       name: u.name,
       cells: days.map((d) => displayCellWithOverrideMap(u, d, ov)),
@@ -4494,7 +4500,7 @@ function WeeklyScheduleTab({
                     const cellEditable = baseCellEditable;
                     const fixedChiefShift = isFixedChiefShiftStaff(u.name) ? fixedChiefShiftCodeForName(u.name) : "";
                     const key = weeklyCellKey(u.id, d);
-                    const ov = draftOverrides[key];
+                    const ov = displayOverrides[key];
                     const selVal = weeklyOverrideSelectValue(ov);
                     const autoMain =
                       sec === "chief"
