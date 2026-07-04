@@ -429,6 +429,8 @@ export function buildCalendarSubstituteDisplayRows({
   approvedApplicants,
   substituteAssignments,
   users,
+  /** 주간 번표에서 계산한 근무 표시 `{ userId, shiftCode }[]` — 대체 DB에 없을 때 보강 */
+  weeklyStaffCells,
 }) {
   const applicants = Array.isArray(approvedApplicants) ? approvedApplicants : [];
   const orphanRecs = getStandaloneSubstituteRecordsForScope(
@@ -450,14 +452,22 @@ export function buildCalendarSubstituteDisplayRows({
         });
       }
     }
-    return rows;
+  } else {
+    for (const s of orphanRecs) {
+      rows.push({
+        shiftCode: String(s?.shiftCode ?? "").trim(),
+        substituteUserId: String(s?.substituteUserId ?? ""),
+      });
+    }
   }
 
-  for (const s of orphanRecs) {
-    rows.push({
-      shiftCode: String(s?.shiftCode ?? "").trim(),
-      substituteUserId: String(s?.substituteUserId ?? ""),
-    });
+  const seen = new Set(rows.map((r) => String(r.substituteUserId ?? "")));
+  for (const w of Array.isArray(weeklyStaffCells) ? weeklyStaffCells : []) {
+    const uid = String(w?.userId ?? "");
+    const code = String(w?.shiftCode ?? "").trim();
+    if (!uid || !code || code === "—" || seen.has(uid)) continue;
+    rows.push({ shiftCode: code, substituteUserId: uid });
+    seen.add(uid);
   }
   return rows;
 }

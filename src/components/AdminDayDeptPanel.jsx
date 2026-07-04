@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { isUserActive, weeklyRosterAllSections } from "../data/shiftCodes.js";
 import { buildCalendarSubstituteDisplayRows } from "../utils/leaveVisibility.js";
 
 const CUSTOM_SHIFT_PREFIX = "__CUSTOM_SHIFT__:";
@@ -32,8 +33,24 @@ function AdminDayDeptBlock({
   substituteAssignments,
   users,
   defaultOpen,
+  getWeeklyStaffCell,
 }) {
   const leaveList = Array.isArray(applicants) ? applicants : [];
+  const weeklyStaffCells = useMemo(() => {
+    if (staffRole !== "CHIEF" || typeof getWeeklyStaffCell !== "function" || !selectedYmd) return [];
+    const roster = weeklyRosterAllSections(users, selectedYmd).filter((u) => u.role === staffRole && isUserActive(u));
+    const out = [];
+    for (const u of roster) {
+      const cell = getWeeklyStaffCell(u.id, u.name, selectedYmd);
+      const kind = String(cell?.kind ?? "");
+      const main = String(cell?.main ?? "").trim();
+      if (!main || main === "—" || main === "off") continue;
+      if (kind === "leave" || kind === "duty") continue;
+      out.push({ userId: u.id, shiftCode: main });
+    }
+    return out;
+  }, [getWeeklyStaffCell, selectedYmd, staffRole, users]);
+
   const substituteRows = useMemo(() => {
     const rows = buildCalendarSubstituteDisplayRows({
       selectedYmd,
@@ -41,13 +58,14 @@ function AdminDayDeptBlock({
       approvedApplicants: leaveList,
       substituteAssignments,
       users,
+      weeklyStaffCells,
     });
     return rows.map((row, idx) => ({
       key: `${blockId}_sub_${idx}`,
       shiftCode: formatShiftCode(row.shiftCode),
       substituteName: users.find((u) => u.id === row.substituteUserId)?.name ?? row.substituteUserId ?? "—",
     }));
-  }, [blockId, leaveList, selectedYmd, staffRole, substituteAssignments, users]);
+  }, [blockId, leaveList, selectedYmd, staffRole, substituteAssignments, users, weeklyStaffCells]);
 
   const leaveCount = leaveList.length;
   const subCount = substituteRows.length;
@@ -105,6 +123,7 @@ export default function AdminDayDeptPanel({
   substituteAssignments,
   users,
   viewerRole,
+  getWeeklyStaffCell,
 }) {
   const sections = [
     {
@@ -142,6 +161,7 @@ export default function AdminDayDeptPanel({
             selectedYmd={selectedYmd}
             substituteAssignments={substituteAssignments}
             users={users}
+            getWeeklyStaffCell={getWeeklyStaffCell}
             defaultOpen={shouldExpandDeptBlockByDefault(viewerRole, sec.staffRole)}
           />
         ))}

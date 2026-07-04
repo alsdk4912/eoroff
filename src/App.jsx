@@ -53,6 +53,9 @@ import {
   canEditMonthlyScheduleCell,
   canEditWeeklyScheduleCell,
   canUseWeeklyScheduleEditor,
+  mergeWeeklyCellOverridesForViewer,
+  weeklyCellOverridesDirtyForViewer,
+  normalizeWeeklyOverrideForCompare,
   canSaveMonthlyWorkSchedule,
   emptyScheduleMonthValues,
   mergeMonthlySaveDraft,
@@ -1636,6 +1639,26 @@ function App() {
     () => filterRequestsForWeeklyRoster(requestsRawVisible, users),
     [requestsRawVisible, users]
   );
+  const getWeeklyStaffCell = useCallback(
+    (userId, nurseName, ymd) => {
+      const key = weeklyCellKey(userId, ymd);
+      const o = weeklyCellOverrides?.[key];
+      if (o && o.mode === "manual") {
+        return { kind: o.kind || "base", main: o.main ?? "—", sub: o.sub ?? "" };
+      }
+      return effectiveWeeklyCell(
+        userId,
+        nurseName,
+        ymd,
+        workScheduleByYear,
+        requestsForWeeklyRoster,
+        substituteAssignments,
+        holidays,
+        holidayDuties
+      );
+    },
+    [weeklyCellOverrides, workScheduleByYear, requestsForWeeklyRoster, substituteAssignments, holidays, holidayDuties]
+  );
   const myRequests = useMemo(
     () => requestsVisibleInUi.filter((r) => r.userId === auth?.userId),
     [requestsVisibleInUi, auth?.userId]
@@ -2941,6 +2964,7 @@ function App() {
               holidays={holidays}
               emergencySurgeryRecords={emergencySurgeryRecordsByDate[calendarSelectedYmd] ?? []}
               onSelectDutyDay={fetchEmergencySurgeryRecordsForDate}
+              getWeeklyStaffCell={getWeeklyStaffCell}
             />
           }
         />
@@ -4055,18 +4079,7 @@ function weeklyOverrideSelectValue(ov) {
 }
 
 function normalizeWeeklyOverrideEntry(raw) {
-  const entry = raw && typeof raw === "object" ? raw : null;
-  if (!entry || String(entry.mode ?? "") !== "manual") return entry;
-  const kind = String(entry.kind ?? "base");
-  const main =
-    kind === "leave"
-      ? normalizeWeeklyLeaveMark(entry.main)
-      : kind === "base"
-        ? isCustomShiftCodeValue(entry.main)
-          ? entry.main
-          : normalizeChiefShiftCode(entry.main ?? "")
-        : String(entry.main ?? "").trim();
-  return { mode: "manual", kind, main, sub: entry.sub ?? "" };
+  return normalizeWeeklyOverrideForCompare(raw);
 }
 
 /** 주간 번표 오버라이드 맵을 키 정렬 후 직렬화 — 저장 여부(dirty) 비교용 */
@@ -4210,11 +4223,24 @@ function WeeklyScheduleTab({
   const [weekAnchor, setWeekAnchor] = useState(() => toLocalYMD(new Date()));
   const [draftOverrides, setDraftOverrides] = useState(() => ({ ...(weeklyCellOverrides || {}) }));
   const [weeklyMsg, setWeeklyMsg] = useState("");
+  const userEditedRef = useRef(false);
+
+  const dirty = useMemo(
+    () =>
+      weeklyCellOverridesDirtyForViewer(
+        weeklyCellOverrides,
+        draftOverrides,
+        viewerRole,
+        users,
+        viewerUserId
+      ),
+    [draftOverrides, weeklyCellOverrides, viewerRole, users, viewerUserId]
+  );
 
   useEffect(() => {
-    if (dirty) return;
+    if (userEditedRef.current) return;
     setDraftOverrides({ ...(weeklyCellOverrides || {}) });
-  }, [weeklyCellOverrides, dirty]);
+  }, [weeklyCellOverrides]);
 
   const mon = mondayOfWeekContaining(weekAnchor);
   const days = Array.from({ length: 7 }, (_, i) => addDaysToYmd(mon, i));
@@ -4230,11 +4256,6 @@ function WeeklyScheduleTab({
   function isWeeklyRestDayColumn(ymd) {
     return isWeekendYmd(ymd) || isPublicHolidayYmd(ymd, holidays);
   }
-
-  const dirty = useMemo(
-    () => stableStringifyWeeklyOverrides(draftOverrides) !== stableStringifyWeeklyOverrides(weeklyCellOverrides),
-    [draftOverrides, weeklyCellOverrides]
-  );
 
   function computedCell(u, d) {
     return effectiveWeeklyCell(
@@ -4271,6 +4292,7 @@ function WeeklyScheduleTab({
     const key = weeklyCellKey(userId, ymd);
     const parsed = parseWeeklyOverrideSelectValue(val);
     setWeeklyMsg("");
+    userEditedRef.current = true;
     setDraftOverrides((prev) => {
       const next = { ...(prev || {}) };
       if (!parsed) delete next[key];
@@ -4286,6 +4308,7 @@ function WeeklyScheduleTab({
     if (staffUser && isFixedChiefShiftStaff(staffUser.name)) return;
     const key = weeklyCellKey(userId, ymd);
     setWeeklyMsg("");
+    userEditedRef.current = true;
     setDraftOverrides((prev) => ({
       ...(prev || {}),
       [key]: { mode: "manual", kind: "base", main: toCustomShiftCode(text), sub: "" },
@@ -4324,7 +4347,13 @@ function WeeklyScheduleTab({
         "· 근무 칸은 월간 근무표·휴가 확정·대체 근무·달력 당직(주말 / 공휴·대체 / 설·추석 명절)을 반영해 채워집니다."
     );
     if (!ok) return;
-    const snapshot = JSON.parse(JSON.stringify(draftOverrides || {}));
+    const snapshot = mergeWeeklyCellOverridesForViewer(
+      weeklyCellOverrides,
+      draftOverrides,
+      viewerRole,
+      users,
+      viewerUserId
+    );
     if (serverSync) {
       try {
         await persistWeeklyCellOverridesToServer(snapshot);
@@ -4335,6 +4364,8 @@ function WeeklyScheduleTab({
     } else {
       setWeeklyCellOverrides(snapshot);
     }
+    userEditedRef.current = false;
+    setDraftOverrides(snapshot);
     setWeeklyMsg(serverSync ? "서버에 저장했습니다. 모든 계정에서 동일하게 보입니다." : "저장했습니다.");
     notifyDone("저장되었습니다.");
     if (isAdmin) {
@@ -7595,6 +7626,7 @@ function CalendarPage({
   holidays = [],
   emergencySurgeryRecords = [],
   onSelectDutyDay,
+  getWeeklyStaffCell,
 }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -8785,6 +8817,7 @@ function CalendarPage({
             substituteAssignments={substituteAssignments}
             users={users}
             viewerRole={viewerRole}
+            getWeeklyStaffCell={getWeeklyStaffCell}
           />
           {(!selectedIsOffDay || canHolidayDutyMemo) && (
             <CalendarDayMemoSection

@@ -186,6 +186,52 @@ export function canSaveMonthlyWorkSchedule(viewerRole) {
   return ["ADMIN", "DEPT_HEAD", "ANESTHESIA", "ADMIN2", "CHIEF"].includes(role);
 }
 
+/** 주간 번표 오버라이드 비교·병합용 정규화 */
+export function normalizeWeeklyOverrideForCompare(raw) {
+  const entry = raw && typeof raw === "object" ? raw : null;
+  if (!entry || String(entry.mode ?? "") !== "manual") return null;
+  const kind = String(entry.kind ?? "base");
+  const main =
+    kind === "leave"
+      ? String(entry.main ?? "").trim()
+      : kind === "base"
+        ? String(entry.main ?? "").startsWith("__CUSTOM_SHIFT__:")
+          ? entry.main
+          : normalizeChiefShiftCode(entry.main ?? "")
+        : String(entry.main ?? "").trim();
+  return { mode: "manual", kind, main, sub: entry.sub ?? "" };
+}
+
+/** 역할별로 편집 가능한 셀만 draft를 서버 맵에 병합 */
+export function mergeWeeklyCellOverridesForViewer(saved, draft, viewerRole, users, viewerUserId) {
+  const out = { ...(saved && typeof saved === "object" ? saved : {}) };
+  const d = draft && typeof draft === "object" ? draft : {};
+  const keys = new Set([...Object.keys(out), ...Object.keys(d)]);
+  for (const key of keys) {
+    const uid = String(key.split("|")[0] ?? "");
+    const u = (Array.isArray(users) ? users : []).find((x) => String(x.id) === uid);
+    if (!u || !canEditWeeklyScheduleCell(viewerRole, u, viewerUserId)) continue;
+    const val = d[key];
+    if (val && String(val.mode ?? "") === "manual") out[key] = val;
+    else delete out[key];
+  }
+  return out;
+}
+
+/** 역할별 편집 가능 셀만 비교해 dirty 여부 판단 */
+export function weeklyCellOverridesDirtyForViewer(saved, draft, viewerRole, users, viewerUserId) {
+  const keys = new Set([...Object.keys(saved || {}), ...Object.keys(draft || {})]);
+  for (const key of keys) {
+    const uid = String(key.split("|")[0] ?? "");
+    const u = (Array.isArray(users) ? users : []).find((x) => String(x.id) === uid);
+    if (!u || !canEditWeeklyScheduleCell(viewerRole, u, viewerUserId)) continue;
+    const a = normalizeWeeklyOverrideForCompare(saved?.[key]);
+    const b = normalizeWeeklyOverrideForCompare(draft?.[key]);
+    if (JSON.stringify(a) !== JSON.stringify(b)) return true;
+  }
+  return false;
+}
+
 /** 주간 번표 셀 선택박스 편집 (역할·본인 행 기준) */
 export function canEditWeeklyScheduleCell(viewerRole, staffUser, viewerUserId) {
   const vr = String(viewerRole ?? "").trim();
