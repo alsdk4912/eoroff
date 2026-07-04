@@ -3291,7 +3291,6 @@ function LoginPage({ onLogin, onResetPassword, onRegister, apiConfigured, apiRea
                   <span className="login-field__label">이름</span>
                   <input
                     className="login-field__input"
-                    placeholder="예: 김해림"
                     value={loginName}
                     onChange={(e) => setLoginName(e.target.value)}
                     autoComplete="username"
@@ -3302,7 +3301,6 @@ function LoginPage({ onLogin, onResetPassword, onRegister, apiConfigured, apiRea
                   <input
                     className="login-field__input"
                     type="password"
-                    placeholder="기본 1234"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     autoComplete="current-password"
