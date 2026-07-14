@@ -2337,19 +2337,27 @@ tbody tr:last-child td {
   width: 100%;
   text-align: left;
   padding: 12px;
-  background: transparent;
+  background: transparent !important;
   border: none;
+  border-radius: 0;
+  color: var(--text-primary);
+  font-weight: 600;
   cursor: pointer;
+  transition: background 0.15s ease;
 }
 
-.notice-item__header:hover {
-  background: #f8fafc;
+.notice-item__header:hover:not(:disabled),
+.notice-item__header:active:not(:disabled) {
+  background: transparent !important;
+  color: var(--text-primary);
+  transform: none;
 }
 
 .notice-item__title {
   font-size: 14px;
   font-weight: 700;
   line-height: 1.35;
+  color: var(--text-primary);
   display: flex;
   justify-content: space-between;
   align-items: center;
