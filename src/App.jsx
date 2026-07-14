@@ -6715,253 +6715,241 @@ function NoticeBoardPage({
         </form>
       ) : null}
 
-      {selected ? (
-        <div className="notice-detail">
-          <div className="notice-detail__sticky-corner">
-            <button
-              type="button"
-              className="notice-detail__collapse-toggle"
-              onClick={() => {
-                setSelectedId("");
-                setEditingMode(false);
-              }}
-              aria-expanded="true"
-              aria-label="게시글 접기"
-            >
-              <span className="notice-item__toggle-icon" aria-hidden="true">
-                ▲
-              </span>
-            </button>
-          </div>
-          <div className="notice-detail__inner">
-          {editingMode ? (
-            <div className="grid">
-              <input type="text" maxLength={80} value={editingTitle} onChange={(e) => setEditingTitle(e.target.value)} />
-              <textarea rows={6} maxLength={2000} value={editingContent} onChange={(e) => setEditingContent(e.target.value)} />
-              <NoticeImagePicker images={editingImages} onChange={setEditingImages} />
-            </div>
-          ) : (
-            <>
-              <h3 className="notice-detail__title">{selected.title}</h3>
-              <p className="notice-detail__meta">
-                {idToName.get(selected.userId) ?? selected.userId} · {selected.createdAt ? new Date(selected.createdAt).toLocaleString("ko-KR") : "-"}
-              </p>
-              <div className="notice-detail__content">{selected.content}</div>
-              <NoticeImageGallery images={selected.images} />
-            </>
-          )}
-          {canManage(selected) ? (
-            <div className="notice-detail__actions">
-              {editingMode ? (
-                <>
-                  <button type="button" onClick={() => void saveEdit()}>저장</button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingMode(false);
-                      setEditingTitle("");
-                      setEditingContent("");
-                      setEditingImages([]);
-                    }}
-                  >
-                    취소
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingMode(true);
-                      setEditingTitle(String(selected.title ?? ""));
-                      setEditingContent(String(selected.content ?? ""));
-                      setEditingImages(parseNoticeImages(selected.images));
-                    }}
-                  >
-                    수정
-                  </button>
-                  <button type="button" onClick={() => void deleteNotice?.(selected.id)}>삭제</button>
-                </>
-              )}
-            </div>
-          ) : null}
+      <div className="notice-list">
+        {rows.map((r) => {
+          const isOpen = selectedId === r.id;
+          return (
+            <div key={r.id} className={`notice-item${isOpen ? " notice-item--expanded" : ""}`}>
+              <button
+                type="button"
+                className="notice-item__header"
+                aria-expanded={isOpen}
+                onClick={() => {
+                  if (isOpen) {
+                    setSelectedId("");
+                    setEditingMode(false);
+                  } else {
+                    setSelectedId(r.id);
+                    setEditingMode(false);
+                  }
+                }}
+              >
+                <div className="notice-item__title">
+                  {r.title}
+                  <span className="notice-item__toggle-icon" aria-hidden="true">
+                    {isOpen ? "▲" : "▼"}
+                  </span>
+                </div>
+                <div className="notice-item__meta">
+                  <span>{idToName.get(r.userId) ?? r.userId}</span>
+                  <span>{r.createdAt ? new Date(r.createdAt).toLocaleDateString("ko-KR") : "-"}</span>
+                </div>
+                {!isOpen ? (
+                  <div className="notice-item__summary">
+                    {String(r.content ?? "").replace(/\s+/g, " ").trim()}
+                    {Array.isArray(r.images) && r.images.length > 0 ? (
+                      <span className="notice-item__photo-badge"> · 사진 {r.images.length}</span>
+                    ) : null}
+                  </div>
+                ) : null}
+              </button>
 
-          <div className="notice-comments-section">
-            <h4 className="notice-comments-title">댓글</h4>
-            {commentsForSelected.length === 0 ? (
-              <p className="help notice-comments-empty">등록된 댓글이 없습니다.</p>
-            ) : (
-              <ul className="notice-comment-list">
-                {commentsForSelected.map((c) => (
-                  <li key={c.id} className="notice-comment-item">
-                    <div className="notice-comment-item__meta">
-                      <span className="notice-comment-item__author">{idToName.get(c.userId) ?? c.userId}</span>
-                      <span className="notice-comment-item__time">
-                        {c.updatedAt && c.createdAt && String(c.updatedAt) !== String(c.createdAt)
-                          ? `${new Date(c.updatedAt).toLocaleString("ko-KR")} (수정됨)`
-                          : c.createdAt
-                            ? new Date(c.createdAt).toLocaleString("ko-KR")
-                            : "-"}
-                      </span>
+              {isOpen && selected ? (
+                <div className="notice-item__body">
+                  {editingMode ? (
+                    <div className="grid">
+                      <input type="text" maxLength={80} value={editingTitle} onChange={(e) => setEditingTitle(e.target.value)} />
+                      <textarea rows={6} maxLength={2000} value={editingContent} onChange={(e) => setEditingContent(e.target.value)} />
+                      <NoticeImagePicker images={editingImages} onChange={setEditingImages} />
                     </div>
-                    {editingCommentId === c.id ? (
-                      <div className="notice-comment-edit">
-                        <textarea
-                          rows={3}
-                          maxLength={500}
-                          value={editingCommentDraft}
-                          onChange={(e) => setEditingCommentDraft(e.target.value)}
-                          aria-label="댓글 수정"
-                        />
-                        <div className="notice-comment-edit__actions">
-                          <button
-                            type="button"
-                            disabled={!editingCommentDraft.trim()}
-                            onClick={async () => {
-                              const ok = await updateNoticeComment?.(c.id, editingCommentDraft);
-                              if (ok) {
-                                setEditingCommentId("");
-                                setEditingCommentDraft("");
-                              }
-                            }}
-                          >
+                  ) : (
+                    <>
+                      <p className="notice-detail__meta">
+                        {idToName.get(selected.userId) ?? selected.userId} ·{" "}
+                        {selected.createdAt ? new Date(selected.createdAt).toLocaleString("ko-KR") : "-"}
+                      </p>
+                      <div className="notice-detail__content">{selected.content}</div>
+                      <NoticeImageGallery images={selected.images} />
+                    </>
+                  )}
+                  {canManage(selected) ? (
+                    <div className="notice-detail__actions">
+                      {editingMode ? (
+                        <>
+                          <button type="button" onClick={() => void saveEdit()}>
                             저장
                           </button>
                           <button
                             type="button"
                             onClick={() => {
-                              setEditingCommentId("");
-                              setEditingCommentDraft("");
+                              setEditingMode(false);
+                              setEditingTitle("");
+                              setEditingContent("");
+                              setEditingImages([]);
                             }}
                           >
                             취소
                           </button>
-                        </div>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingMode(true);
+                              setEditingTitle(String(selected.title ?? ""));
+                              setEditingContent(String(selected.content ?? ""));
+                              setEditingImages(parseNoticeImages(selected.images));
+                            }}
+                          >
+                            수정
+                          </button>
+                          <button type="button" onClick={() => void deleteNotice?.(selected.id)}>
+                            삭제
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  ) : null}
+
+                  <div className="notice-comments-section">
+                    <h4 className="notice-comments-title">댓글</h4>
+                    {commentsForSelected.length === 0 ? (
+                      <p className="help notice-comments-empty">등록된 댓글이 없습니다.</p>
+                    ) : (
+                      <ul className="notice-comment-list">
+                        {commentsForSelected.map((c) => (
+                          <li key={c.id} className="notice-comment-item">
+                            <div className="notice-comment-item__meta">
+                              <span className="notice-comment-item__author">{idToName.get(c.userId) ?? c.userId}</span>
+                              <span className="notice-comment-item__time">
+                                {c.updatedAt && c.createdAt && String(c.updatedAt) !== String(c.createdAt)
+                                  ? `${new Date(c.updatedAt).toLocaleString("ko-KR")} (수정됨)`
+                                  : c.createdAt
+                                    ? new Date(c.createdAt).toLocaleString("ko-KR")
+                                    : "-"}
+                              </span>
+                            </div>
+                            {editingCommentId === c.id ? (
+                              <div className="notice-comment-edit">
+                                <textarea
+                                  rows={3}
+                                  maxLength={500}
+                                  value={editingCommentDraft}
+                                  onChange={(e) => setEditingCommentDraft(e.target.value)}
+                                  aria-label="댓글 수정"
+                                />
+                                <div className="notice-comment-edit__actions">
+                                  <button
+                                    type="button"
+                                    disabled={!editingCommentDraft.trim()}
+                                    onClick={async () => {
+                                      const ok = await updateNoticeComment?.(c.id, editingCommentDraft);
+                                      if (ok) {
+                                        setEditingCommentId("");
+                                        setEditingCommentDraft("");
+                                      }
+                                    }}
+                                  >
+                                    저장
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingCommentId("");
+                                      setEditingCommentDraft("");
+                                    }}
+                                  >
+                                    취소
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="notice-comment-item__body">{c.content}</div>
+                                {canManageNoticeComment(c) ? (
+                                  <div className="notice-comment-item__actions">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingCommentId(c.id);
+                                        setEditingCommentDraft(String(c.content ?? ""));
+                                      }}
+                                    >
+                                      수정
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        if (!window.confirm("이 댓글을 삭제할까요?")) return;
+                                        await deleteNoticeComment?.(c.id);
+                                      }}
+                                    >
+                                      삭제
+                                    </button>
+                                  </div>
+                                ) : null}
+                              </>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {canWriteNoticeComments ? (
+                      <div className="notice-comment-compose-wrap">
+                        {!commentComposeOpen ? (
+                          <button type="button" className="notice-comment-open-btn" onClick={() => setCommentComposeOpen(true)}>
+                            댓글 등록
+                          </button>
+                        ) : (
+                          <div className="notice-comment-compose">
+                            <textarea
+                              rows={3}
+                              maxLength={500}
+                              placeholder="댓글을 입력하세요 (500자 이내)"
+                              value={commentDraft}
+                              onChange={(e) => setCommentDraft(e.target.value)}
+                              aria-label="새 댓글"
+                              autoFocus
+                            />
+                            <div className="notice-comment-compose__actions">
+                              <button
+                                type="button"
+                                className="notice-comment-submit"
+                                disabled={!commentDraft.trim()}
+                                onClick={async () => {
+                                  const ok = await createNoticeComment?.(selected.id, commentDraft);
+                                  if (ok) {
+                                    setCommentDraft("");
+                                    setCommentComposeOpen(false);
+                                  }
+                                }}
+                              >
+                                등록
+                              </button>
+                              <button
+                                type="button"
+                                className="notice-comment-cancel-btn"
+                                onClick={() => {
+                                  setCommentComposeOpen(false);
+                                  setCommentDraft("");
+                                }}
+                              >
+                                취소
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : (
-                      <>
-                        <div className="notice-comment-item__body">{c.content}</div>
-                        {canManageNoticeComment(c) ? (
-                          <div className="notice-comment-item__actions">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingCommentId(c.id);
-                                setEditingCommentDraft(String(c.content ?? ""));
-                              }}
-                            >
-                              수정
-                            </button>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                if (!window.confirm("이 댓글을 삭제할까요?")) return;
-                                await deleteNoticeComment?.(c.id);
-                              }}
-                            >
-                              삭제
-                            </button>
-                          </div>
-                        ) : null}
-                      </>
+                      <p className="help notice-comments-login-hint">댓글을 작성하려면 간호사·마취·관리자 계정으로 로그인하세요.</p>
                     )}
-                  </li>
-                ))}
-              </ul>
-            )}
-            {canWriteNoticeComments ? (
-              <div className="notice-comment-compose-wrap">
-                {!commentComposeOpen ? (
-                  <button
-                    type="button"
-                    className="notice-comment-open-btn"
-                    onClick={() => setCommentComposeOpen(true)}
-                  >
-                    댓글 등록
-                  </button>
-                ) : (
-                  <div className="notice-comment-compose">
-                    <textarea
-                      rows={3}
-                      maxLength={500}
-                      placeholder="댓글을 입력하세요 (500자 이내)"
-                      value={commentDraft}
-                      onChange={(e) => setCommentDraft(e.target.value)}
-                      aria-label="새 댓글"
-                      autoFocus
-                    />
-                    <div className="notice-comment-compose__actions">
-                      <button
-                        type="button"
-                        className="notice-comment-submit"
-                        disabled={!commentDraft.trim()}
-                        onClick={async () => {
-                          const ok = await createNoticeComment?.(selected.id, commentDraft);
-                          if (ok) {
-                            setCommentDraft("");
-                            setCommentComposeOpen(false);
-                          }
-                        }}
-                      >
-                        등록
-                      </button>
-                      <button
-                        type="button"
-                        className="notice-comment-cancel-btn"
-                        onClick={() => {
-                          setCommentComposeOpen(false);
-                          setCommentDraft("");
-                        }}
-                      >
-                        취소
-                      </button>
-                    </div>
                   </div>
-                )}
-              </div>
-            ) : (
-              <p className="help notice-comments-login-hint">댓글을 작성하려면 간호사·마취·관리자 계정으로 로그인하세요.</p>
-            )}
-          </div>
-          </div>
-        </div>
-      ) : null}
-
-      <div className="notice-list">
-        {rows.map((r) => (
-          <div
-            key={r.id}
-            className={`notice-item${selectedId === r.id ? " notice-item--active" : ""}`}
-          >
-          <button
-            type="button"
-            className="notice-item__header"
-            onClick={() => {
-              if (selectedId === r.id) {
-                setSelectedId("");
-              } else {
-                setSelectedId(r.id);
-                setEditingMode(false);
-              }
-            }}
-          >
-            <div className="notice-item__title">
-              {r.title}
-              <span className="notice-item__toggle-icon">{selectedId === r.id ? "▲" : "▼"}</span>
-            </div>
-            <div className="notice-item__meta">
-              <span>{idToName.get(r.userId) ?? r.userId}</span>
-              <span>{r.createdAt ? new Date(r.createdAt).toLocaleDateString("ko-KR") : "-"}</span>
-            </div>
-            <div className="notice-item__summary">
-              {String(r.content ?? "").replace(/\s+/g, " ").trim()}
-              {Array.isArray(r.images) && r.images.length > 0 ? (
-                <span className="notice-item__photo-badge"> · 사진 {r.images.length}</span>
+                </div>
               ) : null}
             </div>
-          </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );

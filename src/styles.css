@@ -2312,9 +2312,24 @@ tbody tr:last-child td {
   transition: box-shadow 0.15s;
 }
 
-.notice-item--active {
-  border-color: #60a5fa;
-  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.18);
+.notice-item--expanded {
+  border-color: var(--separator);
+  box-shadow: none;
+}
+
+.notice-item__body {
+  padding: 0 12px 14px;
+  border-top: 1px solid var(--separator);
+  animation: notice-expand-in 0.18s ease-out;
+}
+
+@keyframes notice-expand-in {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .notice-item__header {
@@ -2366,59 +2381,8 @@ tbody tr:last-child td {
   overflow: hidden;
 }
 
-.notice-detail {
-  margin-top: 10px;
-  margin-bottom: 24px;
-  border-top: 1px solid var(--separator);
-  padding-top: 10px;
-  padding-bottom: 8px;
-  position: relative;
-}
-
-.notice-detail__sticky-corner {
-  position: sticky;
-  top: calc(env(safe-area-inset-top, 0px) + 52px);
-  z-index: 30;
-  height: 0;
-  display: flex;
-  justify-content: flex-end;
-  align-items: flex-start;
-  pointer-events: none;
-}
-
-.notice-detail__collapse-toggle {
-  pointer-events: auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0;
-  padding: 4px 6px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  line-height: 1;
-}
-
-.notice-detail__collapse-toggle:hover .notice-item__toggle-icon {
-  color: var(--text-primary);
-}
-
-.notice-detail__collapse-toggle .notice-item__toggle-icon {
-  font-size: 12px;
-  text-shadow: 0 0 6px #fff, 0 0 10px #fff;
-}
-
-.notice-detail__inner {
-  padding-right: 4px;
-}
-
-.notice-detail__title {
-  margin: 0 0 4px;
-  font-size: 16px;
-}
-
 .notice-detail__meta {
-  margin: 0 0 8px;
+  margin: 10px 0 8px;
   font-size: 12px;
   color: var(--text-secondary);
 }
