@@ -249,12 +249,34 @@ function isRecruitConsultationGoldkeyRequest(request) {
 }
 
 /**
- * 장기 모집기간(4/1~4/10 또는 10/1~10/10)에 제출한 골드키를 사용자가 취소한 건:
- * 신청내역·달력 칩 등 목록에서 표시하지 않는다(회색 취소 행 제외).
+ * 장기 모집기간에 신청한 골드키를 모집기간 안에 취소한 건만 목록에서 숨긴다.
+ * 절대규칙: 그 외 취소는 회색 이력으로 남기고 사용량에도 포함된다.
+ * @param {object} request
+ * @param {Array<{leaveRequestId?: string, deductionExempt?: boolean, revokedAt?: string|null, cancelledAt?: string}>} [cancellations]
  */
-export function shouldHideAprilRecruitHalfGoldkeyCancelledRow(request) {
+export function shouldHideAprilRecruitHalfGoldkeyCancelledRow(request, cancellations = []) {
   if (!request || request.status !== "CANCELLED") return false;
-  return isRecruitConsultationGoldkeyRequest(request);
+  if (!isRecruitConsultationGoldkeyRequest(request)) return false;
+  const rid = String(request.id ?? "");
+  const cancel = (Array.isArray(cancellations) ? cancellations : []).find(
+    (c) => String(c.leaveRequestId ?? c.leave_request_id ?? "") === rid && !c.revokedAt && !c.revoked_at
+  );
+  if (cancel) {
+    return cancel.deductionExempt === true || Number(cancel.deduction_exempt) === 1;
+  }
+  const cancelledAt = request.cancelledAt ?? request.cancelled_at;
+  if (!cancelledAt) return false;
+  const leaveYmd = ymdFromRequestRow(request);
+  const leave = leaveYmd ? parseYmdAsLocalDate(leaveYmd) : null;
+  if (!leave || Number.isNaN(leave.getTime())) return false;
+  const cancelAt = new Date(cancelledAt);
+  if (Number.isNaN(cancelAt.getTime())) return false;
+  const lm = leave.getMonth() + 1;
+  const cm = cancelAt.getMonth() + 1;
+  const cd = cancelAt.getDate();
+  if (lm >= 7 && lm <= 12) return cm === 4 && cd >= 1 && cd <= 10;
+  if (lm >= 1 && lm <= 6) return cm === 10 && cd >= 1 && cd <= 10;
+  return false;
 }
 
 /** 취소·미선정 제외: 진행 중인 골드키가 해당 날짜에 이미 있으면 true */

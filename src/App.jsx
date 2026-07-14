@@ -1637,8 +1637,11 @@ function App() {
   }
 
   const requestsRawVisible = useMemo(
-    () => (Array.isArray(requests) ? requests : []).filter((r) => !shouldHideAprilRecruitHalfGoldkeyCancelledRow(r)),
-    [requests]
+    () =>
+      (Array.isArray(requests) ? requests : []).filter(
+        (r) => !shouldHideAprilRecruitHalfGoldkeyCancelledRow(r, cancellations)
+      ),
+    [requests, cancellations]
   );
   const requestsVisibleInUi = useMemo(
     () => filterRequestsForViewerRole(requestsRawVisible, users, viewerRole),
@@ -2861,7 +2864,7 @@ function App() {
               goldkeys={goldkeys}
               requests={requestsVisibleInUi}
               requestsForWeekly={requestsForWeeklyRoster}
-              requestsForGoldkey={requestsRawVisible}
+              requestsForGoldkey={requests}
               cancellations={cancellations}
               ladderResults={ladderResults}
               users={users}
@@ -5918,7 +5921,7 @@ function DashboardPage({
             <span>상반기 장기휴가 신청기간(1~6월) : 전년도 10월 1일 ~ 10일</span>
             <span>하반기 장기휴가 신청기간(7~12월) : 해당년도 4월 1일 ~ 10일</span>
             <span>모든 장기휴가는 신청기간 이후 일괄 적용되어 골드키 차감됩니다.</span>
-            <span>골드키는 신청 시점에 차감되며, 본인이 취소해도 사용량은 유지됩니다(장기 모집기간 내 조건 충족 시 면제되는 경우만 예외).</span>
+            <span>골드키는 신청 시점에 차감되며, 본인이 취소해도 신청현황(회색)·사용량에 그대로 남습니다. 예외는 장기 모집기간(4/1~4/10, 10/1~10/10) 안에 신청·취소한 경우뿐입니다.</span>
           </p>
           <div className="table-wrap">
             <table>

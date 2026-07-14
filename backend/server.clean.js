@@ -2933,20 +2933,6 @@ app.post("/api/requests/:id/cancel", async (req, res) => {
     const cancelledAt = new Date().toISOString();
     let deductionExempt = isLongTermGoldkeyDeductionExempt(row, cancelledAt);
     let deductionNote = deductionExempt ? "차감 제외 처리됨(장기휴가 모집기간)" : null;
-
-    /** 24시간 미확정 협의 구간(앵커 기준) 내 취소 → 차감 면제 */
-    if (!deductionExempt && String(row.leave_type ?? "") === "GOLDKEY") {
-      const anchorRow = await queryOne(
-        `SELECT MIN(requested_at) as anchor FROM requests WHERE leave_type = 'GOLDKEY' AND leave_date = ? AND deleted_at IS NULL`,
-        String(row.leave_date ?? "")
-      );
-      const anchorMs = new Date(anchorRow?.anchor ?? "").getTime();
-      const cancelMs = new Date(cancelledAt).getTime();
-      if (Number.isFinite(anchorMs) && Number.isFinite(cancelMs) && cancelMs - anchorMs <= 24 * 60 * 60 * 1000) {
-        deductionExempt = true;
-        deductionNote = "차감 제외 처리됨(24시간 미확정 협의 구간 내 취소)";
-      }
-    }
     const cancelReason = String(req.body?.cancelReason ?? "").trim();
 
     await runTransaction(async (tx) => {
