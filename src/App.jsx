@@ -5594,6 +5594,8 @@ function DashboardPage({
   const [draftRows, setDraftRows] = useState(() =>
     mergeWorkScheduleRows(workScheduleByYear?.["2026"], WORK_SCHEDULE_2026_ROWS)
   );
+  /** 연도 전환 시 draft를 새 연도로 강제 교체하기 위한 기준 */
+  const draftScheduleYearRef = useRef(baseScheduleYear ?? 2026);
 
   const scheduleChanges = useMemo(() => {
     if (!baseScheduleYear) return [];
@@ -5621,9 +5623,14 @@ function DashboardPage({
 
   useEffect(() => {
     if (!baseScheduleYear) return;
-    if (scheduleChanges.length > 0) return;
+    const yearChanged = draftScheduleYearRef.current !== baseScheduleYear;
+    draftScheduleYearRef.current = baseScheduleYear;
+    // 같은 연도·미저장 편집 중이면 서버/캐시 갱신으로 draft를 덮지 않음.
+    // 연도가 바뀌면 이전 연도 draft가 남아 보이는 버그를 막기 위해 항상 교체.
+    if (!yearChanged && scheduleChanges.length > 0) return;
     const saved = workScheduleByYear?.[String(baseScheduleYear)];
     setDraftRows(mergeWorkScheduleRows(saved, activeBaseTemplate));
+    if (yearChanged) setScheduleMsg("");
   }, [baseScheduleYear, workScheduleByYear, activeBaseTemplate, scheduleChanges.length]);
 
   const baseScheduleYearList = useMemo(
