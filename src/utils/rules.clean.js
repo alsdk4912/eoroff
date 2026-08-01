@@ -449,12 +449,18 @@ export function validateRequest({
   }
 
   if (leaveType === "GENERAL_NORMAL") {
-    if (now < priorityMonth2At0900) return "일반-후순위는 매월 2일 09시 이후부터 신청 가능합니다.";
+    // 당월(잔여): 매월 2일 09시 제한 없음(이전 달 2일 09시부터 이미 열린 상태).
+    // 다음달: 당월 2일 09시 이후부터 신청 가능.
+    if (targetMonth === plus1 && now < priorityMonth2At0900) {
+      return "일반-후순위(다음달)는 매월 2일 09시 이후부터 신청 가능합니다.";
+    }
     return "";
   }
 
   if (leaveType === "HALF_DAY") {
-    if (now < priorityMonth2At0900) return "반차는 매월 2일 09시 이후부터 신청 가능합니다.";
+    if (targetMonth === plus1 && now < priorityMonth2At0900) {
+      return "반차(다음달)는 매월 2일 09시 이후부터 신청 가능합니다.";
+    }
     return "";
   }
 
