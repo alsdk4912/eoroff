@@ -5547,11 +5547,6 @@ function HalfDayUserCycleBlock({
       <div className="half-day-cycle-panel half-day-cycle-panel--current">
         <div className="half-day-cycle-panel__head">
           <span className="half-day-cycle-panel__title">현재 반차</span>
-          <span className="half-day-cycle-panel__hint">
-            {activeRecords.length === 0 && completedSets.length > 0
-              ? "이전 세트 완료 · 다음 신청은 반차1"
-              : "진행 중 (새 반차1·2)"}
-          </span>
         </div>
         {activeRecords.length > 0 ? (
           <HalfDayRecordsTable
@@ -5568,9 +5563,6 @@ function HalfDayUserCycleBlock({
 
       {completedSets.length > 0 ? (
         <div className="half-day-completed-wrap">
-          <p className="half-day-completed-wrap__lead">
-            완료된 반차 세트는 새 반차1과 헷갈리지 않도록 아래에 따로 묶었습니다. (기본 접힘)
-          </p>
           {completedSets.map((set) => {
             const setRecords = set.records.map((rec) => ({
               ...rec,
@@ -5719,9 +5711,8 @@ function HalfDayDashboardSection({ requests, users, currentRole, currentUserId, 
         {adminView ? (currentRole === "ADMIN2" ? " (수술실·마취과)" : " (수술실)") : ""}
       </h2>
       <p className="help page-lead">
-        반차 분기는 매년 12월 1일 ~ 익년 11월 30일입니다. 11월 말까지 반차2를 쓰지 않으면 미사용 반차는 소멸되고, 12월부터 새 분기가 시작됩니다.
+        반차 분기는 매년 12월 1일 ~ 익년 11월 30일입니다.
         반차1 다음 확정 반차는 반차2로 자동 지정되며, 반차 구분 수정은 부서파트장만 가능합니다.
-        반차1·2를 모두 쓴 세트는 접어 두고, 위에 「현재 반차」만 보면 됩니다.
       </p>
 
       {canRecord ? <HalfDayManualRecordForm users={users} onRecordHalfDayUsage={onRecordHalfDayUsage} /> : null}
