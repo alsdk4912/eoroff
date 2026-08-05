@@ -487,6 +487,7 @@ export async function initDb() {
   await ensureAnesthesiaLeeJihyunGoldkeys20260724_27();
   await ensureChiefOhMoonhwanAndDeactivateLeechanjoo();
   await ensureChiefKangMyunghoFrom20260625();
+  await ensureYangHyunAhSickLeave20261012_16();
   return client;
 }
 
@@ -2000,5 +2001,61 @@ async function ensureChiefKangMyunghoFrom20260625() {
 
   await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
   console.log("[db] chief_kangmyungho_from_20260625_v1 applied");
+}
+
+/** 양현아 병가 2026-10-12 ~ 2026-10-16 (캘린더·주간 번표 반영) */
+async function ensureYangHyunAhSickLeave20261012_16() {
+  const migrationId = "yanghyunah_sick_leave_20261012_16_v1";
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
+  if (done) return;
+
+  const user = await queryOne("SELECT id FROM users WHERE name = ? AND role = 'NURSE' LIMIT 1", "양현아");
+  if (!user?.id) {
+    console.warn("[db] yanghyunah_sick_leave_20261012_16: user not found - 양현아");
+    await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+    return;
+  }
+
+  const userId = String(user.id);
+  const dates = ["2026-10-12", "2026-10-13", "2026-10-14", "2026-10-15", "2026-10-16"];
+  const nowIso = new Date().toISOString();
+
+  for (const leaveDate of dates) {
+    const existing = await queryOne(
+      `SELECT id, leave_type, leave_nature, status, deleted_at
+       FROM requests
+       WHERE user_id = ? AND leave_date = ?
+       ORDER BY CASE WHEN deleted_at IS NULL THEN 0 ELSE 1 END, requested_at DESC
+       LIMIT 1`,
+      userId,
+      leaveDate
+    );
+    if (existing?.id && !existing.deleted_at) {
+      await execute(
+        `UPDATE requests
+         SET leave_type = 'SICK_LEAVE',
+             leave_nature = 'SICK_LEAVE',
+             status = 'APPROVED',
+             deleted_at = NULL
+         WHERE id = ?`,
+        String(existing.id)
+      );
+      continue;
+    }
+    const id = `lr_sick_yanghyunah_${leaveDate.replaceAll("-", "")}`;
+    await execute(
+      `INSERT INTO requests (
+         id, user_id, leave_date, leave_type, leave_nature, status, requested_at, memo
+       ) VALUES (?, ?, ?, 'SICK_LEAVE', 'SICK_LEAVE', 'APPROVED', ?, ?)`,
+      id,
+      userId,
+      leaveDate,
+      nowIso,
+      "양현아 병가(10/12~10/16)"
+    );
+  }
+
+  await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+  console.log("[db] yanghyunah_sick_leave_20261012_16_v1 applied");
 }
 

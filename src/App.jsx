@@ -1769,13 +1769,14 @@ function App() {
       setMessage("휴가 신청 권한이 없습니다.");
       return;
     }
-    const leaveTypeForPayload = viewerRole === "CHIEF" ? CHIEF_LEAVE_TYPE : normalizedLeaveType;
+    const leaveTypeForPayload = viewerRole === "CHIEF" && leaveType !== "SICK_LEAVE" ? CHIEF_LEAVE_TYPE : normalizedLeaveType;
+    const leaveNatureForPayload = leaveTypeForPayload === "SICK_LEAVE" ? "SICK_LEAVE" : "PERSONAL";
     const payload = {
       id: `lr_${Date.now()}`,
       userId: auth.userId,
       leaveDate,
       leaveType: leaveTypeForPayload,
-      leaveNature: "PERSONAL",
+      leaveNature: leaveNatureForPayload,
       status: "APPLIED",
       requestedAt: new Date().toISOString(),
       memo,
@@ -3555,6 +3556,7 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
             <option value="GENERAL_PRIORITY">일반휴가-우선순위</option>
             <option value="GENERAL_NORMAL">일반휴가-후순위</option>
             <option value="HALF_DAY">반차</option>
+            <option value="SICK_LEAVE">병가</option>
           </select>
           <select
             className="my-requests-sel-mark"
@@ -3973,7 +3975,7 @@ function effectiveScheduleCell(userId, nurseName, ymd, workScheduleByYear, reque
     const lt = String(approvedLeave.leaveType ?? "");
     if (nat === "PAID_TRAINING") return { kind: "leave", main: "공가", sub: typeFullLabel(approvedLeave.leaveType) };
     if (nat === "REQUIRED_TRAINING") return { kind: "leave", main: WEEKLY_REQUIRED_TRAINING_MARK, sub: typeFullLabel(approvedLeave.leaveType) };
-    if (nat === "SICK_LEAVE") return { kind: "leave", main: "병가", sub: typeFullLabel(approvedLeave.leaveType) };
+    if (nat === "SICK_LEAVE" || lt === "SICK_LEAVE") return { kind: "leave", main: "병가", sub: typeFullLabel(approvedLeave.leaveType) };
     if (lt === "HALF_DAY") return { kind: "leave", main: halfDayMainLabel(approvedLeave), sub: "" };
     return { kind: "leave", main: "휴가", sub: typeFullLabel(approvedLeave.leaveType) };
   }
@@ -4032,7 +4034,7 @@ function effectiveWeeklyCell(
     const leaveType = String(approvedLeave.leaveType ?? "");
     if (leaveNature === "PAID_TRAINING") return { kind: "leave", main: "공가", sub: "" };
     if (leaveNature === "REQUIRED_TRAINING") return { kind: "leave", main: WEEKLY_REQUIRED_TRAINING_MARK, sub: "" };
-    if (leaveNature === "SICK_LEAVE") return { kind: "leave", main: "병가", sub: "" };
+    if (leaveNature === "SICK_LEAVE" || leaveType === "SICK_LEAVE") return { kind: "leave", main: "병가", sub: "" };
     if (leaveType === "HALF_DAY") return { kind: "leave", main: halfDayMainLabel(approvedLeave), sub: "" };
     return { kind: "leave", main: "휴가", sub: "" };
   }
@@ -7067,7 +7069,7 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
     const qDate = String(qs.get("leaveDate") ?? "").trim();
     const qType = String(qs.get("leaveType") ?? "").trim();
     if (/^\d{4}-\d{2}-\d{2}$/.test(qDate)) setLeaveDate(qDate);
-    if (["GENERAL_PRIORITY", "GENERAL_NORMAL", "GOLDKEY", "HALF_DAY"].includes(qType)) setLeaveType(qType);
+    if (["GENERAL_PRIORITY", "GENERAL_NORMAL", "GOLDKEY", "HALF_DAY", "SICK_LEAVE"].includes(qType)) setLeaveType(qType);
   }, [location.search]);
 
   function toggleUser(userId) {
@@ -7574,16 +7576,22 @@ function renderCalendarDayChip(applicant, keyPrefix, chipClassExtra, titlePrefix
   const name3 = nameLen === 3 ? " calendar-day-chip--name3" : "";
   const negotiateGk = Boolean(applicant.goldkeyNegotiate);
   const negotiateClass = negotiateGk ? " calendar-day-chip--goldkey-negotiate" : "";
-  const chipLabel = applicant.name;
+  const isSick =
+    String(applicant.leaveType ?? "") === "SICK_LEAVE" || String(applicant.leaveNature ?? "") === "SICK_LEAVE";
+  const sickClass = isSick ? " calendar-day-chip--sick" : "";
+  const chipLabel = isSick ? `${applicant.name} 병가` : applicant.name;
   const statusHint = negotiateGk ? goldkeyNegotiationChipHint(applicant.goldkeyMeta) : "";
   const natureHint =
     applicant.leaveNature && String(applicant.leaveNature) !== "PERSONAL"
       ? ` · ${leaveNatureLabel(applicant.leaveNature)}`
-      : "";
+      : isSick
+        ? " · 병가"
+        : "";
+  const chipLeaveType = isSick ? "SICK_LEAVE" : applicant.leaveType;
   return (
     <span
       key={`${keyPrefix}${applicant.id}`}
-      className={`calendar-day-chip ${chipClassExtra} ${buildLeaveChipClass(applicant.leaveType, applicant.status)}${name3}${negotiateClass}`.trim()}
+      className={`calendar-day-chip ${chipClassExtra} ${buildLeaveChipClass(chipLeaveType, applicant.status)}${name3}${negotiateClass}${sickClass}`.trim()}
       title={`${titlePrefix}${applicant.name} · ${typeFullLabel(applicant.leaveType)}${natureHint} · ${statusLabel(applicant.status)}${statusHint}`}
     >
       <span className="calendar-day-chip__text">{chipLabel}</span>
@@ -9142,6 +9150,7 @@ function AdminPage({ allRequests, users, notes, goldkeys, cancellations, serverM
             <option value="GENERAL_PRIORITY">일반-우선</option>
             <option value="GENERAL_NORMAL">일반-후순위</option>
             <option value="HALF_DAY">반차</option>
+            <option value="SICK_LEAVE">병가</option>
           </select>
         </div>
         <div className="table-wrap admin-approval-table-wrap">
@@ -9553,6 +9562,7 @@ function halfDayMainLabel(requestOrSlot) {
 function typeFullLabel(leaveType, halfDaySlot = null) {
   if (leaveType === "GOLDKEY") return "골드키";
   if (leaveType === "CHIEF_LEAVE") return "휴가";
+  if (leaveType === "SICK_LEAVE") return "병가";
   if (leaveType === "GENERAL") return "일반휴가";
   if (leaveType === "GENERAL_PRIORITY") return "일반휴가-우선순위";
   if (leaveType === "HALF_DAY") return halfDayMainLabel(halfDaySlot);

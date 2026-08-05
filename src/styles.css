@@ -2781,6 +2781,23 @@ tbody tr:last-child td {
   border-color: #c084fc;
 }
 
+.type-sick_leave {
+  background: #fef2f2;
+  color: #9f1239;
+  border-color: #fb7185;
+}
+
+.calendar-day-chip--sick {
+  font-weight: 700;
+}
+
+.calendar-day-chip.selected-item.type-sick_leave,
+.leave-type-pill.selected-item.type-sick_leave {
+  background: #ffe4e6;
+  color: #9f1239;
+  border-color: #fb7185;
+}
+
 /* ----- Calendar ----- */
 .calendar-nav {
   margin-top: 4px;
@@ -4591,6 +4608,13 @@ button.ym-wheel-check:hover {
   background: #e9d5ff !important;
   color: #581c87 !important;
   border-color: #a855f7 !important;
+}
+
+.selected-item.type-sick_leave,
+.leave-type-pill.selected-item.type-sick_leave {
+  background: #fecdd3 !important;
+  color: #9f1239 !important;
+  border-color: #fb7185 !important;
 }
 
 .selected-item.request-dimmed-by-approval {

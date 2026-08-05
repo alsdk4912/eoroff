@@ -4,15 +4,16 @@ const LEAVE_TYPE_LABEL = {
   GENERAL_PRIORITY: "일반휴가-우선순위",
   GENERAL_NORMAL: "일반휴가-후순위",
   HALF_DAY: "반차",
+  SICK_LEAVE: "병가",
   CHIEF_LEAVE: "휴가",
 };
 
 /** 신청 화면에 노출할 휴가 구분(역할별) */
 export function leaveTypesForApplicantRole(role) {
   const r = String(role ?? "").trim();
-  if (r === "ANESTHESIA") return ["GOLDKEY", "GENERAL", "HALF_DAY"];
-  if (r === "CHIEF") return ["CHIEF_LEAVE"];
-  return ["GOLDKEY", "GENERAL_PRIORITY", "GENERAL_NORMAL", "HALF_DAY"];
+  if (r === "ANESTHESIA") return ["GOLDKEY", "GENERAL", "HALF_DAY", "SICK_LEAVE"];
+  if (r === "CHIEF") return ["CHIEF_LEAVE", "SICK_LEAVE"];
+  return ["GOLDKEY", "GENERAL_PRIORITY", "GENERAL_NORMAL", "HALF_DAY", "SICK_LEAVE"];
 }
 
 export function isLeaveTypeAllowedForRole(role, leaveType) {
@@ -377,6 +378,11 @@ export function validateRequest({
 
     if (targetMonth < plus1) return "골드키는 현재달+1달부터 신청 가능합니다.";
     if ((remainingGoldkey ?? 0) <= 0) return "잔여 골드키가 없습니다.";
+    return "";
+  }
+
+  /** 병가: 기존 휴가 창·월 제한 없이 아무 때나 신청 가능 */
+  if (leaveType === "SICK_LEAVE") {
     return "";
   }
 

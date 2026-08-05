@@ -2453,13 +2453,13 @@ app.post("/api/ladder-results", async (req, res) => {
   }
 });
 
-const ALLOWED_LEAVE_TYPES = new Set(["GOLDKEY", "GENERAL", "GENERAL_PRIORITY", "GENERAL_NORMAL", "HALF_DAY", "CHIEF_LEAVE"]);
+const ALLOWED_LEAVE_TYPES = new Set(["GOLDKEY", "GENERAL", "GENERAL_PRIORITY", "GENERAL_NORMAL", "HALF_DAY", "SICK_LEAVE", "CHIEF_LEAVE"]);
 
 function leaveTypesForUserRole(role) {
   const r = String(role ?? "").trim();
-  if (r === "ANESTHESIA") return new Set(["GOLDKEY", "GENERAL", "HALF_DAY"]);
-  if (r === "CHIEF") return new Set(["CHIEF_LEAVE"]);
-  return new Set(["GOLDKEY", "GENERAL_PRIORITY", "GENERAL_NORMAL", "HALF_DAY"]);
+  if (r === "ANESTHESIA") return new Set(["GOLDKEY", "GENERAL", "HALF_DAY", "SICK_LEAVE"]);
+  if (r === "CHIEF") return new Set(["CHIEF_LEAVE", "SICK_LEAVE"]);
+  return new Set(["GOLDKEY", "GENERAL_PRIORITY", "GENERAL_NORMAL", "HALF_DAY", "SICK_LEAVE"]);
 }
 const ALLOWED_LEAVE_NATURE = new Set(["PERSONAL", "SICK_LEAVE", "PAID_TRAINING", "REQUIRED_TRAINING"]);
 
@@ -2496,8 +2496,8 @@ app.post("/api/requests", async (req, res) => {
     if (user.role !== "NURSE" && user.role !== "ANESTHESIA" && user.role !== "CHIEF") {
       return res.status(403).json({ error: "휴가 신청 권한이 없습니다." });
     }
-    if (user.role === "CHIEF" && leaveType !== "CHIEF_LEAVE") {
-      return res.status(400).json({ error: "주임은 휴가 유형만 신청할 수 있습니다." });
+    if (user.role === "CHIEF" && leaveType !== "CHIEF_LEAVE" && leaveType !== "SICK_LEAVE") {
+      return res.status(400).json({ error: "주임은 휴가·병가 유형만 신청할 수 있습니다." });
     }
     if (!ALLOWED_LEAVE_TYPES.has(leaveType)) {
       return res.status(400).json({ error: "지원하지 않는 휴가 구분입니다." });
@@ -2505,8 +2505,8 @@ app.post("/api/requests", async (req, res) => {
     if (!leaveTypesForUserRole(user.role).has(leaveType)) {
       return res.status(400).json({ error: "해당 역할에서 사용할 수 없는 휴가 구분입니다." });
     }
-    /** 신청 시 일정 표시(leave_nature)는 항상 개인휴가. 확정 후 내신청에서 공가/필수교육 지정. */
-    const leaveNature = "PERSONAL";
+    /** 신청 시 일정 표시: 병가는 SICK_LEAVE, 그 외는 PERSONAL (확정 후 공가/필수교육 지정 가능) */
+    const leaveNature = String(leaveType) === "SICK_LEAVE" ? "SICK_LEAVE" : "PERSONAL";
 
     const duplicate = await queryOne(
       `SELECT id FROM requests
