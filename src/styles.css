@@ -2781,10 +2781,11 @@ tbody tr:last-child td {
   border-color: #c084fc;
 }
 
+/* 병가: 골드키(빨강)와 구분 — 틸/청록 */
 .type-sick_leave {
-  background: #fef2f2;
-  color: #9f1239;
-  border-color: #fb7185;
+  background: #ecfeff;
+  color: #0e7490;
+  border-color: #22d3ee;
 }
 
 .calendar-day-chip--sick {
@@ -2793,9 +2794,9 @@ tbody tr:last-child td {
 
 .calendar-day-chip.selected-item.type-sick_leave,
 .leave-type-pill.selected-item.type-sick_leave {
-  background: #ffe4e6;
-  color: #9f1239;
-  border-color: #fb7185;
+  background: #a5f3fc !important;
+  color: #155e75 !important;
+  border-color: #06b6d4 !important;
 }
 
 /* ----- Calendar ----- */
@@ -4612,9 +4613,9 @@ button.ym-wheel-check:hover {
 
 .selected-item.type-sick_leave,
 .leave-type-pill.selected-item.type-sick_leave {
-  background: #fecdd3 !important;
-  color: #9f1239 !important;
-  border-color: #fb7185 !important;
+  background: #a5f3fc !important;
+  color: #155e75 !important;
+  border-color: #06b6d4 !important;
 }
 
 .selected-item.request-dimmed-by-approval {

@@ -7579,7 +7579,6 @@ function renderCalendarDayChip(applicant, keyPrefix, chipClassExtra, titlePrefix
   const isSick =
     String(applicant.leaveType ?? "") === "SICK_LEAVE" || String(applicant.leaveNature ?? "") === "SICK_LEAVE";
   const sickClass = isSick ? " calendar-day-chip--sick" : "";
-  const chipLabel = isSick ? `${applicant.name} 병가` : applicant.name;
   const statusHint = negotiateGk ? goldkeyNegotiationChipHint(applicant.goldkeyMeta) : "";
   const natureHint =
     applicant.leaveNature && String(applicant.leaveNature) !== "PERSONAL"
@@ -7594,7 +7593,7 @@ function renderCalendarDayChip(applicant, keyPrefix, chipClassExtra, titlePrefix
       className={`calendar-day-chip ${chipClassExtra} ${buildLeaveChipClass(chipLeaveType, applicant.status)}${name3}${negotiateClass}${sickClass}`.trim()}
       title={`${titlePrefix}${applicant.name} · ${typeFullLabel(applicant.leaveType)}${natureHint} · ${statusLabel(applicant.status)}${statusHint}`}
     >
-      <span className="calendar-day-chip__text">{chipLabel}</span>
+      <span className="calendar-day-chip__text">{applicant.name}</span>
     </span>
   );
 }
