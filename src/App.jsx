@@ -90,6 +90,7 @@ import {
 import { buildFullAutoHolidayDutyPlansForYears } from "./utils/holidayDutyPlan.clean.js";
 import {
   buildHalfDayStatusForUser,
+  buildHalfDayCycleSetsForUser,
   halfDaySlotLabel,
   halfDay2EffectiveDeadlineYmd,
   halfDay2ReminderMessage,
@@ -5370,6 +5371,182 @@ function buildYearlyRoster(startYm, nurseNames) {
   return { ok: false, error: `${lastErr}: 제약이 충돌해 생성하지 못했습니다.` };
 }
 
+function halfDayRowDeadlineYmd(halfDayRows, userId, row) {
+  if (row.slot !== "1") return null;
+  const st = buildHalfDayStatusForUser(halfDayRows, userId);
+  const open = st.openCycle;
+  if (open && String(open.halfDay1?.id ?? "") === String(row.requestId)) {
+    return open.deadlineYmd;
+  }
+  return halfDay2EffectiveDeadlineYmd(row.leaveDate);
+}
+
+function HalfDayRecordsTable({
+  records,
+  userName,
+  showUserCol,
+  halfDayRows,
+  canEdit,
+  onUpdateHalfDaySlot,
+  emptyMessage,
+}) {
+  const colCount = showUserCol ? 4 : 3;
+  if (!records.length) {
+    return (
+      <div className="table-wrap">
+        <table className="half-day-table">
+          <thead>
+            <tr>
+              {showUserCol ? <th>이름</th> : null}
+              <th>휴가일</th>
+              <th>반차 구분</th>
+              <th>반차2 사용기한</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              {showUserCol ? <td>{userName}</td> : null}
+              <td colSpan={showUserCol ? 3 : colCount} className="help">
+                {emptyMessage}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  return (
+    <div className="table-wrap">
+      <table className="half-day-table">
+        <thead>
+          <tr>
+            {showUserCol ? <th>이름</th> : null}
+            <th>휴가일</th>
+            <th>반차 구분</th>
+            <th>반차2 사용기한</th>
+          </tr>
+        </thead>
+        <tbody>
+          {records.map((row) => {
+            const deadline = halfDayRowDeadlineYmd(halfDayRows, row.userId, row);
+            return (
+              <tr key={row.requestId}>
+                {showUserCol ? <td>{row.userName}</td> : null}
+                <td>{formatLeaveDateShort(row.leaveDate)}</td>
+                <td>
+                  {canEdit ? (
+                    <select
+                      className="half-day-slot-select"
+                      value={row.slot || "1"}
+                      onChange={(e) => void onUpdateHalfDaySlot?.(row.requestId, e.target.value)}
+                      aria-label={`${row.userName ?? userName ?? "본인"} 반차 구분`}
+                    >
+                      <option value="1">반차1</option>
+                      <option value="2">반차2</option>
+                    </select>
+                  ) : (
+                    row.slotLabel || halfDaySlotLabel(row.slot) || "-"
+                  )}
+                </td>
+                <td>{row.slot === "1" ? formatLeaveDateShort(deadline) : "-"}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function HalfDayUserCycleBlock({
+  user,
+  halfDayRows,
+  showUserCol,
+  canEdit,
+  onUpdateHalfDaySlot,
+}) {
+  const cycles = useMemo(() => buildHalfDayCycleSetsForUser(halfDayRows, user.id), [halfDayRows, user.id]);
+  const activeRecords = useMemo(
+    () =>
+      cycles.activeSets.flatMap((set) =>
+        set.records.map((rec) => ({ ...rec, userId: user.id, userName: user.name }))
+      ),
+    [cycles.activeSets, user.id, user.name]
+  );
+  const completedSets = cycles.completedSets;
+  const hasAny = activeRecords.length > 0 || completedSets.length > 0;
+
+  return (
+    <div className="half-day-user-block">
+      {showUserCol ? <h3 className="half-day-user-block__name">{user.name}</h3> : null}
+
+      <div className="half-day-cycle-panel half-day-cycle-panel--current">
+        <div className="half-day-cycle-panel__head">
+          <span className="half-day-cycle-panel__title">현재 반차</span>
+          <span className="half-day-cycle-panel__hint">
+            {activeRecords.length === 0 && completedSets.length > 0
+              ? "이전 세트 완료 · 다음 신청은 반차1"
+              : "진행 중 (새 반차1·2)"}
+          </span>
+        </div>
+        <HalfDayRecordsTable
+          records={activeRecords}
+          userName={user.name}
+          showUserCol={false}
+          halfDayRows={halfDayRows}
+          canEdit={canEdit}
+          onUpdateHalfDaySlot={onUpdateHalfDaySlot}
+          emptyMessage={
+            hasAny
+              ? "현재 진행 중인 반차가 없습니다. 다음 반차는 반차1로 시작합니다."
+              : "확정된 반차 없음"
+          }
+        />
+      </div>
+
+      {completedSets.length > 0 ? (
+        <div className="half-day-completed-wrap">
+          <p className="half-day-completed-wrap__lead">
+            완료된 반차 세트는 새 반차1과 헷갈리지 않도록 아래에 따로 묶었습니다. (기본 접힘)
+          </p>
+          {completedSets.map((set) => {
+            const setRecords = set.records.map((rec) => ({
+              ...rec,
+              userId: user.id,
+              userName: user.name,
+            }));
+            return (
+              <details key={set.id} className="half-day-cycle-box">
+                <summary className="half-day-cycle-box__summary">
+                  <span className="half-day-cycle-box__badge">완료</span>
+                  <span className="half-day-cycle-box__summary-text">
+                    {set.records
+                      .map((r) => `${r.slotLabel || halfDaySlotLabel(r.slot) || "반차"} ${formatLeaveDateShort(r.leaveDate)}`)
+                      .join(" · ")}
+                  </span>
+                  <span className="half-day-cycle-box__toggle" aria-hidden>
+                    펼치기
+                  </span>
+                </summary>
+                <HalfDayRecordsTable
+                  records={setRecords}
+                  userName={user.name}
+                  showUserCol={false}
+                  halfDayRows={halfDayRows}
+                  canEdit={canEdit}
+                  onUpdateHalfDaySlot={onUpdateHalfDaySlot}
+                  emptyMessage="내역 없음"
+                />
+              </details>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function HalfDayDashboardSection({ requests, users, currentRole, currentUserId, onUpdateHalfDaySlot }) {
   const adminView = isHalfDayDashboardAdminView(currentRole);
   const halfDayRows = useMemo(
@@ -5397,24 +5574,7 @@ function HalfDayDashboardSection({ requests, users, currentRole, currentUserId, 
     return buildHalfDayStatusForUser(halfDayRows, currentUserId);
   }, [adminView, currentUserId, halfDayRows]);
 
-  const tableRows = useMemo(() => {
-    const out = [];
-    for (const u of targetUsers) {
-      const status = buildHalfDayStatusForUser(halfDayRows, u.id);
-      for (const rec of status.records) {
-        out.push({
-          userId: u.id,
-          userName: u.name,
-          ...rec,
-          deadlineYmd: rec.slot === "1" ? halfDay2EffectiveDeadlineYmd(rec.leaveDate) : null,
-        });
-      }
-      if (status.records.length === 0) {
-        out.push({ userId: u.id, userName: u.name, empty: true });
-      }
-    }
-    return out;
-  }, [targetUsers, halfDayRows]);
+  const canEdit = canEditHalfDaySlot(currentRole);
 
   return (
     <section className="card half-day-dashboard">
@@ -5425,80 +5585,29 @@ function HalfDayDashboardSection({ requests, users, currentRole, currentUserId, 
       <p className="help page-lead">
         반차 분기는 매년 12월 1일 ~ 익년 11월 30일입니다. 11월 말까지 반차2를 쓰지 않으면 미사용 반차는 소멸되고, 12월부터 새 분기가 시작됩니다.
         반차1 다음 확정 반차는 반차2로 자동 지정되며, 반차 구분 수정은 부서파트장만 가능합니다.
+        반차1·2를 모두 쓴 세트는 접어 두고, 위에 「현재 반차」만 보면 됩니다.
       </p>
       {!adminView && personalStatus?.reminder?.needsReminder ? (
         <p className={`half-day-reminder-banner${personalStatus.reminder.isOverdue ? " half-day-reminder-banner--overdue" : ""}`} role="status">
           {halfDay2ReminderMessage(personalStatus.reminder.deadlineYmd, personalStatus.reminder.daysLeft)}
         </p>
       ) : null}
-      <div className="table-wrap">
-        <table className="half-day-table">
-          <thead>
-            <tr>
-              {adminView ? <th>이름</th> : null}
-              <th>휴가일</th>
-              <th>반차 구분</th>
-              <th>반차2 사용기한</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tableRows.length === 0 ? (
-              <tr>
-                <td colSpan={adminView ? 4 : 3} className="help">
-                  확정된 반차 내역이 없습니다.
-                </td>
-              </tr>
-            ) : (
-              tableRows.map((row) => {
-                if (row.empty) {
-                  return (
-                    <tr key={`empty-${row.userId}`}>
-                      {adminView ? <td>{row.userName}</td> : null}
-                      <td colSpan={3} className="help">
-                        확정된 반차 없음
-                      </td>
-                    </tr>
-                  );
-                }
-                const canEdit = canEditHalfDaySlot(currentRole);
-                const deadline =
-                  row.slot === "1"
-                    ? (() => {
-                        const st = buildHalfDayStatusForUser(halfDayRows, row.userId);
-                        const open = st.openCycle;
-                        if (open && String(open.halfDay1?.id ?? "") === String(row.requestId)) {
-                          return open.deadlineYmd;
-                        }
-                        return halfDay2EffectiveDeadlineYmd(row.leaveDate);
-                      })()
-                    : "-";
-                return (
-                  <tr key={row.requestId}>
-                    {adminView ? <td>{row.userName}</td> : null}
-                    <td>{formatLeaveDateShort(row.leaveDate)}</td>
-                    <td>
-                      {canEdit ? (
-                        <select
-                          className="half-day-slot-select"
-                          value={row.slot || "1"}
-                          onChange={(e) => void onUpdateHalfDaySlot?.(row.requestId, e.target.value)}
-                          aria-label={`${row.userName ?? "본인"} 반차 구분`}
-                        >
-                          <option value="1">반차1</option>
-                          <option value="2">반차2</option>
-                        </select>
-                      ) : (
-                        row.slotLabel || halfDaySlotLabel(row.slot) || "-"
-                      )}
-                    </td>
-                    <td>{row.slot === "1" ? formatLeaveDateShort(deadline) : "-"}</td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+
+      {targetUsers.length === 0 ? (
+        <p className="help">표시할 사용자가 없습니다.</p>
+      ) : (
+        targetUsers.map((u) => (
+          <HalfDayUserCycleBlock
+            key={u.id}
+            user={u}
+            halfDayRows={halfDayRows}
+            showUserCol={adminView}
+            canEdit={canEdit}
+            onUpdateHalfDaySlot={onUpdateHalfDaySlot}
+          />
+        ))
+      )}
+
       {adminView ? (
         <div className="half-day-admin-reminders">
           <h3 className="half-day-admin-reminders__title">반차2 사용기한 임박·경과</h3>

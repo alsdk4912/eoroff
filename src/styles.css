@@ -5570,3 +5570,115 @@ tr.request-cancelled-row td button {
   font-size: 14px;
   line-height: 1.5;
 }
+
+.half-day-user-block {
+  margin-bottom: 18px;
+}
+
+.half-day-user-block:last-of-type {
+  margin-bottom: 0;
+}
+
+.half-day-user-block__name {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.half-day-cycle-panel--current {
+  margin-bottom: 10px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid #bfdbfe;
+  background: #f8fbff;
+}
+
+.half-day-cycle-panel__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+  margin-bottom: 8px;
+}
+
+.half-day-cycle-panel__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e3a8a;
+}
+
+.half-day-cycle-panel__hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.half-day-completed-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.half-day-completed-wrap__lead {
+  margin: 0 0 2px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.half-day-cycle-box {
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-md);
+  background: #f8fafc;
+  overflow: hidden;
+}
+
+.half-day-cycle-box__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.half-day-cycle-box__summary::-webkit-details-marker {
+  display: none;
+}
+
+.half-day-cycle-box__badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.half-day-cycle-box__summary-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.half-day-cycle-box__toggle {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+}
+
+.half-day-cycle-box[open] .half-day-cycle-box__toggle {
+  display: none;
+}
+
+.half-day-cycle-box .table-wrap {
+  padding: 0 10px 10px;
+}
+
+.half-day-cycle-box .half-day-table {
+  opacity: 0.92;
+}

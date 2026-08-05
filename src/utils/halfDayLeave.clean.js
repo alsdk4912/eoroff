@@ -99,8 +99,8 @@ function rowId(row) {
   return String(row?.id ?? "").trim();
 }
 
-/** 반차1에 대응하는 반차2가 있는지 (그 사이에 다른 반차1 없음) */
-export function hasMatchingHalfDay2(halfDay1Row, allRows) {
+/** 반차1에 대응하는 반차2 행 (없으면 null). 사이에 다른 반차1 없음 */
+export function findMatchingHalfDay2(halfDay1Row, allRows) {
   const hd1Date = rowLeaveDate(halfDay1Row);
   const hd1Id = rowId(halfDay1Row);
   const userId = rowUserId(halfDay1Row);
@@ -113,13 +113,89 @@ export function hasMatchingHalfDay2(halfDay1Row, allRows) {
   );
   const nextHd1Date = nextHd1 ? rowLeaveDate(nextHd1) : null;
 
-  return sorted.some((r) => {
-    if (rowHalfDaySlot(r) !== "2") return false;
-    const d2 = rowLeaveDate(r);
-    if (compareYmd(d2, hd1Date) < 0) return false;
-    if (nextHd1Date && compareYmd(d2, nextHd1Date) >= 0) return false;
-    return true;
-  });
+  return (
+    sorted.find((r) => {
+      if (rowHalfDaySlot(r) !== "2") return false;
+      const d2 = rowLeaveDate(r);
+      if (compareYmd(d2, hd1Date) < 0) return false;
+      if (nextHd1Date && compareYmd(d2, nextHd1Date) >= 0) return false;
+      return true;
+    }) ?? null
+  );
+}
+
+/** 반차1에 대응하는 반차2가 있는지 (그 사이에 다른 반차1 없음) */
+export function hasMatchingHalfDay2(halfDay1Row, allRows) {
+  return Boolean(findMatchingHalfDay2(halfDay1Row, allRows));
+}
+
+function toHalfDayStatusRecord(r) {
+  return {
+    requestId: rowId(r),
+    leaveDate: rowLeaveDate(r),
+    slot: rowHalfDaySlot(r),
+    slotLabel: halfDaySlotLabel(rowHalfDaySlot(r)),
+    requestedAt: r.requestedAt ?? r.requested_at ?? "",
+    quarterLabel: halfDayQuarterLabel(rowLeaveDate(r)),
+  };
+}
+
+/**
+ * 반차1+반차2 페어를 세트로 묶음.
+ * completed: 반차1·2 모두 사용 완료 → 신규 반차1과 구분용 접기 박스 대상
+ */
+export function buildHalfDayCycleSetsForUser(halfDayRows, userId) {
+  const userRows = [...halfDayRows]
+    .filter((r) => rowUserId(r) === userId && isApprovedHalfDayRow(r))
+    .sort((a, b) => compareYmd(rowLeaveDate(a), rowLeaveDate(b)));
+
+  const used = new Set();
+  const activeSets = [];
+  const completedSets = [];
+
+  for (const r of userRows) {
+    const id = rowId(r);
+    if (!id || used.has(id)) continue;
+    const slot = rowHalfDaySlot(r);
+
+    if (slot === "2") {
+      used.add(id);
+      completedSets.push({
+        id: `orphan2-${id}`,
+        completed: true,
+        summary: `반차2 ${rowLeaveDate(r)}`,
+        records: [toHalfDayStatusRecord(r)],
+      });
+      continue;
+    }
+
+    used.add(id);
+    const records = [toHalfDayStatusRecord(r)];
+    if (slot === "1") {
+      const hd2 = findMatchingHalfDay2(r, userRows);
+      if (hd2) {
+        const id2 = rowId(hd2);
+        used.add(id2);
+        records.push(toHalfDayStatusRecord(hd2));
+        completedSets.push({
+          id: `cycle-${id}`,
+          completed: true,
+          summary: `반차1 ${rowLeaveDate(r)} · 반차2 ${rowLeaveDate(hd2)}`,
+          records,
+        });
+        continue;
+      }
+    }
+
+    activeSets.push({
+      id: `open-${id}`,
+      completed: false,
+      summary: halfDaySlotLabel(slot) || "반차",
+      records,
+    });
+  }
+
+  return { activeSets, completedSets };
 }
 
 /** 미사용 반차2가 있는 열린 사이클의 반차1 (동일 분기·11/30 정산 전) */
