@@ -5475,7 +5475,6 @@ function HalfDayUserCycleBlock({
     [cycles.activeSets, user.id, user.name]
   );
   const completedSets = cycles.completedSets;
-  const hasAny = activeRecords.length > 0 || completedSets.length > 0;
 
   return (
     <div className="half-day-user-block">
@@ -5490,19 +5489,17 @@ function HalfDayUserCycleBlock({
               : "진행 중 (새 반차1·2)"}
           </span>
         </div>
-        <HalfDayRecordsTable
-          records={activeRecords}
-          userName={user.name}
-          showUserCol={false}
-          halfDayRows={halfDayRows}
-          canEdit={canEdit}
-          onUpdateHalfDaySlot={onUpdateHalfDaySlot}
-          emptyMessage={
-            hasAny
-              ? "현재 진행 중인 반차가 없습니다. 다음 반차는 반차1로 시작합니다."
-              : "확정된 반차 없음"
-          }
-        />
+        {activeRecords.length > 0 ? (
+          <HalfDayRecordsTable
+            records={activeRecords}
+            userName={user.name}
+            showUserCol={false}
+            halfDayRows={halfDayRows}
+            canEdit={canEdit}
+            onUpdateHalfDaySlot={onUpdateHalfDaySlot}
+            emptyMessage=""
+          />
+        ) : null}
       </div>
 
       {completedSets.length > 0 ? (
@@ -5520,11 +5517,6 @@ function HalfDayUserCycleBlock({
               <details key={set.id} className="half-day-cycle-box">
                 <summary className="half-day-cycle-box__summary">
                   <span className="half-day-cycle-box__badge">완료</span>
-                  <span className="half-day-cycle-box__summary-text">
-                    {set.records
-                      .map((r) => `${r.slotLabel || halfDaySlotLabel(r.slot) || "반차"} ${formatLeaveDateShort(r.leaveDate)}`)
-                      .join(" · ")}
-                  </span>
                   <span className="half-day-cycle-box__toggle" aria-hidden>
                     펼치기
                   </span>

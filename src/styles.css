@@ -5636,6 +5636,7 @@ tr.request-cancelled-row td button {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   padding: 10px 12px;
   cursor: pointer;
@@ -5658,11 +5659,6 @@ tr.request-cancelled-row td button {
   color: #475569;
   font-size: 11px;
   font-weight: 700;
-}
-
-.half-day-cycle-box__summary-text {
-  flex: 1;
-  min-width: 0;
 }
 
 .half-day-cycle-box__toggle {
