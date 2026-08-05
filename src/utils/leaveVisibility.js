@@ -533,6 +533,11 @@ export function canEditHalfDaySlot(viewerRole) {
   return String(viewerRole ?? "").trim() === "DEPT_HEAD";
 }
 
+/** 누락 반차 사용내역 직접 등록 — 부서파트장만 */
+export function canRecordHalfDayUsage(viewerRole) {
+  return canEditHalfDaySlot(viewerRole);
+}
+
 export function canApplyLeaveRole(role) {
   return role === "NURSE" || role === "ANESTHESIA" || role === "CHIEF";
 }

@@ -132,6 +132,7 @@ import {
   canViewHalfDayDashboardTab,
   isHalfDayDashboardAdminView,
   canEditHalfDaySlot,
+  canRecordHalfDayUsage,
   showHolidayDutyEditorRole,
   showHolidayDutyHistoryRole,
   showHolidayDutyPanelRole,
@@ -1977,6 +1978,68 @@ function App() {
     });
   }
 
+  async function recordHalfDayUsageManual({ userId, leaveDate, halfDaySlot }) {
+    if (!canRecordHalfDayUsage(viewerRole)) {
+      window.alert?.("반차 직접 입력은 부서파트장만 가능합니다.");
+      return false;
+    }
+    const uid = String(userId ?? "").trim();
+    const date = String(leaveDate ?? "").trim().slice(0, 10);
+    const slot = String(halfDaySlot ?? "").trim();
+    if (!uid || !/^\d{4}-\d{2}-\d{2}$/.test(date) || (slot !== "1" && slot !== "2")) {
+      window.alert?.("대상·날짜·반차 구분을 확인해 주세요.");
+      return false;
+    }
+    if (serverMode) {
+      try {
+        await api.createHalfDayRecord({
+          actorUserId: auth.userId,
+          userId: uid,
+          leaveDate: date,
+          halfDaySlot: slot,
+        });
+        await bootstrap();
+        return true;
+      } catch (e) {
+        window.alert?.(`반차 직접 입력 실패: ${e?.message || e}`);
+        return false;
+      }
+    }
+    const payload = {
+      id: `lr_hd_manual_${Date.now()}`,
+      userId: uid,
+      leaveDate: date,
+      leaveType: "HALF_DAY",
+      leaveNature: "PERSONAL",
+      status: "APPROVED",
+      requestedAt: new Date().toISOString(),
+      memo: `부서파트장 직접입력 반차${slot}`,
+      halfDaySlot: slot,
+      cancelLocked: false,
+    };
+    const conflict = requests.some(
+      (r) =>
+        r.userId === uid &&
+        String(r.leaveDate).slice(0, 10) === date &&
+        r.status !== "CANCELLED" &&
+        r.status !== "REJECTED"
+    );
+    if (conflict) {
+      window.alert?.("해당 날짜에 이미 휴가가 있습니다.");
+      return false;
+    }
+    setRequests((prev) => {
+      const next = [...prev, payload];
+      try {
+        localStorage.setItem(LS_REQUESTS, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+    return true;
+  }
+
   async function selectRequest(requestId, substituteOpts = null) {
     const target = requests.find((r) => r.id === requestId);
     if (!target) return;
@@ -2892,6 +2955,7 @@ function App() {
               rejectRequest={rejectRequest}
               saveSubstituteForApprovedRequest={saveSubstituteForApprovedRequest}
               onUpdateHalfDaySlot={updateHalfDaySlotForRequest}
+              onRecordHalfDayUsage={recordHalfDayUsageManual}
             />
             )
           }
@@ -5539,7 +5603,86 @@ function HalfDayUserCycleBlock({
   );
 }
 
-function HalfDayDashboardSection({ requests, users, currentRole, currentUserId, onUpdateHalfDaySlot }) {
+function HalfDayManualRecordForm({ users, onRecordHalfDayUsage }) {
+  const eligibleUsers = useMemo(
+    () => staffUsersByRoles(Array.isArray(users) ? users : [], ["NURSE", "ANESTHESIA"]).filter((u) => isUserActive(u)),
+    [users]
+  );
+  const [userId, setUserId] = useState("");
+  const [leaveDate, setLeaveDate] = useState("");
+  const [halfDaySlot, setHalfDaySlot] = useState("2");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    if (!userId && eligibleUsers.length > 0) {
+      setUserId(String(eligibleUsers[0].id));
+    }
+  }, [eligibleUsers, userId]);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (busy) return;
+    setMsg("");
+    setBusy(true);
+    try {
+      const ok = await onRecordHalfDayUsage?.({ userId, leaveDate, halfDaySlot });
+      if (ok) {
+        setMsg("반차 사용내역을 등록했습니다.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (eligibleUsers.length === 0) {
+    return (
+      <div className="half-day-manual-form">
+        <h3 className="half-day-manual-form__title">누락 반차 직접 입력</h3>
+        <p className="help">등록 대상 간호사가 없습니다.</p>
+      </div>
+    );
+  }
+
+  return (
+    <form className="half-day-manual-form" onSubmit={(e) => void handleSubmit(e)}>
+      <h3 className="half-day-manual-form__title">누락 반차 직접 입력</h3>
+      <p className="help half-day-manual-form__lead">
+        본인 미신청·미확정으로 빠진 반차 사용을 부서파트장이 확정 내역으로 바로 넣을 수 있습니다.
+      </p>
+      <div className="half-day-manual-form__row">
+        <label className="half-day-manual-form__field">
+          <span>대상</span>
+          <select value={userId} onChange={(e) => setUserId(e.target.value)} required>
+            {eligibleUsers.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+                {u.role === "ANESTHESIA" ? " (마취과)" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="half-day-manual-form__field">
+          <span>사용일</span>
+          <input type="date" value={leaveDate} onChange={(e) => setLeaveDate(e.target.value)} required />
+        </label>
+        <label className="half-day-manual-form__field">
+          <span>반차 구분</span>
+          <select value={halfDaySlot} onChange={(e) => setHalfDaySlot(e.target.value)} required>
+            <option value="1">반차1</option>
+            <option value="2">반차2</option>
+          </select>
+        </label>
+        <button type="submit" className="btn-primary half-day-manual-form__submit" disabled={busy || !leaveDate || !userId}>
+          {busy ? "등록 중…" : "등록"}
+        </button>
+      </div>
+      {msg ? <p className="half-day-manual-form__msg" role="status">{msg}</p> : null}
+    </form>
+  );
+}
+
+function HalfDayDashboardSection({ requests, users, currentRole, currentUserId, onUpdateHalfDaySlot, onRecordHalfDayUsage }) {
   const adminView = isHalfDayDashboardAdminView(currentRole);
   const halfDayRows = useMemo(
     () =>
@@ -5567,6 +5710,7 @@ function HalfDayDashboardSection({ requests, users, currentRole, currentUserId, 
   }, [adminView, currentUserId, halfDayRows]);
 
   const canEdit = canEditHalfDaySlot(currentRole);
+  const canRecord = canRecordHalfDayUsage(currentRole);
 
   return (
     <section className="card half-day-dashboard">
@@ -5579,6 +5723,9 @@ function HalfDayDashboardSection({ requests, users, currentRole, currentUserId, 
         반차1 다음 확정 반차는 반차2로 자동 지정되며, 반차 구분 수정은 부서파트장만 가능합니다.
         반차1·2를 모두 쓴 세트는 접어 두고, 위에 「현재 반차」만 보면 됩니다.
       </p>
+
+      {canRecord ? <HalfDayManualRecordForm users={users} onRecordHalfDayUsage={onRecordHalfDayUsage} /> : null}
+
       {!adminView && personalStatus?.reminder?.needsReminder ? (
         <p className={`half-day-reminder-banner${personalStatus.reminder.isOverdue ? " half-day-reminder-banner--overdue" : ""}`} role="status">
           {halfDay2ReminderMessage(personalStatus.reminder.deadlineYmd, personalStatus.reminder.daysLeft)}
@@ -5651,6 +5798,7 @@ function DashboardPage({
   rejectRequest,
   saveSubstituteForApprovedRequest,
   onUpdateHalfDaySlot,
+  onRecordHalfDayUsage,
 }) {
   const location = useLocation();
   const [dashTab, setDashTab] = useState("schedule");
@@ -6081,6 +6229,7 @@ function DashboardPage({
           currentRole={currentRole}
           currentUserId={currentUserId}
           onUpdateHalfDaySlot={onUpdateHalfDaySlot}
+          onRecordHalfDayUsage={onRecordHalfDayUsage}
         />
       ) : null}
       {canViewLadderResultsDashboard(currentRole) && dashTab === "ladder-results" ? (

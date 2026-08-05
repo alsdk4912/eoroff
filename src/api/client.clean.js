@@ -122,6 +122,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  /** 부서파트장: 누락된 반차 사용내역을 확정 상태로 직접 등록 */
+  createHalfDayRecord: (payload) =>
+    requestJson("/admin/half-day-records", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   cancelRequest: (id, payload) =>
     requestJson(`/requests/${id}/cancel`, { method: "POST", body: JSON.stringify(payload) }),
   uncancelRequest: (id, payload) =>

@@ -2909,6 +2909,173 @@ async function handleHalfDaySlotUpdate(req, res) {
 app.patch("/api/requests/:id/half-day-slot", handleHalfDaySlotUpdate);
 app.post("/api/requests/:id/half-day-slot", handleHalfDaySlotUpdate);
 
+/** 부서파트장: 누락 반차 사용내역을 APPROVED + half_day_slot 으로 직접 등록 */
+app.post("/api/admin/half-day-records", async (req, res) => {
+  try {
+    const actorUserId = String(req.body?.actorUserId ?? "").trim();
+    const targetUserId = String(req.body?.userId ?? req.body?.targetUserId ?? "").trim();
+    const leaveDate = String(req.body?.leaveDate ?? "").trim().slice(0, 10);
+    const halfDaySlot = String(req.body?.halfDaySlot ?? req.body?.half_day_slot ?? "").trim();
+    const memoIn = String(req.body?.memo ?? "").trim();
+    const idem = getIdempotencyKey(req);
+
+    if (idem) {
+      const prev = await auditRowByIdempotencyKey(idem);
+      if (prev?.leave_request_id) {
+        return res.json({ ok: true, idempotentReplay: true, requestId: prev.leave_request_id });
+      }
+    }
+
+    if (!actorUserId) return res.status(400).json({ error: "actorUserId가 필요합니다." });
+    if (!targetUserId) return res.status(400).json({ error: "대상 사용자를 선택해 주세요." });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(leaveDate)) {
+      return res.status(400).json({ error: "휴가일(YYYY-MM-DD)이 올바르지 않습니다." });
+    }
+    if (!HALF_DAY_SLOT_VALUES.has(halfDaySlot)) {
+      return res.status(400).json({ error: "반차1 또는 반차2만 선택할 수 있습니다." });
+    }
+
+    try {
+      await assertActorCanEditHalfDaySlot(actorUserId);
+    } catch (authErr) {
+      return res.status(authErr.statusCode || 403).json({ error: String(authErr?.message || authErr) });
+    }
+
+    const target = await queryOne(
+      "SELECT id, name, role FROM users WHERE id = ? AND IFNULL(is_active, 1) = 1",
+      targetUserId
+    );
+    if (!target?.id) return res.status(404).json({ error: "대상 사용자를 찾을 수 없습니다." });
+    const targetRole = String(target.role ?? "").trim();
+    if (targetRole !== "NURSE" && targetRole !== "ANESTHESIA") {
+      return res.status(400).json({ error: "반차 직접 입력은 수술실·마취과 간호사만 가능합니다." });
+    }
+
+    const activeSameDay = await queryOne(
+      `SELECT id, leave_type, status, half_day_slot
+       FROM requests
+       WHERE user_id = ? AND leave_date = ? AND ${SQL_REQ_ACTIVE}
+         AND status NOT IN ('CANCELLED', 'REJECTED')
+         AND NOT EXISTS (
+           SELECT 1 FROM cancellations c
+           WHERE c.leave_request_id = requests.id AND c.revoked_at IS NULL
+         )
+       ORDER BY CASE WHEN status = 'APPROVED' THEN 0 ELSE 1 END, requested_at DESC
+       LIMIT 1`,
+      targetUserId,
+      leaveDate
+    );
+
+    const nowIso = new Date().toISOString();
+    const memo =
+      memoIn ||
+      `부서파트장 직접입력 반차${halfDaySlot} (${String(target.name ?? "").trim() || "대상"})`;
+
+    if (activeSameDay?.id) {
+      const lt = String(activeSameDay.leave_type ?? "");
+      const st = String(activeSameDay.status ?? "");
+      if (lt !== "HALF_DAY") {
+        return res.status(409).json({
+          error: `해당 날짜에 이미 다른 휴가가 있습니다. (${lt} / ${st})`,
+        });
+      }
+      if (st === "APPROVED") {
+        const prevSlot = String(activeSameDay.half_day_slot ?? "").trim();
+        if (prevSlot === halfDaySlot) {
+          return res.json({ ok: true, requestId: String(activeSameDay.id), alreadyExists: true });
+        }
+        await runTransaction(async (tx) => {
+          await tx.execute("UPDATE requests SET half_day_slot = ?, memo = COALESCE(NULLIF(memo, ''), ?) WHERE id = ?", halfDaySlot, memo, activeSameDay.id);
+          await insertLeaveRequestAuditRow(tx, {
+            leaveRequestId: String(activeSameDay.id),
+            action: "HALF_DAY_MANUAL_RECORD",
+            fromStatus: "APPROVED",
+            toStatus: "APPROVED",
+            actorUserId,
+            reason: "누락 반차 구분 보정",
+            idempotencyKey: idem || null,
+            metadataJson: { previousHalfDaySlot: prevSlot || null, halfDaySlot, leaveDate, manual: true },
+          });
+        });
+        return res.json({ ok: true, requestId: String(activeSameDay.id), updated: true });
+      }
+      // APPLIED 등 → 확정 + 슬롯 지정
+      const requestId = String(activeSameDay.id);
+      const selectionId = `sel_hd_manual_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      await runTransaction(async (tx) => {
+        await tx.execute(
+          `UPDATE requests
+           SET status = 'APPROVED', leave_type = 'HALF_DAY', leave_nature = 'PERSONAL',
+               half_day_slot = ?, memo = COALESCE(NULLIF(memo, ''), ?)
+           WHERE id = ?`,
+          halfDaySlot,
+          memo,
+          requestId
+        );
+        const sel = await tx.queryOne("SELECT id FROM selections WHERE leave_request_id = ? LIMIT 1", requestId);
+        if (!sel?.id) {
+          await tx.execute(
+            "INSERT INTO selections (id, leave_request_id, selected_by, selected_at) VALUES (?, ?, ?, ?)",
+            selectionId,
+            requestId,
+            actorUserId,
+            nowIso
+          );
+        }
+        await insertLeaveRequestAuditRow(tx, {
+          leaveRequestId: requestId,
+          action: "HALF_DAY_MANUAL_RECORD",
+          fromStatus: st,
+          toStatus: "APPROVED",
+          actorUserId,
+          reason: "누락 반차 확정 등록",
+          idempotencyKey: idem || null,
+          metadataJson: { halfDaySlot, leaveDate, manual: true, upgradedFrom: st },
+        });
+      });
+      return res.json({ ok: true, requestId, upgraded: true });
+    }
+
+    const requestId = `lr_hd_manual_${targetUserId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 16)}_${leaveDate.replace(/-/g, "")}_${Date.now().toString(36)}`;
+    const selectionId = `sel_hd_manual_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    await runTransaction(async (tx) => {
+      await tx.execute(
+        `INSERT INTO requests (
+           id, user_id, leave_date, leave_type, leave_nature, status, requested_at, memo, half_day_slot
+         ) VALUES (?, ?, ?, 'HALF_DAY', 'PERSONAL', 'APPROVED', ?, ?, ?)`,
+        requestId,
+        targetUserId,
+        leaveDate,
+        nowIso,
+        memo,
+        halfDaySlot
+      );
+      await tx.execute(
+        "INSERT INTO selections (id, leave_request_id, selected_by, selected_at) VALUES (?, ?, ?, ?)",
+        selectionId,
+        requestId,
+        actorUserId,
+        nowIso
+      );
+      await insertLeaveRequestAuditRow(tx, {
+        leaveRequestId: requestId,
+        action: "HALF_DAY_MANUAL_RECORD",
+        fromStatus: null,
+        toStatus: "APPROVED",
+        actorUserId,
+        reason: "누락 반차 직접 입력",
+        idempotencyKey: idem || null,
+        metadataJson: { halfDaySlot, leaveDate, manual: true },
+      });
+    });
+
+    return res.json({ ok: true, requestId, created: true });
+  } catch (err) {
+    console.error("POST /api/admin/half-day-records", err);
+    res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
 app.post("/api/requests/:id/cancel", async (req, res) => {
   try {
     const requestId = String(req.params.id ?? "");

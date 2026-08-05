@@ -5678,3 +5678,65 @@ tr.request-cancelled-row td button {
 .half-day-cycle-box .half-day-table {
   opacity: 0.92;
 }
+
+.half-day-manual-form {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+}
+
+.half-day-manual-form__title {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.half-day-manual-form__lead {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.half-day-manual-form__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 12px;
+}
+
+.half-day-manual-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 120px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.half-day-manual-form__field select,
+.half-day-manual-form__field input[type="date"] {
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.half-day-manual-form__submit {
+  min-height: 36px;
+  padding: 0 14px;
+}
+
+.half-day-manual-form__msg {
+  margin: 10px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #14532d;
+}
