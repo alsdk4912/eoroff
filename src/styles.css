@@ -4014,6 +4014,23 @@ button.ym-wheel-check:hover {
   margin-top: 2px;
 }
 
+.admin-day-substitute-lines {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-day-substitute-line {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
 .admin-day-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

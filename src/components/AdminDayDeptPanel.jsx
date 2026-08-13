@@ -98,18 +98,13 @@ function AdminDayDeptBlock({
           {subCount === 0 ? (
             <p className="help admin-day-dept-block__empty">대체 없음</p>
           ) : (
-            <div className="admin-day-substitute-grid admin-day-substitute-grid--dept">
-              <div className="admin-day-substitute-grid__head">번표</div>
-              <div className="admin-day-substitute-grid__head">대체자</div>
-              {substituteRows.flatMap((row) => [
-                <div key={`${row.key}_code`} className="admin-day-substitute-grid__cell">
-                  {row.shiftCode}
-                </div>,
-                <div key={`${row.key}_name`} className="admin-day-substitute-grid__cell">
-                  {row.substituteName}
-                </div>,
-              ])}
-            </div>
+            <ul className="admin-day-substitute-lines">
+              {substituteRows.map((row) => (
+                <li key={row.key} className="admin-day-substitute-line">
+                  {row.shiftCode} {row.substituteName}
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       ) : null}
