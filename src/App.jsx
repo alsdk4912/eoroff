@@ -16,6 +16,8 @@ import {
 import {
   compareAppliedRequests,
   compareSameLeaveDateRequests,
+  leaveTypeOrder,
+  leaveSortType,
   isFirstHalfGoldkeyOctoberConsultationRequest,
   isSecondHalfGoldkeyAprilConsultationRequest,
   shouldHideAprilRecruitHalfGoldkeyCancelledRow,
@@ -8642,102 +8644,48 @@ function CalendarPage({
                     const or = cell.displayApplicants ?? [];
                     const anes = cell.anesthesiaDisplayApplicants ?? [];
                     const chief = cell.chiefDisplayApplicants ?? [];
-                    const hasAnes = anes.length > 0;
-                    const hasChief = chief.length > 0;
-                    const nodes = [];
-
-                    // 수술실+마취 동시: 이름 최대 2(+N) +「마취과」배지 — 모바일 칸 높이 억제
-                    if (hasAnes && or.length > 0) {
-                      const maxOrNames = 2;
-                      const shownOr = or.slice(0, maxOrNames);
-                      const orMore = or.length - shownOr.length;
-                      shownOr.forEach((a) => {
-                        nodes.push(renderCalendarDayChip(a, "", "", ""));
-                      });
-                      if (orMore > 0) {
-                        nodes.push(
-                          <span
-                            key="more_or_anes"
-                            className="calendar-chip-more"
-                            title={`외 수술실 ${orMore}명`}
-                          >
-                            +{orMore}
-                          </span>
-                        );
-                      }
-                      nodes.push(
-                        <span
-                          key="anes_badge"
-                          className="calendar-dept-badge calendar-dept-badge--anesthesia"
-                          title={anes.map((a) => a.name).filter(Boolean).join(", ") || "마취과"}
-                        >
-                          마취과{anes.length > 1 ? ` ${anes.length}` : ""}
-                        </span>
-                      );
-                      if (hasChief) {
-                        nodes.push(
-                          <span
-                            key="chief_badge"
-                            className="calendar-dept-badge calendar-dept-badge--chief"
-                            title={chief.map((a) => a.name).filter(Boolean).join(", ") || "주임"}
-                          >
-                            주임{chief.length > 1 ? ` ${chief.length}` : ""}
-                          </span>
-                        );
-                      }
-                      return nodes;
-                    }
-
-                    const sections = [
-                      { list: or, keyPrefix: "", chipClass: "", titlePrefix: "", more: or.length > CALENDAR_DAY_CHIP_MAX },
-                      {
-                        list: anes,
+                    // 수술실·마취·주임 이름을 합쳐 최대 3명 (+N). 마취는 이름 칩으로 표시
+                    const pool = [
+                      ...or.map((a) => ({
+                        applicant: a,
+                        keyPrefix: "",
+                        chipClass: "",
+                        titlePrefix: "",
+                      })),
+                      ...anes.map((a) => ({
+                        applicant: a,
                         keyPrefix: "anes_",
                         chipClass: "calendar-day-chip--anesthesia",
                         titlePrefix: "[마취] ",
-                        wrapClass: "calendar-cell-events--anesthesia",
-                        dividerBefore: or.length > 0,
-                        more: anes.length > CALENDAR_DAY_CHIP_MAX,
-                      },
-                      {
-                        list: chief,
+                      })),
+                      ...chief.map((a) => ({
+                        applicant: a,
                         keyPrefix: "chief_",
                         chipClass: "calendar-day-chip--chief",
                         titlePrefix: "[주임] ",
-                        wrapClass: "calendar-cell-events--chief",
-                        dividerBefore: or.length > 0 || anes.length > 0,
-                        more: chief.length > CALENDAR_DAY_CHIP_MAX,
-                      },
-                    ];
-                    return sections.flatMap((sec, secIdx) => {
-                      if (!sec.list.length) return [];
-                      const secNodes = [];
-                      if (sec.dividerBefore) secNodes.push(<div key={`div_${secIdx}`} className="calendar-cell-divider" aria-hidden />);
-                      const chips = sec.list.slice(0, CALENDAR_DAY_CHIP_MAX).map((a) =>
-                        renderCalendarDayChip(a, sec.keyPrefix, sec.chipClass, sec.titlePrefix)
+                      })),
+                    ].sort(
+                      (x, y) =>
+                        leaveTypeOrder(leaveSortType(x.applicant)) - leaveTypeOrder(leaveSortType(y.applicant))
+                    );
+                    if (pool.length === 0) return null;
+                    const shown = pool.slice(0, CALENDAR_DAY_CHIP_MAX);
+                    const more = pool.length - shown.length;
+                    const nodes = shown.map((entry) =>
+                      renderCalendarDayChip(entry.applicant, entry.keyPrefix, entry.chipClass, entry.titlePrefix)
+                    );
+                    if (more > 0) {
+                      nodes.push(
+                        <span
+                          key="more_all"
+                          className="calendar-chip-more"
+                          title={`외 ${more}명`}
+                        >
+                          +{more}
+                        </span>
                       );
-                      if (sec.wrapClass) {
-                        secNodes.push(
-                          <div key={`wrap_${secIdx}`} className={`calendar-cell-events ${sec.wrapClass}`}>
-                            {chips}
-                          </div>
-                        );
-                      } else {
-                        secNodes.push(...chips);
-                      }
-                      if (sec.more) {
-                        secNodes.push(
-                          <span
-                            key={`more_${secIdx}`}
-                            className="calendar-chip-more"
-                            title={`외 ${sec.list.length - CALENDAR_DAY_CHIP_MAX}명`}
-                          >
-                            +{sec.list.length - CALENDAR_DAY_CHIP_MAX}
-                          </span>
-                        );
-                      }
-                      return secNodes;
-                    });
+                    }
+                    return nodes;
                   })()}
                 </div>
               ) : null}
