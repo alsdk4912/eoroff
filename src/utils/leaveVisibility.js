@@ -75,54 +75,78 @@ function ownDeptRowsVisibleOnCalendarGrid(dayRows, leaveDateYmd) {
   });
 }
 
+/** 수술실 간호사·관리자1·부서파트장: 캘린더에 마취과 골드키도 함께 표시 */
+function orViewerSeesAnesthesiaGoldkeyOnCalendar(viewerRole) {
+  const r = String(viewerRole ?? "").trim();
+  return r === "NURSE" || r === "ADMIN" || r === "DEPT_HEAD";
+}
+
+function isAnesthesiaGoldkeyRequest(row, users) {
+  return (
+    userById(users, row?.userId)?.role === "ANESTHESIA" &&
+    String(row?.leaveType ?? "").trim() === "GOLDKEY"
+  );
+}
+
 /**
- * 월간 달력 칩: 소속 부서만.
+ * 월간 달력 칩: 소속 부서만 (+ 수술실 화면은 마취과 골드키 포함).
  * - 해당일 확정 있음 → 확정만
  * - 미확정(오늘 이후) → 신청·반려 표시, 취소(회색) 제외
- * - 타 부서 → 표시 안 함 (팝업 신청현황에서만)
+ * - 타 부서 일반휴가 등 → 표시 안 함 (팝업 상세에서만)
+ * - 관리자2·마취과 화면은 기존과 동일(마취 소속만)
  */
 export function filterRequestsForCalendarGrid(requests, users, viewerRole) {
   const rows = Array.isArray(requests) ? requests : [];
   const ownDepts = viewerOwnDepartmentRoles(viewerRole);
   if (!ownDepts) return [];
 
-  const ownDeptVisibleIds = new Set();
-  const byDayRole = new Map();
+  const includeAnesGoldkey = orViewerSeesAnesthesiaGoldkeyOnCalendar(viewerRole);
+  const visibleIds = new Set();
+  const byDayKey = new Map();
+
   for (const r of rows) {
     const subjectRole = userById(users, r.userId)?.role;
-    if (!ownDepts.has(subjectRole)) continue;
-    const key = `${String(r.leaveDate ?? "").slice(0, 10)}|${subjectRole}`;
-    if (!byDayRole.has(key)) byDayRole.set(key, []);
-    byDayRole.get(key).push(r);
+    if (!isStaffLeaveRole(subjectRole)) continue;
+
+    const isOwn = ownDepts.has(subjectRole);
+    const isAnesGold = includeAnesGoldkey && isAnesthesiaGoldkeyRequest(r, users);
+    if (!isOwn && !isAnesGold) continue;
+
+    // 마취 골드키는 일반휴가와 확정/신청 판정을 섞지 않도록 별도 키
+    const key = isAnesGold
+      ? `${String(r.leaveDate ?? "").slice(0, 10)}|ANESTHESIA|GOLDKEY`
+      : `${String(r.leaveDate ?? "").slice(0, 10)}|${subjectRole}`;
+    if (!byDayKey.has(key)) byDayKey.set(key, []);
+    byDayKey.get(key).push(r);
   }
-  for (const [key, dayRows] of byDayRole) {
+
+  for (const [key, dayRows] of byDayKey) {
     const leaveDateYmd = key.split("|")[0];
     for (const r of ownDeptRowsVisibleOnCalendarGrid(dayRows, leaveDateYmd)) {
-      ownDeptVisibleIds.add(String(r.id ?? ""));
+      visibleIds.add(String(r.id ?? ""));
     }
   }
 
-  return rows.filter((r) => {
-    const subjectRole = userById(users, r.userId)?.role;
-    if (!isStaffLeaveRole(subjectRole)) return false;
-    if (!ownDepts.has(subjectRole)) return false;
-    return ownDeptVisibleIds.has(String(r.id ?? ""));
-  });
+  return rows.filter((r) => visibleIds.has(String(r.id ?? "")));
 }
 
 /**
- * 캘린더·목록: 본인 부서는 전 상태, 타 부서는 확정(SELECTED/APPROVED)만 전 직원 열람
+ * 캘린더·목록: 본인 부서는 전 상태, 타 부서는 확정(SELECTED/APPROVED)만 전 직원 열람.
+ * 수술실·관리자1·진기숙은 마취과 골드키 신청(미확정)도 상세에서 열람.
  */
 export function filterRequestsForViewerRole(requests, users, viewerRole) {
   const rows = Array.isArray(requests) ? requests : [];
   const ownDepts = viewerOwnDepartmentRoles(viewerRole);
+  const includeAnesGoldkey = orViewerSeesAnesthesiaGoldkeyOnCalendar(viewerRole);
 
   return rows.filter((r) => {
     const subjectRole = userById(users, r.userId)?.role;
     if (!isStaffLeaveRole(subjectRole)) return false;
     if (isConfirmedLeaveStatus(r.status)) return true;
     if (!ownDepts) return false;
-    return ownDepts.has(subjectRole);
+    if (ownDepts.has(subjectRole)) return true;
+    if (includeAnesGoldkey && isAnesthesiaGoldkeyRequest(r, users)) return true;
+    return false;
   });
 }
 
