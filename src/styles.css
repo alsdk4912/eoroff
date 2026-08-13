@@ -830,6 +830,10 @@ button.app-header-update-btn:hover {
   align-items: center;
 }
 
+.goldkey-dept-tabs {
+  margin: 0 0 12px;
+}
+
 /* 캘린더: 그리드와 상세 영역 분리 → 세로 스크롤 부담 완화 */
 .calendar-page {
   display: flex;

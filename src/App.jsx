@@ -5805,6 +5805,9 @@ function DashboardPage({
   const [schedulePlanKey, setSchedulePlanKey] = useState("base_2026");
   const [scheduleYearFilter, setScheduleYearFilter] = useState("all");
   const [goldkeyYear, setGoldkeyYear] = useState(() => new Date().getFullYear());
+  const [goldkeyDeptTab, setGoldkeyDeptTab] = useState(() =>
+    currentRole === "ANESTHESIA" || currentRole === "ADMIN2" ? "ANESTHESIA" : "NURSE"
+  );
 
   const goldkeyYearOptions = useMemo(
     () => listGoldkeyQuotaYears(requestsForGoldkey ?? requests),
@@ -5816,6 +5819,15 @@ function DashboardPage({
       setGoldkeyYear(goldkeyYearOptions[0] ?? new Date().getFullYear());
     }
   }, [goldkeyYearOptions, goldkeyYear]);
+
+  useEffect(() => {
+    setGoldkeyDeptTab(currentRole === "ANESTHESIA" || currentRole === "ADMIN2" ? "ANESTHESIA" : "NURSE");
+  }, [currentRole]);
+
+  const goldkeyDeptUsers = useMemo(
+    () => staffUsersByRole(users, goldkeyDeptTab === "ANESTHESIA" ? "ANESTHESIA" : "NURSE"),
+    [users, goldkeyDeptTab]
+  );
 
   useEffect(() => {
     const hashQuery = String(location.hash ?? "").split("?")[1] ?? "";
@@ -6148,7 +6160,27 @@ function DashboardPage({
       )}
       {dashTab === "summary" && (currentRole === "NURSE" || currentRole === "ADMIN" || currentRole === "DEPT_HEAD" || currentRole === "ANESTHESIA" || currentRole === "ADMIN2") ? (
         <section className="card">
-          <h2 className="screen-title">골드키{currentRole === "ANESTHESIA" || currentRole === "ADMIN2" ? " (마취과)" : ""}</h2>
+          <h2 className="screen-title">골드키</h2>
+          <div className="segmented-wrap goldkey-dept-tabs" role="tablist" aria-label="골드키 부서">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={goldkeyDeptTab === "NURSE"}
+              className={`segmented-btn${goldkeyDeptTab === "NURSE" ? " segmented-btn--active" : ""}`}
+              onClick={() => setGoldkeyDeptTab("NURSE")}
+            >
+              수술실
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={goldkeyDeptTab === "ANESTHESIA"}
+              className={`segmented-btn${goldkeyDeptTab === "ANESTHESIA" ? " segmented-btn--active" : ""}`}
+              onClick={() => setGoldkeyDeptTab("ANESTHESIA")}
+            >
+              마취과
+            </button>
+          </div>
           <div className="row wrap goldkey-year-toolbar">
             <label className="weekly-date-label">
               집계 연도
@@ -6183,12 +6215,7 @@ function DashboardPage({
                 </tr>
               </thead>
               <tbody>
-                {users
-                  .filter((u) =>
-                    currentRole === "ANESTHESIA" || currentRole === "ADMIN2" ? u.role === "ANESTHESIA" : u.role === "NURSE"
-                  )
-                  .sort((a, b) => a.name.localeCompare(b.name, "ko"))
-                  .map((u) => {
+                {goldkeyDeptUsers.map((u) => {
                     const g = goldkeys.find((x) => x.userId === u.id);
                     const quotaTotal = goldkeyQuotaTotalForDisplay(u, g, serverMode);
                     const applyUse = countGoldkeyApplyUse(
