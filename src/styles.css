@@ -812,17 +812,24 @@ button.app-header-update-btn:hover {
 
 .goldkey-policy-note {
   font-size: 13px !important;
-  line-height: 1.55 !important;
+  line-height: 1.45 !important;
   color: #334155 !important;
 }
 
 .goldkey-policy-note span {
   display: block;
-  margin-bottom: 2px;
+  margin-bottom: 4px;
 }
 
 .goldkey-policy-note span:last-child {
   margin-bottom: 0;
+}
+
+@media (max-width: 640px) {
+  .goldkey-policy-note {
+    font-size: 12px !important;
+    line-height: 1.4 !important;
+  }
 }
 
 .goldkey-year-toolbar {
