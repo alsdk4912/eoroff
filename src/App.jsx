@@ -16,8 +16,6 @@ import {
 import {
   compareAppliedRequests,
   compareSameLeaveDateRequests,
-  leaveTypeOrder,
-  leaveSortType,
   isFirstHalfGoldkeyOctoberConsultationRequest,
   isSecondHalfGoldkeyAprilConsultationRequest,
   shouldHideAprilRecruitHalfGoldkeyCancelledRow,
@@ -8644,47 +8642,74 @@ function CalendarPage({
                     const or = cell.displayApplicants ?? [];
                     const anes = cell.anesthesiaDisplayApplicants ?? [];
                     const chief = cell.chiefDisplayApplicants ?? [];
-                    // 수술실·마취·주임 이름을 합쳐 최대 3명 (+N). 마취는 이름 칩으로 표시
-                    const pool = [
-                      ...or.map((a) => ({
-                        applicant: a,
-                        keyPrefix: "",
-                        chipClass: "",
-                        titlePrefix: "",
-                      })),
-                      ...anes.map((a) => ({
-                        applicant: a,
-                        keyPrefix: "anes_",
-                        chipClass: "calendar-day-chip--anesthesia",
-                        titlePrefix: "[마취] ",
-                      })),
-                      ...chief.map((a) => ({
-                        applicant: a,
-                        keyPrefix: "chief_",
-                        chipClass: "calendar-day-chip--chief",
-                        titlePrefix: "[주임] ",
-                      })),
-                    ].sort(
-                      (x, y) =>
-                        leaveTypeOrder(leaveSortType(x.applicant)) - leaveTypeOrder(leaveSortType(y.applicant))
-                    );
-                    if (pool.length === 0) return null;
-                    const shown = pool.slice(0, CALENDAR_DAY_CHIP_MAX);
-                    const more = pool.length - shown.length;
-                    const nodes = shown.map((entry) =>
-                      renderCalendarDayChip(entry.applicant, entry.keyPrefix, entry.chipClass, entry.titlePrefix)
-                    );
-                    if (more > 0) {
-                      nodes.push(
-                        <span
-                          key="more_all"
-                          className="calendar-chip-more"
-                          title={`외 ${more}명`}
-                        >
-                          +{more}
-                        </span>
-                      );
+                    const nodes = [];
+
+                    const pushSection = ({ list, keyPrefix, chipClass, titlePrefix, wrapClass, maxNames, moreKey }) => {
+                      if (!list.length) return;
+                      const shown = list.slice(0, maxNames);
+                      const more = list.length - shown.length;
+                      const chips = shown.map((a) => renderCalendarDayChip(a, keyPrefix, chipClass, titlePrefix));
+                      if (wrapClass) {
+                        nodes.push(
+                          <div key={`wrap_${moreKey}`} className={`calendar-cell-events ${wrapClass}`}>
+                            {chips}
+                            {more > 0 ? (
+                              <span key={`more_${moreKey}`} className="calendar-chip-more" title={`외 ${more}명`}>
+                                +{more}
+                              </span>
+                            ) : null}
+                          </div>
+                        );
+                      } else {
+                        nodes.push(...chips);
+                        if (more > 0) {
+                          nodes.push(
+                            <span key={`more_${moreKey}`} className="calendar-chip-more" title={`외 ${more}명`}>
+                              +{more}
+                            </span>
+                          );
+                        }
+                      }
+                    };
+
+                    // 수술실: 마취가 있으면 이름 2명+N, 없으면 최대 3명
+                    const orMax = anes.length > 0 || chief.length > 0 ? 2 : CALENDAR_DAY_CHIP_MAX;
+                    pushSection({
+                      list: or,
+                      keyPrefix: "",
+                      chipClass: "",
+                      titlePrefix: "",
+                      wrapClass: "",
+                      maxNames: orMax,
+                      moreKey: "or",
+                    });
+
+                    if (or.length > 0 && anes.length > 0) {
+                      nodes.push(<div key="div_anes" className="calendar-cell-divider" aria-hidden />);
                     }
+                    pushSection({
+                      list: anes,
+                      keyPrefix: "anes_",
+                      chipClass: "calendar-day-chip--anesthesia",
+                      titlePrefix: "[마취] ",
+                      wrapClass: "calendar-cell-events--anesthesia",
+                      maxNames: CALENDAR_DAY_CHIP_MAX,
+                      moreKey: "anes",
+                    });
+
+                    if ((or.length > 0 || anes.length > 0) && chief.length > 0) {
+                      nodes.push(<div key="div_chief" className="calendar-cell-divider" aria-hidden />);
+                    }
+                    pushSection({
+                      list: chief,
+                      keyPrefix: "chief_",
+                      chipClass: "calendar-day-chip--chief",
+                      titlePrefix: "[주임] ",
+                      wrapClass: "calendar-cell-events--chief",
+                      maxNames: CALENDAR_DAY_CHIP_MAX,
+                      moreKey: "chief",
+                    });
+
                     return nodes;
                   })()}
                 </div>
