@@ -99,12 +99,22 @@ export function isLeaveDateBeforeTodayKst(leaveDateYmd) {
   return head < today;
 }
 
+/** 캘린더·목록 표기 우선: 골드키 → 병가 → 일반-우선 → 일반-후순위 → 반차 등 */
 export function leaveTypeOrder(type) {
   if (type === "GOLDKEY") return 1;
-  if (type === "GENERAL" || type === "GENERAL_PRIORITY") return 2;
-  if (type === "GENERAL_NORMAL") return 3;
-  if (type === "HALF_DAY") return 4;
+  if (type === "SICK_LEAVE") return 2;
+  if (type === "GENERAL" || type === "GENERAL_PRIORITY") return 3;
+  if (type === "GENERAL_NORMAL") return 4;
+  if (type === "HALF_DAY") return 5;
+  if (type === "CHIEF_LEAVE") return 6;
   return 99;
+}
+
+/** 정렬용 유형 — leave_nature 병가도 병가로 취급 */
+export function leaveSortType(requestRow) {
+  const nature = String(requestRow?.leaveNature ?? requestRow?.leave_nature ?? "").trim();
+  if (nature === "SICK_LEAVE") return "SICK_LEAVE";
+  return String(requestRow?.leaveType ?? requestRow?.leave_type ?? "").trim();
 }
 
 function negotiationOrderValue(r) {
@@ -139,7 +149,7 @@ function endOfDay(dateObj) {
  * 골드키: 휴가일이 다르면 신청시각 순, 같은 휴가일이면 순번→신청시각(먼저 신청한 사람이 앞).
  */
 export function compareAppliedRequests(a, b, users) {
-  const t = leaveTypeOrder(a.leaveType) - leaveTypeOrder(b.leaveType);
+  const t = leaveTypeOrder(leaveSortType(a)) - leaveTypeOrder(leaveSortType(b));
   if (t !== 0) return t;
   if (a.leaveType === "GOLDKEY" && b.leaveType === "GOLDKEY") {
     const ap = isRecruitConsultationGoldkeyRequest(a);
@@ -156,9 +166,9 @@ export function compareAppliedRequests(a, b, users) {
   return a.requestedAt.localeCompare(b.requestedAt);
 }
 
-/** 달력·같은 휴가일: 유형별로 협의 순번 → 골드키는 신청시각 → 기타도 신청시각 */
+/** 달력·같은 휴가일: 골드키 → 병가 → 일반-우선 → 일반-후순위, 이후 협의순번·신청시각 */
 export function compareSameLeaveDateRequests(a, b, _users) {
-  const ord = leaveTypeOrder(a.leaveType) - leaveTypeOrder(b.leaveType);
+  const ord = leaveTypeOrder(leaveSortType(a)) - leaveTypeOrder(leaveSortType(b));
   if (ord !== 0) return ord;
   if (a.leaveType === "GOLDKEY" && b.leaveType === "GOLDKEY") {
     const ap = isRecruitConsultationGoldkeyRequest(a);
