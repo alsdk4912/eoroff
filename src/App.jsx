@@ -8642,6 +8642,52 @@ function CalendarPage({
                     const or = cell.displayApplicants ?? [];
                     const anes = cell.anesthesiaDisplayApplicants ?? [];
                     const chief = cell.chiefDisplayApplicants ?? [];
+                    const hasAnes = anes.length > 0;
+                    const hasChief = chief.length > 0;
+                    const nodes = [];
+
+                    // 수술실+마취 동시: 이름 최대 2(+N) +「마취과」배지 — 모바일 칸 높이 억제
+                    if (hasAnes && or.length > 0) {
+                      const maxOrNames = 2;
+                      const shownOr = or.slice(0, maxOrNames);
+                      const orMore = or.length - shownOr.length;
+                      shownOr.forEach((a) => {
+                        nodes.push(renderCalendarDayChip(a, "", "", ""));
+                      });
+                      if (orMore > 0) {
+                        nodes.push(
+                          <span
+                            key="more_or_anes"
+                            className="calendar-chip-more"
+                            title={`외 수술실 ${orMore}명`}
+                          >
+                            +{orMore}
+                          </span>
+                        );
+                      }
+                      nodes.push(
+                        <span
+                          key="anes_badge"
+                          className="calendar-dept-badge calendar-dept-badge--anesthesia"
+                          title={anes.map((a) => a.name).filter(Boolean).join(", ") || "마취과"}
+                        >
+                          마취과{anes.length > 1 ? ` ${anes.length}` : ""}
+                        </span>
+                      );
+                      if (hasChief) {
+                        nodes.push(
+                          <span
+                            key="chief_badge"
+                            className="calendar-dept-badge calendar-dept-badge--chief"
+                            title={chief.map((a) => a.name).filter(Boolean).join(", ") || "주임"}
+                          >
+                            주임{chief.length > 1 ? ` ${chief.length}` : ""}
+                          </span>
+                        );
+                      }
+                      return nodes;
+                    }
+
                     const sections = [
                       { list: or, keyPrefix: "", chipClass: "", titlePrefix: "", more: or.length > CALENDAR_DAY_CHIP_MAX },
                       {
@@ -8665,22 +8711,22 @@ function CalendarPage({
                     ];
                     return sections.flatMap((sec, secIdx) => {
                       if (!sec.list.length) return [];
-                      const nodes = [];
-                      if (sec.dividerBefore) nodes.push(<div key={`div_${secIdx}`} className="calendar-cell-divider" aria-hidden />);
+                      const secNodes = [];
+                      if (sec.dividerBefore) secNodes.push(<div key={`div_${secIdx}`} className="calendar-cell-divider" aria-hidden />);
                       const chips = sec.list.slice(0, CALENDAR_DAY_CHIP_MAX).map((a) =>
                         renderCalendarDayChip(a, sec.keyPrefix, sec.chipClass, sec.titlePrefix)
                       );
                       if (sec.wrapClass) {
-                        nodes.push(
+                        secNodes.push(
                           <div key={`wrap_${secIdx}`} className={`calendar-cell-events ${sec.wrapClass}`}>
                             {chips}
                           </div>
                         );
                       } else {
-                        nodes.push(...chips);
+                        secNodes.push(...chips);
                       }
                       if (sec.more) {
-                        nodes.push(
+                        secNodes.push(
                           <span
                             key={`more_${secIdx}`}
                             className="calendar-chip-more"
@@ -8690,7 +8736,7 @@ function CalendarPage({
                           </span>
                         );
                       }
-                      return nodes;
+                      return secNodes;
                     });
                   })()}
                 </div>

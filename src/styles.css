@@ -3192,6 +3192,30 @@ button.ym-wheel-check:hover {
   box-sizing: border-box;
 }
 
+.calendar-dept-badge {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: center;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.25;
+  padding: 2px 4px;
+  border-radius: 6px;
+}
+
+.calendar-dept-badge--anesthesia {
+  background: #ecfeff;
+  color: #0e7490;
+  border: 1px solid #a5f3fc;
+}
+
+.calendar-dept-badge--chief {
+  background: #f5f3ff;
+  color: #5b21b6;
+  border: 1px solid #ddd6fe;
+}
+
 .calendar-cell--clickable {
   cursor: pointer;
 }
@@ -4786,6 +4810,11 @@ tr.request-cancelled-row td button {
 
   .calendar-day-chip__text {
     padding: 0;
+  }
+
+  .calendar-dept-badge {
+    font-size: 8px;
+    padding: 1px 3px;
   }
 
   button.calendar-nav-month-trigger {
