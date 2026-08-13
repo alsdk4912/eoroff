@@ -4025,10 +4025,24 @@ button.ym-wheel-check:hover {
 
 .admin-day-substitute-line {
   margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 1.25rem;
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
   line-height: 1.4;
+}
+
+.admin-day-substitute-line__code {
+  flex: 0 0 auto;
+  min-width: 3.25em;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-day-substitute-line__name {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .admin-day-grid {

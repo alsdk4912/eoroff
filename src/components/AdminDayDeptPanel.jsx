@@ -101,7 +101,8 @@ function AdminDayDeptBlock({
             <ul className="admin-day-substitute-lines">
               {substituteRows.map((row) => (
                 <li key={row.key} className="admin-day-substitute-line">
-                  {row.shiftCode} {row.substituteName}
+                  <span className="admin-day-substitute-line__code">{row.shiftCode}</span>
+                  <span className="admin-day-substitute-line__name">{row.substituteName}</span>
                 </li>
               ))}
             </ul>
