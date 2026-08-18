@@ -962,6 +962,7 @@ function App() {
         leaveUserId: s.leave_user_id ?? s.leaveUserId,
         substituteUserId: s.substitute_user_id ?? s.substituteUserId,
         shiftCode: s.shift_code ?? s.shiftCode,
+        acknowledgedAt: s.acknowledged_at ?? s.acknowledgedAt ?? null,
       }))
       .filter((s) => s.id && s.requestId && s.leaveDate && s.substituteUserId && s.shiftCode);
     const seenSub = new Set();
@@ -2221,6 +2222,34 @@ function App() {
     }
   }
 
+  async function acknowledgeSubstituteAssignment(assignmentId, acknowledged) {
+    const id = String(assignmentId ?? "").trim();
+    if (!id) return;
+    if (String(auth?.userId ?? "") === "") {
+      window.alert?.("로그인 후 확인할 수 있습니다.");
+      return;
+    }
+    const nextAt = acknowledged ? new Date().toISOString() : null;
+    const prevSnapshot = Array.isArray(substituteAssignments) ? substituteAssignments : [];
+    const nextList = prevSnapshot.map((s) => (s.id === id ? { ...s, acknowledgedAt: nextAt } : s));
+    setSubstituteAssignments(nextList);
+    if (!serverMode) {
+      try {
+        localStorage.setItem(LS_SUBSTITUTE_ASSIGNMENTS, JSON.stringify(nextList));
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    try {
+      await api.acknowledgeSubstituteAssignment(id, { actorUserId: auth.userId, acknowledged });
+      await bootstrap();
+    } catch (e) {
+      setSubstituteAssignments(prevSnapshot);
+      window.alert?.(`확인 저장 실패: ${e?.message || e}`);
+    }
+  }
+
   async function saveStandaloneSubstituteAssignments(leaveDate, items, staffRole = "NURSE") {
     const ld = String(leaveDate ?? "").slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(ld)) return;
@@ -3036,6 +3065,7 @@ function App() {
               unrejectRequest={unrejectRequest}
               substituteAssignments={substituteAssignments}
               saveSubstituteForApprovedRequest={saveSubstituteForApprovedRequest}
+              acknowledgeSubstituteAssignment={acknowledgeSubstituteAssignment}
               saveStandaloneSubstituteAssignments={saveStandaloneSubstituteAssignments}
               adminDayMemos={adminDayMemos}
               saveAdminDayMemo={saveAdminDayMemo}
@@ -7997,6 +8027,7 @@ function CalendarPage({
   unrejectRequest,
   substituteAssignments,
   saveSubstituteForApprovedRequest,
+  acknowledgeSubstituteAssignment,
   saveStandaloneSubstituteAssignments,
   adminDayMemos,
   saveAdminDayMemo,
@@ -9222,7 +9253,9 @@ function CalendarPage({
             substituteAssignments={substituteAssignments}
             users={users}
             viewerRole={viewerRole}
+            currentUserId={currentUserId}
             getWeeklyStaffCell={getWeeklyStaffCell}
+            onAcknowledgeSubstitute={acknowledgeSubstituteAssignment}
           />
           {(!selectedIsOffDay || canHolidayDutyMemo) && (
             <CalendarDayMemoSection

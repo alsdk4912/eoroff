@@ -683,20 +683,31 @@ async function applyWeeklyOverridesToSubstitutes(overridesMap, actorUserId) {
 
     const standaloneRequestId = standaloneSubstituteRequestIdForStaffRole(subRole, leaveDate);
     const existing = await queryAll(
-      "SELECT id, request_id FROM substitute_assignments WHERE substitute_user_id = ? AND leave_date = ?",
+      "SELECT id, request_id, shift_code FROM substitute_assignments WHERE substitute_user_id = ? AND leave_date = ?",
       substituteUserId,
       leaveDate
     );
     for (const row of existing) {
       const curReq = String(row.request_id ?? "");
       const nextReqId = isStandaloneSubstituteRequestId(curReq) ? standaloneRequestId : curReq;
-      await execute(
-        "UPDATE substitute_assignments SET shift_code = ?, request_id = ?, updated_at = ? WHERE id = ?",
-        main,
-        nextReqId,
-        now,
-        row.id
-      );
+      const prevCode = String(row.shift_code ?? "").trim();
+      if (prevCode !== main) {
+        await execute(
+          "UPDATE substitute_assignments SET shift_code = ?, request_id = ?, updated_at = ?, acknowledged_at = NULL WHERE id = ?",
+          main,
+          nextReqId,
+          now,
+          row.id
+        );
+      } else {
+        await execute(
+          "UPDATE substitute_assignments SET shift_code = ?, request_id = ?, updated_at = ? WHERE id = ?",
+          main,
+          nextReqId,
+          now,
+          row.id
+        );
+      }
     }
     if (existing.length > 0) continue;
 
@@ -2351,7 +2362,17 @@ app.post("/api/substitute-assignments/:requestId/upsert", async (req, res) => {
     }
 
     await runTransaction(async (tx) => {
-      // 같은 요청은 통째로 교체 저장
+      const prevRows = await tx.queryAll(
+        `SELECT substitute_user_id, shift_code, acknowledged_at
+         FROM substitute_assignments WHERE request_id = ?`,
+        requestId
+      );
+      const prevAck = new Map();
+      for (const p of prevRows) {
+        const key = `${String(p.substitute_user_id ?? "")}|${String(p.shift_code ?? "").trim()}`;
+        if (p.acknowledged_at) prevAck.set(key, p.acknowledged_at);
+      }
+      // 같은 요청은 통째로 교체 저장 (동일 대체자·번표면 확인 시각 유지)
       await tx.execute("DELETE FROM substitute_assignments WHERE request_id = ?", requestId);
 
       // 같은 날짜에 같은 대체 인력이 다른 요청에 이미 배정되어 있으면 거절
@@ -2374,10 +2395,12 @@ app.post("/api/substitute-assignments/:requestId/upsert", async (req, res) => {
 
       const nowIso = new Date().toISOString();
       for (const it of normalized) {
+        const ackKey = `${it.substituteUserId}|${it.shiftCode}`;
+        const acknowledgedAt = prevAck.get(ackKey) ?? null;
         await tx.execute(
           `INSERT INTO substitute_assignments
-             (id, request_id, leave_date, leave_user_id, substitute_user_id, shift_code, created_by, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (id, request_id, leave_date, leave_user_id, substitute_user_id, shift_code, created_by, created_at, updated_at, acknowledged_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           it.id,
           it.requestId,
           it.leaveDate,
@@ -2386,7 +2409,8 @@ app.post("/api/substitute-assignments/:requestId/upsert", async (req, res) => {
           it.shiftCode,
           actorUserId,
           nowIso,
-          nowIso
+          nowIso,
+          acknowledgedAt
         );
       }
     });
@@ -2397,6 +2421,38 @@ app.post("/api/substitute-assignments/:requestId/upsert", async (req, res) => {
       return res.status(409).json({ error: String(err?.message || err) });
     }
     console.error("POST /api/substitute-assignments/:requestId/upsert", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
+/** 대체자 본인만 대체번표 확인 체크 (관리자·전원 열람) */
+app.post("/api/substitute-assignments/:id/acknowledge", async (req, res) => {
+  try {
+    const assignmentId = decodeURIComponent(String(req.params.id ?? "").trim());
+    const actorUserId = String(req.body?.actorUserId ?? "").trim();
+    const acknowledged = req.body?.acknowledged !== false;
+    if (!assignmentId) return res.status(400).json({ error: "배정 ID가 필요합니다." });
+    if (!actorUserId) return res.status(400).json({ error: "actorUserId가 필요합니다." });
+
+    const row = await queryOne(
+      `SELECT id, substitute_user_id, acknowledged_at FROM substitute_assignments WHERE id = ?`,
+      assignmentId
+    );
+    if (!row?.id) return res.status(404).json({ error: "대체 배정을 찾을 수 없습니다." });
+    if (String(row.substitute_user_id ?? "") !== actorUserId) {
+      return res.status(403).json({ error: "본인 대체 근무만 확인할 수 있습니다." });
+    }
+
+    const nextAt = acknowledged ? new Date().toISOString() : null;
+    await execute(
+      "UPDATE substitute_assignments SET acknowledged_at = ?, updated_at = ? WHERE id = ?",
+      nextAt,
+      new Date().toISOString(),
+      assignmentId
+    );
+    return res.json({ ok: true, acknowledgedAt: nextAt });
+  } catch (err) {
+    console.error("POST /api/substitute-assignments/:id/acknowledge", err);
     return res.status(500).json({ error: String(err?.message || err) });
   }
 });

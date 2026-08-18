@@ -226,7 +226,8 @@ CREATE TABLE IF NOT EXISTS substitute_assignments (
   shift_code TEXT NOT NULL,
   created_by TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  acknowledged_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_substitute_assignments_request
@@ -448,6 +449,7 @@ export async function initDb() {
   await ensureRequestsNegotiationOrderColumn();
   await ensureRequestsNegotiationOrderLockedColumn();
   await ensureRequestsHalfDaySlotColumn();
+  await ensureSubstituteAcknowledgedAtColumn();
   await ensureHalfDayReminderLogTable();
   await ensureHolidayDutyHistoryTable();
   await ensureEmergencySurgeryRecordsTable();
@@ -1654,6 +1656,14 @@ export async function resetLeaveDataToDefaults() {
       }
     }
   });
+}
+
+async function ensureSubstituteAcknowledgedAtColumn() {
+  const cols = await queryAll("PRAGMA table_info(substitute_assignments)");
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("acknowledged_at")) {
+    await execute("ALTER TABLE substitute_assignments ADD COLUMN acknowledged_at TEXT");
+  }
 }
 
 async function ensureRequestsHalfDaySlotColumn() {

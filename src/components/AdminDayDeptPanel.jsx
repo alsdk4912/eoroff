@@ -34,6 +34,8 @@ function AdminDayDeptBlock({
   users,
   defaultOpen,
   getWeeklyStaffCell,
+  currentUserId,
+  onAcknowledgeSubstitute,
 }) {
   const leaveList = Array.isArray(applicants) ? applicants : [];
   const weeklyStaffCells = useMemo(() => {
@@ -62,8 +64,11 @@ function AdminDayDeptBlock({
     });
     return rows.map((row, idx) => ({
       key: `${blockId}_sub_${idx}`,
+      assignmentId: String(row.id ?? ""),
       shiftCode: formatShiftCode(row.shiftCode),
+      substituteUserId: String(row.substituteUserId ?? ""),
       substituteName: users.find((u) => u.id === row.substituteUserId)?.name ?? row.substituteUserId ?? "—",
+      acknowledgedAt: row.acknowledgedAt ?? null,
     }));
   }, [blockId, leaveList, selectedYmd, staffRole, substituteAssignments, users, weeklyStaffCells]);
 
@@ -99,12 +104,41 @@ function AdminDayDeptBlock({
             <p className="help admin-day-dept-block__empty">대체 없음</p>
           ) : (
             <ul className="admin-day-substitute-lines">
-              {substituteRows.map((row) => (
-                <li key={row.key} className="admin-day-substitute-line">
-                  <span className="admin-day-substitute-line__code">{row.shiftCode}</span>
-                  <span className="admin-day-substitute-line__name">{row.substituteName}</span>
-                </li>
-              ))}
+              {substituteRows.map((row) => {
+                const isMine = Boolean(currentUserId) && String(row.substituteUserId) === String(currentUserId);
+                const canAck = isMine && Boolean(row.assignmentId);
+                const checked = Boolean(row.acknowledgedAt);
+                return (
+                  <li key={row.key} className={`admin-day-substitute-line${checked ? " admin-day-substitute-line--acked" : ""}`}>
+                    <span className="admin-day-substitute-line__code">{row.shiftCode}</span>
+                    <span className="admin-day-substitute-line__name">{row.substituteName}</span>
+                    {row.assignmentId ? (
+                      <label
+                        className={`admin-day-substitute-ack${canAck ? "" : " admin-day-substitute-ack--readonly"}`}
+                        title={
+                          canAck
+                            ? "대체번표를 확인하면 체크하세요"
+                            : checked
+                              ? "확인함"
+                              : "해당 대체자만 체크할 수 있습니다"
+                        }
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={!canAck}
+                          onChange={(e) => {
+                            if (!canAck) return;
+                            void onAcknowledgeSubstitute?.(row.assignmentId, e.target.checked);
+                          }}
+                          aria-label={`${row.substituteName} 대체번표 확인`}
+                        />
+                        <span>확인</span>
+                      </label>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
@@ -120,6 +154,8 @@ export default function AdminDayDeptPanel({
   users,
   viewerRole,
   getWeeklyStaffCell,
+  currentUserId,
+  onAcknowledgeSubstitute,
 }) {
   const sections = [
     {
@@ -158,6 +194,8 @@ export default function AdminDayDeptPanel({
             substituteAssignments={substituteAssignments}
             users={users}
             getWeeklyStaffCell={getWeeklyStaffCell}
+            currentUserId={currentUserId}
+            onAcknowledgeSubstitute={onAcknowledgeSubstitute}
             defaultOpen={shouldExpandDeptBlockByDefault(viewerRole, sec.staffRole)}
           />
         ))}

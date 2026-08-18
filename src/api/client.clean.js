@@ -191,6 +191,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  acknowledgeSubstituteAssignment: (id, payload) =>
+    requestJson(`/substitute-assignments/${encodeURIComponent(String(id ?? ""))}/acknowledge`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   /** 주간 번표 수동 셀 동기화(변경분만 전송) — 서버 처리·Render 콜드스타트 대비 긴 타임아웃 */
   syncWeeklyCellOverrides: (payload) =>
     requestJson("/weekly-cell-overrides/sync", {

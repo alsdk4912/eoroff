@@ -471,16 +471,20 @@ export function buildCalendarSubstituteDisplayRows({
       const recs = getSubstituteRecordsForRequest(substituteAssignments, item.id);
       for (const s of recs) {
         rows.push({
+          id: String(s?.id ?? ""),
           shiftCode: String(s?.shiftCode ?? "").trim(),
           substituteUserId: String(s?.substituteUserId ?? ""),
+          acknowledgedAt: s?.acknowledgedAt ?? s?.acknowledged_at ?? null,
         });
       }
     }
   } else {
     for (const s of orphanRecs) {
       rows.push({
+        id: String(s?.id ?? ""),
         shiftCode: String(s?.shiftCode ?? "").trim(),
         substituteUserId: String(s?.substituteUserId ?? ""),
+        acknowledgedAt: s?.acknowledgedAt ?? s?.acknowledged_at ?? null,
       });
     }
   }
@@ -490,7 +494,7 @@ export function buildCalendarSubstituteDisplayRows({
     const uid = String(w?.userId ?? "");
     const code = String(w?.shiftCode ?? "").trim();
     if (!uid || !code || code === "—" || seen.has(uid)) continue;
-    rows.push({ shiftCode: code, substituteUserId: uid });
+    rows.push({ shiftCode: code, substituteUserId: uid, id: "", acknowledgedAt: null });
     seen.add(uid);
   }
   return rows;
