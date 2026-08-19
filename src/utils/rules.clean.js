@@ -20,6 +20,25 @@ export function isLeaveTypeAllowedForRole(role, leaveType) {
   return leaveTypesForApplicantRole(role).includes(String(leaveType ?? "").trim());
 }
 
+const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** 시작일~종료일(포함) YYYY-MM-DD 목록. 역전·형식 오류면 빈 배열, 상한 62일 */
+export function enumerateYmdInclusive(fromYmd, toYmd, maxDays = 62) {
+  const from = String(fromYmd ?? "").trim().slice(0, 10);
+  const to = String(toYmd ?? from).trim().slice(0, 10);
+  if (!YMD_RE.test(from) || !YMD_RE.test(to) || to < from) return [];
+  const out = [];
+  let cur = from;
+  while (cur <= to && out.length < maxDays) {
+    out.push(cur);
+    const [y, m, d] = cur.split("-").map(Number);
+    const next = new Date(y, m - 1, d + 1);
+    cur = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
+  }
+  if (cur <= to) return [];
+  return out;
+}
+
 const LEAVE_NATURE_LABEL = {
   PERSONAL: "개인휴가",
   SICK_LEAVE: "병가",

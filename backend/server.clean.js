@@ -24,6 +24,7 @@ import {
   isGeneralNormalLadderTimeLocked,
   isLeaveDateBeforeTodayKst,
   canEditLeaveNatureStatus,
+  enumerateYmdInclusive,
 } from "../src/utils/rules.clean.js";
 import {
   computeAutoHalfDaySlot,
@@ -2533,6 +2534,7 @@ app.post("/api/requests", async (req, res) => {
       id,
       userId,
       leaveDate,
+      leaveDateEnd,
       leaveType,
       status,
       requestedAt,
@@ -2562,25 +2564,39 @@ app.post("/api/requests", async (req, res) => {
       return res.status(400).json({ error: "해당 역할에서 사용할 수 없는 휴가 구분입니다." });
     }
     /** 신청 시 일정 표시: 병가는 SICK_LEAVE, 그 외는 PERSONAL (확정 후 공가/필수교육 지정 가능) */
-    const leaveNature = String(leaveType) === "SICK_LEAVE" ? "SICK_LEAVE" : "PERSONAL";
+    const isSickLeave = String(leaveType) === "SICK_LEAVE";
+    const leaveNature = isSickLeave ? "SICK_LEAVE" : "PERSONAL";
+    const dateList = isSickLeave
+      ? enumerateYmdInclusive(leaveDate, leaveDateEnd || leaveDate)
+      : [String(leaveDate ?? "").trim().slice(0, 10)];
+    if (dateList.length === 0) {
+      return res.status(400).json({ error: "휴가일 형식이 올바르지 않거나 기간이 너무 깁니다. (최대 62일)" });
+    }
+    const statusFinal = isSickLeave ? "APPROVED" : String(status ?? "APPLIED");
 
-    const duplicate = await queryOne(
-      `SELECT id FROM requests
-       WHERE user_id = ? AND leave_date = ?
-         AND ${SQL_REQ_ACTIVE}
-         AND status NOT IN ('CANCELLED', 'REJECTED')
-         AND NOT EXISTS (
-           SELECT 1
-           FROM cancellations c
-           WHERE c.leave_request_id = requests.id
-             AND c.revoked_at IS NULL
-         )
-       LIMIT 1`,
-      userId,
-      leaveDate
-    );
-    if (duplicate) {
-      return res.status(400).json({ error: "같은 날짜에는 휴가를 중복 신청할 수 없습니다." });
+    for (const d of dateList) {
+      const duplicate = await queryOne(
+        `SELECT id FROM requests
+         WHERE user_id = ? AND leave_date = ?
+           AND ${SQL_REQ_ACTIVE}
+           AND status NOT IN ('CANCELLED', 'REJECTED')
+           AND NOT EXISTS (
+             SELECT 1
+             FROM cancellations c
+             WHERE c.leave_request_id = requests.id
+               AND c.revoked_at IS NULL
+           )
+         LIMIT 1`,
+        userId,
+        d
+      );
+      if (duplicate) {
+        return res.status(400).json({
+          error: dateList.length > 1
+            ? `${d}에 이미 휴가가 있어 기간 신청을 할 수 없습니다.`
+            : "같은 날짜에는 휴가를 중복 신청할 수 없습니다.",
+        });
+      }
     }
 
     if (leaveType === "GENERAL_PRIORITY") {
@@ -2602,27 +2618,47 @@ app.post("/api/requests", async (req, res) => {
     }
 
     await runTransaction(async (tx) => {
-      await tx.execute(
-        "INSERT INTO requests (id, user_id, leave_date, leave_type, leave_nature, status, requested_at, memo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        id,
-        userId,
-        leaveDate,
-        leaveType,
-        leaveNature,
-        status,
-        requestedAt,
-        memo
-      );
-      await insertLeaveRequestAuditRow(tx, {
-        leaveRequestId: id,
-        action: "APPLY",
-        fromStatus: null,
-        toStatus: String(status ?? "APPLIED"),
-        actorUserId: String(userId),
-        reason: null,
-        idempotencyKey: idem || null,
-        metadataJson: { memo: memo || "" },
-      });
+      const nowIso = String(requestedAt || new Date().toISOString());
+      const baseId = String(id ?? `lr_${Date.now()}`);
+      for (let i = 0; i < dateList.length; i += 1) {
+        const d = dateList[i];
+        const reqId = dateList.length === 1 ? baseId : `${baseId}_${d.replaceAll("-", "")}`;
+        await tx.execute(
+          "INSERT INTO requests (id, user_id, leave_date, leave_type, leave_nature, status, requested_at, memo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          reqId,
+          userId,
+          d,
+          leaveType,
+          leaveNature,
+          statusFinal,
+          nowIso,
+          memo
+        );
+        if (isSickLeave) {
+          await tx.execute(
+            "INSERT INTO selections (id, leave_request_id, selected_by, selected_at) VALUES (?, ?, ?, ?)",
+            `sel_${reqId}`.slice(0, 80),
+            reqId,
+            userId,
+            nowIso
+          );
+        }
+        await insertLeaveRequestAuditRow(tx, {
+          leaveRequestId: reqId,
+          action: isSickLeave ? "APPLY_AUTO_APPROVE" : "APPLY",
+          fromStatus: null,
+          toStatus: statusFinal,
+          actorUserId: String(userId),
+          reason: isSickLeave ? "병가 자동 확정" : null,
+          idempotencyKey: i === 0 ? idem || null : null,
+          metadataJson: {
+            memo: memo || "",
+            leaveDate: d,
+            rangeFrom: dateList[0],
+            rangeTo: dateList[dateList.length - 1],
+          },
+        });
+      }
 
       // 운영 규칙: 내일(leave_date = KST 기준 tomorrow) 일반휴가-후순위에 신규 신청이 들어오면
       // 기존 사다리 결과/순번을 초기화해 관리자 재사다리가 가능하도록 만든다.
@@ -2688,7 +2724,7 @@ app.post("/api/requests", async (req, res) => {
       await reconcileGoldkeyUsageByPolicy(requestedAt || new Date().toISOString());
     }
 
-    res.json({ ok: true, requestId: id });
+    res.json({ ok: true, requestId: id, count: dateList.length });
   } catch (err) {
     console.error("POST /api/requests", err);
     res.status(500).json({ error: String(err?.message || err) });

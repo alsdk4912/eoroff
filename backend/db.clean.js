@@ -490,6 +490,7 @@ export async function initDb() {
   await ensureChiefOhMoonhwanAndDeactivateLeechanjoo();
   await ensureChiefKangMyunghoFrom20260625();
   await ensureYangHyunAhSickLeave20261012_16();
+  await ensureAppliedSickLeavesAutoApproved();
   return client;
 }
 
@@ -2067,5 +2068,37 @@ async function ensureYangHyunAhSickLeave20261012_16() {
 
   await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
   console.log("[db] yanghyunah_sick_leave_20261012_16_v1 applied");
+}
+
+/** 기존 신청(APPLIED) 병가를 확정으로 전환 */
+async function ensureAppliedSickLeavesAutoApproved() {
+  const migrationId = "sick_leave_auto_approve_v1";
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
+  if (done) return;
+
+  const rows = await queryAll(
+    `SELECT id, user_id FROM requests
+     WHERE leave_type = 'SICK_LEAVE' AND status = 'APPLIED' AND deleted_at IS NULL`
+  );
+  const nowIso = new Date().toISOString();
+  for (const r of rows) {
+    await execute(
+      "UPDATE requests SET status = 'APPROVED', leave_nature = 'SICK_LEAVE' WHERE id = ?",
+      r.id
+    );
+    const sel = await queryOne("SELECT id FROM selections WHERE leave_request_id = ? LIMIT 1", r.id);
+    if (!sel?.id) {
+      await execute(
+        "INSERT INTO selections (id, leave_request_id, selected_by, selected_at) VALUES (?, ?, ?, ?)",
+        `sel_sick_auto_${String(r.id).replace(/[^a-zA-Z0-9]/g, "").slice(0, 40)}`,
+        r.id,
+        r.user_id,
+        nowIso
+      );
+    }
+  }
+
+  await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+  console.log(`[db] sick_leave_auto_approve_v1 applied (${rows.length} rows)`);
 }
 

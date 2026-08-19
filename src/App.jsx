@@ -27,6 +27,7 @@ import {
   validateRequest,
   leaveTypesForApplicantRole,
   isLeaveTypeAllowedForRole,
+  enumerateYmdInclusive,
   isGeneralNormalLadderTimeLocked,
   generalNormalLadderLockedMessage,
 } from "./utils/rules";
@@ -626,6 +627,7 @@ function App() {
 
   const [leaveType, setLeaveType] = useState("GOLDKEY");
   const [leaveDate, setLeaveDate] = useState(() => toLocalYMD(new Date()));
+  const [leaveDateEnd, setLeaveDateEnd] = useState(() => toLocalYMD(new Date()));
   const [memo, setMemo] = useState("");
   const [message, setMessage] = useState("");
   const [apiMessage, setApiMessage] = useState("");
@@ -1774,19 +1776,31 @@ function App() {
     }
     const leaveTypeForPayload = viewerRole === "CHIEF" && leaveType !== "SICK_LEAVE" ? CHIEF_LEAVE_TYPE : normalizedLeaveType;
     const leaveNatureForPayload = leaveTypeForPayload === "SICK_LEAVE" ? "SICK_LEAVE" : "PERSONAL";
+    const isSickLeave = leaveTypeForPayload === "SICK_LEAVE";
+    const sickEnd = leaveDateEnd && leaveDateEnd >= leaveDate ? leaveDateEnd : leaveDate;
+    const sickDates = isSickLeave ? enumerateYmdInclusive(leaveDate, sickEnd) : [leaveDate];
+    if (isSickLeave && sickDates.length === 0) {
+      return setMessage("병가 기간이 올바르지 않습니다. 시작일이 종료일보다 빠르고, 최대 62일까지 신청할 수 있습니다.");
+    }
+    const statusForPayload = isSickLeave ? "APPROVED" : "APPLIED";
     const payload = {
       id: `lr_${Date.now()}`,
       userId: auth.userId,
       leaveDate,
+      leaveDateEnd: isSickLeave ? sickEnd : undefined,
       leaveType: leaveTypeForPayload,
       leaveNature: leaveNatureForPayload,
-      status: "APPLIED",
+      status: statusForPayload,
       requestedAt: new Date().toISOString(),
       memo,
       cancelLocked: false,
     };
     setMessage("");
-    let doneNote = "휴가 신청이 등록되었습니다.";
+    let doneNote = isSickLeave
+      ? sickDates.length > 1
+        ? `병가가 ${sickDates[0]} ~ ${sickDates[sickDates.length - 1]} 확정되었습니다.`
+        : "병가가 확정되었습니다."
+      : "휴가 신청이 등록되었습니다.";
     if (leaveType === "GENERAL_PRIORITY" && normalizedLeaveType === "GENERAL_NORMAL" && nowForValidation >= priorityMonthStart) {
       doneNote = "일반휴가-우선순위 기간(매월 2일 09시)이 지나 일반휴가-후순위로 신청되었습니다.";
     }
@@ -1806,7 +1820,15 @@ function App() {
       /* 골드키 차감은 서버 INSERT 시 DB 반영 → bootstrap으로 잔여 동기화 */
     } else {
       setRequests((prev) => {
-        const next = [...prev, payload];
+        const extra = isSickLeave
+          ? sickDates.map((d) => ({
+              ...payload,
+              id: sickDates.length === 1 ? payload.id : `${payload.id}_${d.replaceAll("-", "")}`,
+              leaveDate: d,
+              status: "APPROVED",
+            }))
+          : [payload];
+        const next = [...prev, ...extra];
         try {
           localStorage.setItem(LS_REQUESTS, JSON.stringify(next));
         } catch {
@@ -1833,7 +1855,9 @@ function App() {
 
     setMessage(doneNote);
     notifyDone(doneNote);
-    setLeaveDate(calendarSelectedYmd ?? toLocalYMD(new Date()));
+    const resetYmd = calendarSelectedYmd ?? toLocalYMD(new Date());
+    setLeaveDate(resetYmd);
+    setLeaveDateEnd(resetYmd);
     setMemo("");
   }
 
@@ -2920,6 +2944,8 @@ function App() {
               setLeaveType={setLeaveType}
               leaveDate={leaveDate}
               setLeaveDate={setLeaveDate}
+              leaveDateEnd={leaveDateEnd}
+              setLeaveDateEnd={setLeaveDateEnd}
               memo={memo}
               setMemo={setMemo}
               submitRequest={submitRequest}
@@ -3044,6 +3070,8 @@ function App() {
               setLeaveType={setLeaveType}
               leaveDate={leaveDate}
               setLeaveDate={setLeaveDate}
+              leaveDateEnd={leaveDateEnd}
+              setLeaveDateEnd={setLeaveDateEnd}
               memo={memo}
               setMemo={setMemo}
               submitRequest={submitRequest}
@@ -3482,11 +3510,38 @@ function LoginPage({ onLogin, onResetPassword, onRegister, apiConfigured, apiRea
   );
 }
 
+function isSickLeaveApplicant(applicant) {
+  return (
+    String(applicant?.leaveType ?? "") === "SICK_LEAVE" || String(applicant?.leaveNature ?? "") === "SICK_LEAVE"
+  );
+}
+
+function splitApplicantsSick(list) {
+  const sick = [];
+  const rest = [];
+  for (const a of Array.isArray(list) ? list : []) {
+    (isSickLeaveApplicant(a) ? sick : rest).push(a);
+  }
+  return { sick, rest };
+}
+
+function cellHasUserSick(cell, userId) {
+  if (!cell) return false;
+  const all = [
+    ...(cell.displayApplicants ?? []),
+    ...(cell.anesthesiaDisplayApplicants ?? []),
+    ...(cell.chiefDisplayApplicants ?? []),
+  ];
+  return all.some((a) => String(a.userId) === String(userId) && isSickLeaveApplicant(a));
+}
+
 function RequestPage({
   leaveType,
   setLeaveType,
   leaveDate,
   setLeaveDate,
+  leaveDateEnd,
+  setLeaveDateEnd,
   memo,
   setMemo,
   submitRequest,
@@ -3494,6 +3549,7 @@ function RequestPage({
   message,
   viewerRole,
 }) {
+  const isSick = leaveType === "SICK_LEAVE";
   return (
     <section className="card">
       <h2 className="screen-title">휴가 신청</h2>
@@ -3507,8 +3563,23 @@ function RequestPage({
             </option>
           ))}
         </select>
-        <label className="ymd-label">휴가일 (연·월·일)</label>
-        <YmdSplitInput value={leaveDate} onChange={setLeaveDate} />
+        {isSick ? (
+          <div className="sick-range-fields">
+            <label className="ymd-label">시작일</label>
+            <YmdSplitInput value={leaveDate} onChange={setLeaveDate} />
+            <label className="ymd-label">종료일</label>
+            <YmdSplitInput
+              value={leaveDateEnd && leaveDateEnd >= leaveDate ? leaveDateEnd : leaveDate}
+              onChange={setLeaveDateEnd}
+            />
+            <p className="help">병가는 기간으로 신청되며 제출 즉시 확정됩니다.</p>
+          </div>
+        ) : (
+          <>
+            <label className="ymd-label">휴가일 (연·월·일)</label>
+            <YmdSplitInput value={leaveDate} onChange={setLeaveDate} />
+          </>
+        )}
         <input type="text" placeholder="신청 메모" value={memo} onChange={(e) => setMemo(e.target.value)} />
         <button type="submit">신청</button>
       </form>
@@ -8006,6 +8077,8 @@ function CalendarPage({
   setLeaveType,
   leaveDate,
   setLeaveDate,
+  leaveDateEnd,
+  setLeaveDateEnd,
   memo,
   setMemo,
   submitRequest,
@@ -8057,7 +8130,8 @@ function CalendarPage({
   useEffect(() => {
     if (!selectedYmd) return;
     setLeaveDate(selectedYmd);
-  }, [selectedYmd, setLeaveDate]);
+    setLeaveDateEnd?.((prev) => (prev && prev >= selectedYmd ? prev : selectedYmd));
+  }, [selectedYmd, setLeaveDate, setLeaveDateEnd]);
 
   useEffect(() => {
     if (selectedYmd) onSelectDutyDay?.(selectedYmd);
@@ -8694,10 +8768,36 @@ function CalendarPage({
               {cell.inMonth && !offDaysOnlyViewer && calendarCellHasConfirmedChips(cell) ? (
                 <div className="calendar-cell-events">
                   {(() => {
-                    const or = cell.displayApplicants ?? [];
-                    const anes = cell.anesthesiaDisplayApplicants ?? [];
-                    const chief = cell.chiefDisplayApplicants ?? [];
+                    const orAll = cell.displayApplicants ?? [];
+                    const anesAll = cell.anesthesiaDisplayApplicants ?? [];
+                    const chiefAll = cell.chiefDisplayApplicants ?? [];
+                    const orSplit = splitApplicantsSick(orAll);
+                    const anesSplit = splitApplicantsSick(anesAll);
+                    const chiefSplit = splitApplicantsSick(chiefAll);
+                    const or = orSplit.rest;
+                    const anes = anesSplit.rest;
+                    const chief = chiefSplit.rest;
+                    const sickAll = [...orSplit.sick, ...anesSplit.sick, ...chiefSplit.sick];
                     const nodes = [];
+
+                    for (const a of sickAll) {
+                      const col = idx % 7;
+                      const prev = col === 0 ? null : calendarData[idx - 1];
+                      const next = col === 6 ? null : calendarData[idx + 1];
+                      const isStart = !cellHasUserSick(prev, a.userId);
+                      const isEnd = !cellHasUserSick(next, a.userId);
+                      const edge =
+                        isStart && isEnd ? "single" : isStart ? "start" : isEnd ? "end" : "mid";
+                      nodes.push(
+                        <span
+                          key={`sickbar_${a.id}`}
+                          className={`calendar-sick-bar calendar-sick-bar--${edge}`}
+                          title={`${a.name} 병가`}
+                        >
+                          {isStart ? a.name : "\u00a0"}
+                        </span>
+                      );
+                    }
 
                     const pushSection = ({ list, keyPrefix, chipClass, titlePrefix, wrapClass, maxNames, moreKey }) => {
                       if (!list.length) return;
@@ -8932,14 +9032,13 @@ function CalendarPage({
                   </div>
                   {detailTab === "apply" && showApplyTab ? (
                     <div className="calendar-detail-body calendar-detail-body--apply" role="tabpanel">
-                      <p className="help">선택한 날짜: {selectedYmd} (아래에서 연·월·일을 바꿀 수 있습니다)</p>
+                      <p className="help">
+                        {leaveType === "SICK_LEAVE"
+                          ? "병가는 시작일~종료일을 지정해 한 번에 신청하며, 제출 즉시 확정됩니다."
+                          : `선택한 날짜: ${selectedYmd} (아래에서 연·월·일을 바꿀 수 있습니다)`}
+                      </p>
                       <form className="grid calendar-apply-form" onSubmit={submitRequest}>
                         <label className="field-label">휴가 구분</label>
-                        {isChiefViewer ? (
-                          <p className="help" style={{ margin: 0 }}>
-                            휴가 (주임은 단일 유형으로 신청합니다)
-                          </p>
-                        ) : (
                         <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)} aria-label="휴가 구분">
                           {leaveTypesForApplicantRole(viewerRole).map((t) => (
                             <option key={t} value={t}>
@@ -8947,11 +9046,22 @@ function CalendarPage({
                             </option>
                           ))}
                         </select>
+                        {leaveType === "SICK_LEAVE" ? (
+                          <div className="sick-range-fields">
+                            <span className="help">시작일</span>
+                            <YmdSplitInput value={leaveDate} onChange={setLeaveDate} />
+                            <span className="help">종료일</span>
+                            <YmdSplitInput
+                              value={leaveDateEnd && leaveDateEnd >= leaveDate ? leaveDateEnd : leaveDate}
+                              onChange={setLeaveDateEnd}
+                            />
+                          </div>
+                        ) : (
+                          <div className="calendar-apply-ymd">
+                            <span className="help">휴가일</span>
+                            <YmdSplitInput value={leaveDate} onChange={setLeaveDate} />
+                          </div>
                         )}
-                        <div className="calendar-apply-ymd">
-                          <span className="help">휴가일</span>
-                          <YmdSplitInput value={leaveDate} onChange={setLeaveDate} />
-                        </div>
                         <input type="text" placeholder="신청 메모" value={memo} onChange={(e) => setMemo(e.target.value)} />
                         <button type="submit">신청</button>
                       </form>

@@ -2799,8 +2799,46 @@ tbody tr:last-child td {
   border-color: #b8d4e8;
 }
 
-.calendar-day-chip--sick {
+.calendar-sick-bar {
+  display: block;
+  height: 14px;
+  box-sizing: border-box;
+  margin: 0 -3px 1px;
+  padding: 0 5px;
+  font-size: 9px;
   font-weight: 700;
+  line-height: 14px;
+  color: #3d5f78;
+  background: #cfe6f4;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.calendar-sick-bar--start {
+  margin-left: 1px;
+  border-radius: 7px 0 0 7px;
+}
+
+.calendar-sick-bar--end {
+  margin-right: 1px;
+  border-radius: 0 7px 7px 0;
+}
+
+.calendar-sick-bar--mid {
+  border-radius: 0;
+}
+
+.calendar-sick-bar--single {
+  margin-left: 1px;
+  margin-right: 1px;
+  border-radius: 7px;
+}
+
+.sick-range-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .calendar-day-chip.selected-item.type-sick_leave,
