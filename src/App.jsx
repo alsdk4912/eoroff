@@ -3586,26 +3586,42 @@ function cellHasUserSpan(cell, userId, kind) {
   return all.some((a) => String(a.userId) === String(userId) && spanLeaveKind(a) === kind);
 }
 
-function isWeekdayOnlySpanKind(kind) {
-  return kind === "sick" || kind === "wedding";
+function cellSpanApplicants(cell) {
+  const all = [
+    ...(cell?.displayApplicants ?? []),
+    ...(cell?.anesthesiaDisplayApplicants ?? []),
+    ...(cell?.chiefDisplayApplicants ?? []),
+  ];
+  return all.filter((a) => spanLeaveKind(a));
 }
 
-function cellShowsSpanBar(cell, userId, kind) {
-  if (!cell) return false;
-  if (isWeekdayOnlySpanKind(kind) && cell.isOffDay) return false;
-  return cellHasUserSpan(cell, userId, kind);
-}
-
-/** 이름은 기간(평일 연속)의 맨 앞, 또는 이번 달에서 처음 보이는 막대에만 */
-function isSpanBarNameStart(calendarData, idx, userId, kind) {
-  for (let i = idx - 1; i >= 0; i -= 1) {
-    const c = calendarData[i];
-    if (!c) continue;
-    if (isWeekdayOnlySpanKind(kind) && c.isOffDay) continue;
-    if (cellShowsSpanBar(c, userId, kind)) return !c.inMonth;
-    return true;
+/** 같은 사람·유형의 시작~끝(중간에 낀 휴일 포함) */
+function buildSpanBarRanges(calendarData) {
+  const map = new Map();
+  for (const cell of Array.isArray(calendarData) ? calendarData : []) {
+    const d = String(cell?.date ?? "").slice(0, 10);
+    if (!d) continue;
+    for (const a of cellSpanApplicants(cell)) {
+      const kind = spanLeaveKind(a);
+      const key = `${a.userId}|${kind}`;
+      const prev = map.get(key);
+      if (!prev) {
+        map.set(key, { min: d, max: d, applicant: a, kind });
+      } else {
+        if (d < prev.min) prev.min = d;
+        if (d > prev.max) prev.max = d;
+      }
+    }
   }
-  return true;
+  return map;
+}
+
+function cellShowsSpanBar(cell, userId, kind, spanRanges) {
+  if (!cell) return false;
+  if (cellHasUserSpan(cell, userId, kind)) return true;
+  const range = spanRanges?.get?.(`${userId}|${kind}`);
+  const d = String(cell.date ?? "").slice(0, 10);
+  return Boolean(range && d && d >= range.min && d <= range.max);
 }
 
 function rangeLeaveHelp(leaveType) {
@@ -8215,6 +8231,7 @@ function CalendarPage({
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   /** 칸당 최대 표시 칩 수 — 4건 이상이면 나머지는 +N */
   const CALENDAR_DAY_CHIP_MAX = 3;
+  const spanBarRanges = useMemo(() => buildSpanBarRanges(calendarData), [calendarData]);
 
   useEffect(() => {
     if (!selectedYmd) return;
@@ -8867,27 +8884,39 @@ function CalendarPage({
                     const chief = chiefSplit.rest;
                     const spanAll = [...orSplit.span, ...anesSplit.span, ...chiefSplit.span];
                     const nodes = [];
+                    const drawnKeys = new Set();
 
-                    for (const a of spanAll) {
-                      const kind = spanLeaveKind(a);
-                      if (isWeekdayOnlySpanKind(kind) && cell.isOffDay) continue;
+                    const pushSpanBar = (a, kind) => {
+                      const key = `${a.userId}|${kind}`;
+                      if (drawnKeys.has(key)) return;
+                      drawnKeys.add(key);
                       const col = idx % 7;
                       const prevAdj = col === 0 ? null : calendarData[idx - 1];
                       const nextAdj = col === 6 ? null : calendarData[idx + 1];
-                      const visualStart = !cellShowsSpanBar(prevAdj, a.userId, kind);
-                      const visualEnd = !cellShowsSpanBar(nextAdj, a.userId, kind);
+                      const visualStart = !cellShowsSpanBar(prevAdj, a.userId, kind, spanBarRanges);
+                      const visualEnd = !cellShowsSpanBar(nextAdj, a.userId, kind, spanBarRanges);
                       const edge =
                         visualStart && visualEnd ? "single" : visualStart ? "start" : visualEnd ? "end" : "mid";
-                      const showName = isSpanBarNameStart(calendarData, idx, a.userId, kind);
                       nodes.push(
                         <span
-                          key={`spanbar_${a.id}`}
+                          key={`spanbar_${a.id}_${cell.date}`}
                           className={`calendar-span-bar calendar-span-bar--${kind} calendar-span-bar--${edge}`}
                           title={`${a.name} ${spanLeaveTitle(kind)}`}
                         >
-                          {showName ? a.name : "\u00a0"}
+                          {visualStart ? a.name : "\u00a0"}
                         </span>
                       );
+                    };
+
+                    for (const a of spanAll) {
+                      const kind = spanLeaveKind(a);
+                      if (kind) pushSpanBar(a, kind);
+                    }
+                    const d = String(cell.date ?? "").slice(0, 10);
+                    for (const [key, range] of spanBarRanges) {
+                      if (drawnKeys.has(key)) continue;
+                      if (d < range.min || d > range.max) continue;
+                      pushSpanBar(range.applicant, range.kind);
                     }
 
                     const pushSection = ({ list, keyPrefix, chipClass, titlePrefix, wrapClass, maxNames, moreKey }) => {
