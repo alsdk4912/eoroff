@@ -2580,7 +2580,7 @@ app.post("/api/requests", async (req, res) => {
     let dateList = [String(leaveDate ?? "").trim().slice(0, 10)];
     if (isRangeLeave) {
       const from = String(leaveDate ?? "").trim().slice(0, 10);
-      const to = String(leaveDateEnd || leaveDate ?? "").trim().slice(0, 10);
+      const to = String(leaveDateEnd || leaveDate || "").trim().slice(0, 10);
       if (String(leaveType) === "WEDDING_LEAVE") {
         const holidayRows = await queryAll("SELECT holiday_date, is_holiday FROM holidays WHERE is_holiday = 1");
         const holidaySet = holidayDateSet(holidayRows);
