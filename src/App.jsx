@@ -3586,6 +3586,28 @@ function cellHasUserSpan(cell, userId, kind) {
   return all.some((a) => String(a.userId) === String(userId) && spanLeaveKind(a) === kind);
 }
 
+function isWeekdayOnlySpanKind(kind) {
+  return kind === "sick" || kind === "wedding";
+}
+
+function cellShowsSpanBar(cell, userId, kind) {
+  if (!cell) return false;
+  if (isWeekdayOnlySpanKind(kind) && cell.isOffDay) return false;
+  return cellHasUserSpan(cell, userId, kind);
+}
+
+/** 이름은 기간(평일 연속)의 맨 앞, 또는 이번 달에서 처음 보이는 막대에만 */
+function isSpanBarNameStart(calendarData, idx, userId, kind) {
+  for (let i = idx - 1; i >= 0; i -= 1) {
+    const c = calendarData[i];
+    if (!c) continue;
+    if (isWeekdayOnlySpanKind(kind) && c.isOffDay) continue;
+    if (cellShowsSpanBar(c, userId, kind)) return !c.inMonth;
+    return true;
+  }
+  return true;
+}
+
 function rangeLeaveHelp(leaveType) {
   if (leaveType === "WEDDING_LEAVE") return "결혼휴가는 공휴일·주말을 제외한 평일 5일이며, 제출 즉시 확정됩니다.";
   if (leaveType === "MATERNITY_LEAVE") return "분만휴가는 휴일·공휴일 포함 90일이며, 제출 즉시 확정됩니다.";
@@ -8832,9 +8854,8 @@ function CalendarPage({
               }}
             >
               <div className={`calendar-date${cell.isOffDay ? " calendar-date--holiday" : ""}`}>{cell.day}</div>
-              {cell.inMonth && !offDaysOnlyViewer && calendarCellHasConfirmedChips(cell) ? (
-                <div className="calendar-cell-events">
-                  {(() => {
+              {cell.inMonth && !offDaysOnlyViewer ? (
+                (() => {
                     const orAll = cell.displayApplicants ?? [];
                     const anesAll = cell.anesthesiaDisplayApplicants ?? [];
                     const chiefAll = cell.chiefDisplayApplicants ?? [];
@@ -8849,20 +8870,22 @@ function CalendarPage({
 
                     for (const a of spanAll) {
                       const kind = spanLeaveKind(a);
+                      if (isWeekdayOnlySpanKind(kind) && cell.isOffDay) continue;
                       const col = idx % 7;
-                      const prev = col === 0 ? null : calendarData[idx - 1];
-                      const next = col === 6 ? null : calendarData[idx + 1];
-                      const isStart = !cellHasUserSpan(prev, a.userId, kind);
-                      const isEnd = !cellHasUserSpan(next, a.userId, kind);
+                      const prevAdj = col === 0 ? null : calendarData[idx - 1];
+                      const nextAdj = col === 6 ? null : calendarData[idx + 1];
+                      const visualStart = !cellShowsSpanBar(prevAdj, a.userId, kind);
+                      const visualEnd = !cellShowsSpanBar(nextAdj, a.userId, kind);
                       const edge =
-                        isStart && isEnd ? "single" : isStart ? "start" : isEnd ? "end" : "mid";
+                        visualStart && visualEnd ? "single" : visualStart ? "start" : visualEnd ? "end" : "mid";
+                      const showName = isSpanBarNameStart(calendarData, idx, a.userId, kind);
                       nodes.push(
                         <span
                           key={`spanbar_${a.id}`}
                           className={`calendar-span-bar calendar-span-bar--${kind} calendar-span-bar--${edge}`}
                           title={`${a.name} ${spanLeaveTitle(kind)}`}
                         >
-                          {isStart ? a.name : "\u00a0"}
+                          {showName ? a.name : "\u00a0"}
                         </span>
                       );
                     }
@@ -8933,9 +8956,9 @@ function CalendarPage({
                       moreKey: "chief",
                     });
 
-                    return nodes;
-                  })()}
-                </div>
+                    if (!nodes.length) return null;
+                    return <div className="calendar-cell-events">{nodes}</div>;
+                  })()
               ) : null}
             </div>
           );
