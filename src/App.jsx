@@ -28,6 +28,14 @@ import {
   leaveTypesForApplicantRole,
   isLeaveTypeAllowedForRole,
   enumerateYmdInclusive,
+  isRangeAutoApproveLeave,
+  holidayDateSet,
+  weddingEndFromStart,
+  maternityEndFromStart,
+  weddingLeaveDatesInRange,
+  enumerateNWeekdaysFrom,
+  WEDDING_LEAVE_WEEKDAYS,
+  MATERNITY_LEAVE_DAYS,
   isGeneralNormalLadderTimeLocked,
   generalNormalLadderLockedMessage,
 } from "./utils/rules";
@@ -676,6 +684,18 @@ function App() {
     setCalendarSelectedYmd(null);
     setLeaveDate(toLocalYMD(n));
   }, [location?.pathname, location?.search]);
+
+  useEffect(() => {
+    if (leaveType === "WEDDING_LEAVE") {
+      const end = weddingEndFromStart(leaveDate, holidayDateSet(holidays));
+      if (end) setLeaveDateEnd(end);
+      return;
+    }
+    if (leaveType === "MATERNITY_LEAVE") {
+      const end = maternityEndFromStart(leaveDate);
+      if (end) setLeaveDateEnd(end);
+    }
+  }, [leaveType, leaveDate, holidays]);
 
   const currentUser = users.find((u) => u.id === auth?.userId);
   const viewerRole = currentUser?.role ?? "";
@@ -1774,20 +1794,39 @@ function App() {
       setMessage("휴가 신청 권한이 없습니다.");
       return;
     }
-    const leaveTypeForPayload = viewerRole === "CHIEF" && leaveType !== "SICK_LEAVE" ? CHIEF_LEAVE_TYPE : normalizedLeaveType;
-    const leaveNatureForPayload = leaveTypeForPayload === "SICK_LEAVE" ? "SICK_LEAVE" : "PERSONAL";
-    const isSickLeave = leaveTypeForPayload === "SICK_LEAVE";
+    const leaveTypeForPayload =
+      viewerRole === "CHIEF" && !isRangeAutoApproveLeave(leaveType) ? CHIEF_LEAVE_TYPE : normalizedLeaveType;
+    const isRangeLeave = isRangeAutoApproveLeave(leaveTypeForPayload);
+    const leaveNatureForPayload = isRangeLeave ? leaveTypeForPayload : "PERSONAL";
     const sickEnd = leaveDateEnd && leaveDateEnd >= leaveDate ? leaveDateEnd : leaveDate;
-    const sickDates = isSickLeave ? enumerateYmdInclusive(leaveDate, sickEnd) : [leaveDate];
-    if (isSickLeave && sickDates.length === 0) {
-      return setMessage("병가 기간이 올바르지 않습니다. 시작일이 종료일보다 빠르고, 최대 62일까지 신청할 수 있습니다.");
+    let rangeDates = [leaveDate];
+    if (leaveTypeForPayload === "WEDDING_LEAVE") {
+      const holidaySet = holidayDateSet(holidays);
+      const inRange = weddingLeaveDatesInRange(leaveDate, sickEnd, holidaySet);
+      rangeDates = inRange.length === WEDDING_LEAVE_WEEKDAYS
+        ? inRange
+        : enumerateNWeekdaysFrom(leaveDate, WEDDING_LEAVE_WEEKDAYS, holidaySet);
+      if (rangeDates.length !== WEDDING_LEAVE_WEEKDAYS) {
+        return setMessage("결혼휴가는 공휴일·주말을 제외한 평일 5일입니다.");
+      }
+    } else if (leaveTypeForPayload === "MATERNITY_LEAVE") {
+      const end = maternityEndFromStart(leaveDate);
+      rangeDates = enumerateYmdInclusive(leaveDate, end, MATERNITY_LEAVE_DAYS);
+      if (rangeDates.length !== MATERNITY_LEAVE_DAYS) {
+        return setMessage("분만휴가는 휴일·공휴일을 포함한 90일입니다.");
+      }
+    } else if (leaveTypeForPayload === "SICK_LEAVE") {
+      rangeDates = enumerateYmdInclusive(leaveDate, sickEnd, 62);
+      if (rangeDates.length === 0) {
+        return setMessage("병가 기간이 올바르지 않습니다. 시작일이 종료일보다 빠르고, 최대 62일까지 신청할 수 있습니다.");
+      }
     }
-    const statusForPayload = isSickLeave ? "APPROVED" : "APPLIED";
+    const statusForPayload = isRangeLeave ? "APPROVED" : "APPLIED";
     const payload = {
       id: `lr_${Date.now()}`,
       userId: auth.userId,
       leaveDate,
-      leaveDateEnd: isSickLeave ? sickEnd : undefined,
+      leaveDateEnd: isRangeLeave ? rangeDates[rangeDates.length - 1] : undefined,
       leaveType: leaveTypeForPayload,
       leaveNature: leaveNatureForPayload,
       status: statusForPayload,
@@ -1796,11 +1835,14 @@ function App() {
       cancelLocked: false,
     };
     setMessage("");
-    let doneNote = isSickLeave
-      ? sickDates.length > 1
-        ? `병가가 ${sickDates[0]} ~ ${sickDates[sickDates.length - 1]} 확정되었습니다.`
-        : "병가가 확정되었습니다."
-      : "휴가 신청이 등록되었습니다.";
+    let doneNote = "휴가 신청이 등록되었습니다.";
+    if (isRangeLeave) {
+      const label = leaveTypeLabel(leaveTypeForPayload);
+      doneNote =
+        rangeDates.length > 1
+          ? `${label}가 ${rangeDates[0]} ~ ${rangeDates[rangeDates.length - 1]} 확정되었습니다.`
+          : `${label}가 확정되었습니다.`;
+    }
     if (leaveType === "GENERAL_PRIORITY" && normalizedLeaveType === "GENERAL_NORMAL" && nowForValidation >= priorityMonthStart) {
       doneNote = "일반휴가-우선순위 기간(매월 2일 09시)이 지나 일반휴가-후순위로 신청되었습니다.";
     }
@@ -1820,10 +1862,10 @@ function App() {
       /* 골드키 차감은 서버 INSERT 시 DB 반영 → bootstrap으로 잔여 동기화 */
     } else {
       setRequests((prev) => {
-        const extra = isSickLeave
-          ? sickDates.map((d) => ({
+        const extra = isRangeLeave
+          ? rangeDates.map((d) => ({
               ...payload,
-              id: sickDates.length === 1 ? payload.id : `${payload.id}_${d.replaceAll("-", "")}`,
+              id: rangeDates.length === 1 ? payload.id : `${payload.id}_${d.replaceAll("-", "")}`,
               leaveDate: d,
               status: "APPROVED",
             }))
@@ -3510,29 +3552,44 @@ function LoginPage({ onLogin, onResetPassword, onRegister, apiConfigured, apiRea
   );
 }
 
-function isSickLeaveApplicant(applicant) {
-  return (
-    String(applicant?.leaveType ?? "") === "SICK_LEAVE" || String(applicant?.leaveNature ?? "") === "SICK_LEAVE"
-  );
+function spanLeaveKind(applicant) {
+  const t = String(applicant?.leaveType ?? "");
+  const n = String(applicant?.leaveNature ?? "");
+  if (t === "WEDDING_LEAVE" || n === "WEDDING_LEAVE") return "wedding";
+  if (t === "MATERNITY_LEAVE" || n === "MATERNITY_LEAVE") return "maternity";
+  if (t === "SICK_LEAVE" || n === "SICK_LEAVE") return "sick";
+  return null;
 }
 
-function splitApplicantsSick(list) {
-  const sick = [];
+function spanLeaveTitle(kind) {
+  if (kind === "wedding") return "결혼휴가";
+  if (kind === "maternity") return "분만휴가";
+  return "병가";
+}
+
+function splitApplicantsSpan(list) {
+  const span = [];
   const rest = [];
   for (const a of Array.isArray(list) ? list : []) {
-    (isSickLeaveApplicant(a) ? sick : rest).push(a);
+    (spanLeaveKind(a) ? span : rest).push(a);
   }
-  return { sick, rest };
+  return { span, rest };
 }
 
-function cellHasUserSick(cell, userId) {
+function cellHasUserSpan(cell, userId, kind) {
   if (!cell) return false;
   const all = [
     ...(cell.displayApplicants ?? []),
     ...(cell.anesthesiaDisplayApplicants ?? []),
     ...(cell.chiefDisplayApplicants ?? []),
   ];
-  return all.some((a) => String(a.userId) === String(userId) && isSickLeaveApplicant(a));
+  return all.some((a) => String(a.userId) === String(userId) && spanLeaveKind(a) === kind);
+}
+
+function rangeLeaveHelp(leaveType) {
+  if (leaveType === "WEDDING_LEAVE") return "결혼휴가는 공휴일·주말을 제외한 평일 5일이며, 제출 즉시 확정됩니다.";
+  if (leaveType === "MATERNITY_LEAVE") return "분만휴가는 휴일·공휴일 포함 90일이며, 제출 즉시 확정됩니다.";
+  return "병가는 기간으로 신청되며 제출 즉시 확정됩니다.";
 }
 
 function RequestPage({
@@ -3549,7 +3606,7 @@ function RequestPage({
   message,
   viewerRole,
 }) {
-  const isSick = leaveType === "SICK_LEAVE";
+  const isRange = isRangeAutoApproveLeave(leaveType);
   return (
     <section className="card">
       <h2 className="screen-title">휴가 신청</h2>
@@ -3563,7 +3620,7 @@ function RequestPage({
             </option>
           ))}
         </select>
-        {isSick ? (
+        {isRange ? (
           <div className="sick-range-fields">
             <label className="ymd-label">시작일</label>
             <YmdSplitInput value={leaveDate} onChange={setLeaveDate} />
@@ -3572,7 +3629,7 @@ function RequestPage({
               value={leaveDateEnd && leaveDateEnd >= leaveDate ? leaveDateEnd : leaveDate}
               onChange={setLeaveDateEnd}
             />
-            <p className="help">병가는 기간으로 신청되며 제출 즉시 확정됩니다.</p>
+            <p className="help">{rangeLeaveHelp(leaveType)}</p>
           </div>
         ) : (
           <>
@@ -3723,6 +3780,8 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
             <option value="GENERAL_NORMAL">일반휴가-후순위</option>
             <option value="HALF_DAY">반차</option>
             <option value="SICK_LEAVE">병가</option>
+            <option value="WEDDING_LEAVE">결혼휴가</option>
+            <option value="MATERNITY_LEAVE">분만휴가</option>
           </select>
           <select
             className="my-requests-sel-mark"
@@ -3733,6 +3792,8 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
             <option value="ALL">전체(휴가 유형)</option>
             <option value="PERSONAL">{leaveNatureLabel("PERSONAL")}</option>
             <option value="SICK_LEAVE">{leaveNatureLabel("SICK_LEAVE")}</option>
+            <option value="WEDDING_LEAVE">{leaveNatureLabel("WEDDING_LEAVE")}</option>
+            <option value="MATERNITY_LEAVE">{leaveNatureLabel("MATERNITY_LEAVE")}</option>
             <option value="PAID_TRAINING">{leaveNatureLabel("PAID_TRAINING")}</option>
             <option value="REQUIRED_TRAINING">{leaveNatureLabel("REQUIRED_TRAINING")}</option>
           </select>
@@ -3808,6 +3869,8 @@ function MyRequestsPage({ myRequests, cancelRequest, uncancelRequest, canUncance
                       >
                         <option value="PERSONAL">{leaveNatureLabel("PERSONAL")}</option>
                         <option value="SICK_LEAVE">{leaveNatureLabel("SICK_LEAVE")}</option>
+                        <option value="WEDDING_LEAVE">{leaveNatureLabel("WEDDING_LEAVE")}</option>
+                        <option value="MATERNITY_LEAVE">{leaveNatureLabel("MATERNITY_LEAVE")}</option>
                         <option value="PAID_TRAINING">{leaveNatureLabel("PAID_TRAINING")}</option>
                         <option value="REQUIRED_TRAINING">{leaveNatureLabel("REQUIRED_TRAINING")}</option>
                       </select>
@@ -4008,7 +4071,7 @@ const CUSTOM_SHIFT_SENTINEL = "__CUSTOM_SHIFT__";
 const WORK_SCHEDULE_OPTION_SET = shiftOptionSetForRole("NURSE");
 const WEEKLY_REQUIRED_TRAINING_MARK = "교육";
 const LEGACY_WEEKLY_REQUIRED_TRAINING_MARK = "필수교육";
-const WEEKLY_LEAVE_MARK_OPTIONS = ["휴가", "병가", "공가", "반차", WEEKLY_REQUIRED_TRAINING_MARK, "off"];
+const WEEKLY_LEAVE_MARK_OPTIONS = ["휴가", "병가", "결가", "분만", "공가", "반차", WEEKLY_REQUIRED_TRAINING_MARK, "off"];
 
 function normalizeWeeklyLeaveMark(mark) {
   const m = String(mark ?? "").trim();
@@ -4142,6 +4205,8 @@ function effectiveScheduleCell(userId, nurseName, ymd, workScheduleByYear, reque
     if (nat === "PAID_TRAINING") return { kind: "leave", main: "공가", sub: typeFullLabel(approvedLeave.leaveType) };
     if (nat === "REQUIRED_TRAINING") return { kind: "leave", main: WEEKLY_REQUIRED_TRAINING_MARK, sub: typeFullLabel(approvedLeave.leaveType) };
     if (nat === "SICK_LEAVE" || lt === "SICK_LEAVE") return { kind: "leave", main: "병가", sub: typeFullLabel(approvedLeave.leaveType) };
+    if (nat === "WEDDING_LEAVE" || lt === "WEDDING_LEAVE") return { kind: "leave", main: "결가", sub: typeFullLabel(approvedLeave.leaveType) };
+    if (nat === "MATERNITY_LEAVE" || lt === "MATERNITY_LEAVE") return { kind: "leave", main: "분만", sub: typeFullLabel(approvedLeave.leaveType) };
     if (lt === "HALF_DAY") return { kind: "leave", main: halfDayMainLabel(approvedLeave), sub: "" };
     return { kind: "leave", main: "휴가", sub: typeFullLabel(approvedLeave.leaveType) };
   }
@@ -4201,6 +4266,8 @@ function effectiveWeeklyCell(
     if (leaveNature === "PAID_TRAINING") return { kind: "leave", main: "공가", sub: "" };
     if (leaveNature === "REQUIRED_TRAINING") return { kind: "leave", main: WEEKLY_REQUIRED_TRAINING_MARK, sub: "" };
     if (leaveNature === "SICK_LEAVE" || leaveType === "SICK_LEAVE") return { kind: "leave", main: "병가", sub: "" };
+    if (leaveNature === "WEDDING_LEAVE" || leaveType === "WEDDING_LEAVE") return { kind: "leave", main: "결가", sub: "" };
+    if (leaveNature === "MATERNITY_LEAVE" || leaveType === "MATERNITY_LEAVE") return { kind: "leave", main: "분만", sub: "" };
     if (leaveType === "HALF_DAY") return { kind: "leave", main: halfDayMainLabel(approvedLeave), sub: "" };
     return { kind: "leave", main: "휴가", sub: "" };
   }
@@ -7435,7 +7502,7 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
     const qDate = String(qs.get("leaveDate") ?? "").trim();
     const qType = String(qs.get("leaveType") ?? "").trim();
     if (/^\d{4}-\d{2}-\d{2}$/.test(qDate)) setLeaveDate(qDate);
-    if (["GENERAL_PRIORITY", "GENERAL_NORMAL", "GOLDKEY", "HALF_DAY", "SICK_LEAVE"].includes(qType)) setLeaveType(qType);
+    if (["GENERAL_PRIORITY", "GENERAL_NORMAL", "GOLDKEY", "HALF_DAY", "SICK_LEAVE", "WEDDING_LEAVE", "MATERNITY_LEAVE"].includes(qType)) setLeaveType(qType);
   }, [location.search]);
 
   function toggleUser(userId) {
@@ -8771,28 +8838,29 @@ function CalendarPage({
                     const orAll = cell.displayApplicants ?? [];
                     const anesAll = cell.anesthesiaDisplayApplicants ?? [];
                     const chiefAll = cell.chiefDisplayApplicants ?? [];
-                    const orSplit = splitApplicantsSick(orAll);
-                    const anesSplit = splitApplicantsSick(anesAll);
-                    const chiefSplit = splitApplicantsSick(chiefAll);
+                    const orSplit = splitApplicantsSpan(orAll);
+                    const anesSplit = splitApplicantsSpan(anesAll);
+                    const chiefSplit = splitApplicantsSpan(chiefAll);
                     const or = orSplit.rest;
                     const anes = anesSplit.rest;
                     const chief = chiefSplit.rest;
-                    const sickAll = [...orSplit.sick, ...anesSplit.sick, ...chiefSplit.sick];
+                    const spanAll = [...orSplit.span, ...anesSplit.span, ...chiefSplit.span];
                     const nodes = [];
 
-                    for (const a of sickAll) {
+                    for (const a of spanAll) {
+                      const kind = spanLeaveKind(a);
                       const col = idx % 7;
                       const prev = col === 0 ? null : calendarData[idx - 1];
                       const next = col === 6 ? null : calendarData[idx + 1];
-                      const isStart = !cellHasUserSick(prev, a.userId);
-                      const isEnd = !cellHasUserSick(next, a.userId);
+                      const isStart = !cellHasUserSpan(prev, a.userId, kind);
+                      const isEnd = !cellHasUserSpan(next, a.userId, kind);
                       const edge =
                         isStart && isEnd ? "single" : isStart ? "start" : isEnd ? "end" : "mid";
                       nodes.push(
                         <span
-                          key={`sickbar_${a.id}`}
-                          className={`calendar-sick-bar calendar-sick-bar--${edge}`}
-                          title={`${a.name} 병가`}
+                          key={`spanbar_${a.id}`}
+                          className={`calendar-span-bar calendar-span-bar--${kind} calendar-span-bar--${edge}`}
+                          title={`${a.name} ${spanLeaveTitle(kind)}`}
                         >
                           {isStart ? a.name : "\u00a0"}
                         </span>
@@ -9033,8 +9101,8 @@ function CalendarPage({
                   {detailTab === "apply" && showApplyTab ? (
                     <div className="calendar-detail-body calendar-detail-body--apply" role="tabpanel">
                       <p className="help">
-                        {leaveType === "SICK_LEAVE"
-                          ? "병가는 시작일~종료일을 지정해 한 번에 신청하며, 제출 즉시 확정됩니다."
+                        {isRangeAutoApproveLeave(leaveType)
+                          ? rangeLeaveHelp(leaveType)
                           : `선택한 날짜: ${selectedYmd} (아래에서 연·월·일을 바꿀 수 있습니다)`}
                       </p>
                       <form className="grid calendar-apply-form" onSubmit={submitRequest}>
@@ -9046,7 +9114,7 @@ function CalendarPage({
                             </option>
                           ))}
                         </select>
-                        {leaveType === "SICK_LEAVE" ? (
+                        {isRangeAutoApproveLeave(leaveType) ? (
                           <div className="sick-range-fields">
                             <span className="help">시작일</span>
                             <YmdSplitInput value={leaveDate} onChange={setLeaveDate} />
@@ -9577,6 +9645,8 @@ function AdminPage({ allRequests, users, notes, goldkeys, cancellations, serverM
             <option value="GENERAL_NORMAL">일반-후순위</option>
             <option value="HALF_DAY">반차</option>
             <option value="SICK_LEAVE">병가</option>
+            <option value="WEDDING_LEAVE">결혼휴가</option>
+            <option value="MATERNITY_LEAVE">분만휴가</option>
           </select>
         </div>
         <div className="table-wrap admin-approval-table-wrap">
@@ -9989,6 +10059,8 @@ function typeFullLabel(leaveType, halfDaySlot = null) {
   if (leaveType === "GOLDKEY") return "골드키";
   if (leaveType === "CHIEF_LEAVE") return "휴가";
   if (leaveType === "SICK_LEAVE") return "병가";
+  if (leaveType === "WEDDING_LEAVE") return "결혼휴가";
+  if (leaveType === "MATERNITY_LEAVE") return "분만휴가";
   if (leaveType === "GENERAL") return "일반휴가";
   if (leaveType === "GENERAL_PRIORITY") return "일반휴가-우선순위";
   if (leaveType === "HALF_DAY") return halfDayMainLabel(halfDaySlot);

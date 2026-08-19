@@ -25,6 +25,13 @@ import {
   isLeaveDateBeforeTodayKst,
   canEditLeaveNatureStatus,
   enumerateYmdInclusive,
+  isRangeAutoApproveLeave,
+  holidayDateSet,
+  weddingLeaveDatesInRange,
+  enumerateNWeekdaysFrom,
+  maternityEndFromStart,
+  WEDDING_LEAVE_WEEKDAYS,
+  MATERNITY_LEAVE_DAYS,
 } from "../src/utils/rules.clean.js";
 import {
   computeAutoHalfDaySlot,
@@ -2510,19 +2517,23 @@ app.post("/api/ladder-results", async (req, res) => {
   }
 });
 
-const ALLOWED_LEAVE_TYPES = new Set(["GOLDKEY", "GENERAL", "GENERAL_PRIORITY", "GENERAL_NORMAL", "HALF_DAY", "SICK_LEAVE", "CHIEF_LEAVE"]);
+const ALLOWED_LEAVE_TYPES = new Set(["GOLDKEY", "GENERAL", "GENERAL_PRIORITY", "GENERAL_NORMAL", "HALF_DAY", "SICK_LEAVE", "WEDDING_LEAVE", "MATERNITY_LEAVE", "CHIEF_LEAVE"]);
 
 function leaveTypesForUserRole(role) {
   const r = String(role ?? "").trim();
-  if (r === "ANESTHESIA") return new Set(["GOLDKEY", "GENERAL", "HALF_DAY", "SICK_LEAVE"]);
-  if (r === "CHIEF") return new Set(["CHIEF_LEAVE", "SICK_LEAVE"]);
-  return new Set(["GOLDKEY", "GENERAL_PRIORITY", "GENERAL_NORMAL", "HALF_DAY", "SICK_LEAVE"]);
+  if (r === "ANESTHESIA") return new Set(["GOLDKEY", "GENERAL", "HALF_DAY", "SICK_LEAVE", "WEDDING_LEAVE", "MATERNITY_LEAVE"]);
+  if (r === "CHIEF") return new Set(["CHIEF_LEAVE", "SICK_LEAVE", "WEDDING_LEAVE", "MATERNITY_LEAVE"]);
+  return new Set(["GOLDKEY", "GENERAL_PRIORITY", "GENERAL_NORMAL", "HALF_DAY", "SICK_LEAVE", "WEDDING_LEAVE", "MATERNITY_LEAVE"]);
 }
-const ALLOWED_LEAVE_NATURE = new Set(["PERSONAL", "SICK_LEAVE", "PAID_TRAINING", "REQUIRED_TRAINING"]);
+const ALLOWED_LEAVE_NATURE = new Set(["PERSONAL", "SICK_LEAVE", "WEDDING_LEAVE", "MATERNITY_LEAVE", "PAID_TRAINING", "REQUIRED_TRAINING"]);
 
 const WEEKLY_LEAVE_MARK_TO_NATURE = {
   휴가: "PERSONAL",
   병가: "SICK_LEAVE",
+  결가: "WEDDING_LEAVE",
+  결혼휴가: "WEDDING_LEAVE",
+  분만: "MATERNITY_LEAVE",
+  분만휴가: "MATERNITY_LEAVE",
   공가: "PAID_TRAINING",
   교육: "REQUIRED_TRAINING",
   필수교육: "REQUIRED_TRAINING",
@@ -2554,8 +2565,8 @@ app.post("/api/requests", async (req, res) => {
     if (user.role !== "NURSE" && user.role !== "ANESTHESIA" && user.role !== "CHIEF") {
       return res.status(403).json({ error: "휴가 신청 권한이 없습니다." });
     }
-    if (user.role === "CHIEF" && leaveType !== "CHIEF_LEAVE" && leaveType !== "SICK_LEAVE") {
-      return res.status(400).json({ error: "주임은 휴가·병가 유형만 신청할 수 있습니다." });
+    if (user.role === "CHIEF" && leaveType !== "CHIEF_LEAVE" && !isRangeAutoApproveLeave(leaveType)) {
+      return res.status(400).json({ error: "주임은 휴가·병가·결혼휴가·분만휴가 유형만 신청할 수 있습니다." });
     }
     if (!ALLOWED_LEAVE_TYPES.has(leaveType)) {
       return res.status(400).json({ error: "지원하지 않는 휴가 구분입니다." });
@@ -2563,16 +2574,41 @@ app.post("/api/requests", async (req, res) => {
     if (!leaveTypesForUserRole(user.role).has(leaveType)) {
       return res.status(400).json({ error: "해당 역할에서 사용할 수 없는 휴가 구분입니다." });
     }
-    /** 신청 시 일정 표시: 병가는 SICK_LEAVE, 그 외는 PERSONAL (확정 후 공가/필수교육 지정 가능) */
-    const isSickLeave = String(leaveType) === "SICK_LEAVE";
-    const leaveNature = isSickLeave ? "SICK_LEAVE" : "PERSONAL";
-    const dateList = isSickLeave
-      ? enumerateYmdInclusive(leaveDate, leaveDateEnd || leaveDate)
-      : [String(leaveDate ?? "").trim().slice(0, 10)];
-    if (dateList.length === 0) {
-      return res.status(400).json({ error: "휴가일 형식이 올바르지 않거나 기간이 너무 깁니다. (최대 62일)" });
+    /** 신청 시 일정 표시: 병가·결혼·분만은 해당 유형, 그 외는 PERSONAL */
+    const isRangeLeave = isRangeAutoApproveLeave(leaveType);
+    const leaveNature = isRangeLeave ? String(leaveType) : "PERSONAL";
+    let dateList = [String(leaveDate ?? "").trim().slice(0, 10)];
+    if (isRangeLeave) {
+      const from = String(leaveDate ?? "").trim().slice(0, 10);
+      const to = String(leaveDateEnd || leaveDate ?? "").trim().slice(0, 10);
+      if (String(leaveType) === "WEDDING_LEAVE") {
+        const holidayRows = await queryAll("SELECT holiday_date, is_holiday FROM holidays WHERE is_holiday = 1");
+        const holidaySet = holidayDateSet(holidayRows);
+        const inRange = weddingLeaveDatesInRange(from, to, holidaySet);
+        dateList = inRange.length === WEDDING_LEAVE_WEEKDAYS
+          ? inRange
+          : enumerateNWeekdaysFrom(from, WEDDING_LEAVE_WEEKDAYS, holidaySet);
+        if (dateList.length !== WEDDING_LEAVE_WEEKDAYS) {
+          return res.status(400).json({ error: "결혼휴가는 공휴일·주말을 제외한 평일 5일입니다." });
+        }
+      } else if (String(leaveType) === "MATERNITY_LEAVE") {
+        const end = to >= from && enumerateYmdInclusive(from, to, MATERNITY_LEAVE_DAYS).length === MATERNITY_LEAVE_DAYS
+          ? to
+          : maternityEndFromStart(from);
+        dateList = enumerateYmdInclusive(from, end, MATERNITY_LEAVE_DAYS);
+        if (dateList.length !== MATERNITY_LEAVE_DAYS) {
+          return res.status(400).json({ error: "분만휴가는 휴일·공휴일을 포함한 90일입니다." });
+        }
+      } else {
+        dateList = enumerateYmdInclusive(from, to, 62);
+        if (dateList.length === 0) {
+          return res.status(400).json({ error: "휴가일 형식이 올바르지 않거나 기간이 너무 깁니다. (최대 62일)" });
+        }
+      }
+    } else if (!/^\d{4}-\d{2}-\d{2}$/.test(dateList[0] || "")) {
+      return res.status(400).json({ error: "휴가일 형식이 올바르지 않습니다." });
     }
-    const statusFinal = isSickLeave ? "APPROVED" : String(status ?? "APPLIED");
+    const statusFinal = isRangeLeave ? "APPROVED" : String(status ?? "APPLIED");
 
     for (const d of dateList) {
       const duplicate = await queryOne(
@@ -2634,7 +2670,7 @@ app.post("/api/requests", async (req, res) => {
           nowIso,
           memo
         );
-        if (isSickLeave) {
+        if (isRangeLeave) {
           await tx.execute(
             "INSERT INTO selections (id, leave_request_id, selected_by, selected_at) VALUES (?, ?, ?, ?)",
             `sel_${reqId}`.slice(0, 80),
@@ -2645,11 +2681,11 @@ app.post("/api/requests", async (req, res) => {
         }
         await insertLeaveRequestAuditRow(tx, {
           leaveRequestId: reqId,
-          action: isSickLeave ? "APPLY_AUTO_APPROVE" : "APPLY",
+          action: isRangeLeave ? "APPLY_AUTO_APPROVE" : "APPLY",
           fromStatus: null,
           toStatus: statusFinal,
           actorUserId: String(userId),
-          reason: isSickLeave ? "병가 자동 확정" : null,
+          reason: isRangeLeave ? `${String(leaveType)} 자동 확정` : null,
           idempotencyKey: i === 0 ? idem || null : null,
           metadataJson: {
             memo: memo || "",

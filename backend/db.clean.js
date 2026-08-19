@@ -493,6 +493,7 @@ export async function initDb() {
   await ensureYangHyunAhSickLeave20261012_16();
   await ensureAppliedSickLeavesAutoApproved();
   await ensureOhMinaSickLeave20260811_31();
+  await ensureJungSuyoungWeddingLeave20261019_23();
   return client;
 }
 
@@ -2184,5 +2185,110 @@ async function ensureOhMinaSickLeave20260811_31() {
 
   await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
   console.log("[db] ohmina_sick_leave_20260811_31_v1 applied");
+}
+
+/** 정수영 10/19~21 골드키 삭제(내역 제외) 후 10/19~23 결혼휴가 */
+async function ensureJungSuyoungWeddingLeave20261019_23() {
+  const migrationId = "jungsuyoung_wedding_leave_20261019_23_v1";
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
+  if (done) return;
+
+  const user = await queryOne("SELECT id FROM users WHERE name = ? AND role = 'NURSE' LIMIT 1", "정수영");
+  if (!user?.id) {
+    console.warn("[db] jungsuyoung_wedding_leave_20261019_23: user not found - 정수영");
+    await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+    return;
+  }
+
+  const userId = String(user.id);
+  const nowIso = new Date().toISOString();
+  const goldkeyDates = ["2026-10-19", "2026-10-20", "2026-10-21"];
+  const weddingDates = ["2026-10-19", "2026-10-20", "2026-10-21", "2026-10-22", "2026-10-23"];
+
+  for (const leaveDate of goldkeyDates) {
+    const rows = await queryAll(
+      `SELECT id FROM requests
+       WHERE user_id = ? AND leave_date = ? AND leave_type = 'GOLDKEY' AND deleted_at IS NULL`,
+      userId,
+      leaveDate
+    );
+    for (const row of rows) {
+      await execute("UPDATE requests SET deleted_at = ? WHERE id = ?", nowIso, String(row.id));
+    }
+  }
+
+  for (const leaveDate of weddingDates) {
+    const existing = await queryOne(
+      `SELECT id FROM requests
+       WHERE user_id = ? AND leave_date = ? AND deleted_at IS NULL
+       LIMIT 1`,
+      userId,
+      leaveDate
+    );
+    let reqId;
+    if (existing?.id) {
+      reqId = String(existing.id);
+      await execute(
+        `UPDATE requests
+         SET leave_type = 'WEDDING_LEAVE',
+             leave_nature = 'WEDDING_LEAVE',
+             status = 'APPROVED',
+             deleted_at = NULL,
+             memo = '정수영 결혼휴가(10/19~10/23)'
+         WHERE id = ?`,
+        reqId
+      );
+    } else {
+      reqId = `lr_wedding_jungsuyoung_${leaveDate.replaceAll("-", "")}`;
+      await execute(
+        `INSERT INTO requests (
+           id, user_id, leave_date, leave_type, leave_nature, status, requested_at, memo
+         ) VALUES (?, ?, ?, 'WEDDING_LEAVE', 'WEDDING_LEAVE', 'APPROVED', ?, ?)`,
+        reqId,
+        userId,
+        leaveDate,
+        nowIso,
+        "정수영 결혼휴가(10/19~10/23)"
+      );
+    }
+    const sel = await queryOne("SELECT id FROM selections WHERE leave_request_id = ? LIMIT 1", reqId);
+    if (!sel?.id) {
+      await execute(
+        "INSERT INTO selections (id, leave_request_id, selected_by, selected_at) VALUES (?, ?, ?, ?)",
+        `sel_wedding_jungsuyoung_${leaveDate.replaceAll("-", "")}`,
+        reqId,
+        userId,
+        nowIso
+      );
+    }
+  }
+
+  const quota = defaultGoldkeyQuotaForName("정수영");
+  const reqRows = await queryAll(
+    `SELECT id, leave_date, status
+     FROM requests
+     WHERE user_id = ? AND leave_type = 'GOLDKEY' AND deleted_at IS NULL`,
+    userId
+  );
+  const usedDates = new Set();
+  for (const row of reqRows) {
+    const status = String(row.status ?? "").trim();
+    if (status === "REJECTED") continue;
+    if (status === "APPLIED" || status === "SELECTED" || status === "APPROVED" || status === "CANCELLED") {
+      const leaveDate = String(row.leave_date ?? "").trim().slice(0, 10);
+      if (leaveDate) usedDates.add(leaveDate);
+    }
+  }
+  const used = usedDates.size;
+  const remaining = Math.max(0, quota - used);
+  await execute(
+    `UPDATE goldkeys SET used_count = ?, remaining_count = ? WHERE user_id = ?`,
+    used,
+    remaining,
+    userId
+  );
+
+  await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+  console.log("[db] jungsuyoung_wedding_leave_20261019_23_v1 applied");
 }
 

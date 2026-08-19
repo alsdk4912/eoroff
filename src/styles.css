@@ -2792,13 +2792,28 @@ tbody tr:last-child td {
   border-color: #c084fc;
 }
 
-/* 병가: 골드키(빨강)와 구분 — 톤다운 하늘색 파스텔 */
+/* 병가: 톤다운 하늘색 파스텔 */
 .type-sick_leave {
   background: #f0f7fc;
   color: #4a6b82;
   border-color: #b8d4e8;
 }
 
+/* 결혼휴가: 피치(골드키 빨강·우선 노랑과 구분) */
+.type-wedding_leave {
+  background: #fcefe4;
+  color: #8a4b2e;
+  border-color: #e8c4a8;
+}
+
+/* 분만휴가: 세이지 민트(후순위 초록·병가 하늘과 구분) */
+.type-maternity_leave {
+  background: #e4f3ec;
+  color: #3d6b55;
+  border-color: #b5d9c6;
+}
+
+.calendar-span-bar,
 .calendar-sick-bar {
   display: block;
   height: 14px;
@@ -2808,27 +2823,45 @@ tbody tr:last-child td {
   font-size: 9px;
   font-weight: 700;
   line-height: 14px;
-  color: #3d5f78;
-  background: #cfe6f4;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
+.calendar-span-bar--sick,
+.calendar-sick-bar {
+  color: #3d5f78;
+  background: #cfe6f4;
+}
+
+.calendar-span-bar--wedding {
+  color: #8a4b2e;
+  background: #f3d5be;
+}
+
+.calendar-span-bar--maternity {
+  color: #3d6b55;
+  background: #c5e4d4;
+}
+
+.calendar-span-bar--start,
 .calendar-sick-bar--start {
   margin-left: 1px;
   border-radius: 7px 0 0 7px;
 }
 
+.calendar-span-bar--end,
 .calendar-sick-bar--end {
   margin-right: 1px;
   border-radius: 0 7px 7px 0;
 }
 
+.calendar-span-bar--mid,
 .calendar-sick-bar--mid {
   border-radius: 0;
 }
 
+.calendar-span-bar--single,
 .calendar-sick-bar--single {
   margin-left: 1px;
   margin-right: 1px;
@@ -2846,6 +2879,20 @@ tbody tr:last-child td {
   background: #dceef8 !important;
   color: #3d5f78 !important;
   border-color: #a6c9de !important;
+}
+
+.calendar-day-chip.selected-item.type-wedding_leave,
+.leave-type-pill.selected-item.type-wedding_leave {
+  background: #f3d5be !important;
+  color: #8a4b2e !important;
+  border-color: #e0b089 !important;
+}
+
+.calendar-day-chip.selected-item.type-maternity_leave,
+.leave-type-pill.selected-item.type-maternity_leave {
+  background: #c5e4d4 !important;
+  color: #3d6b55 !important;
+  border-color: #8fc9ab !important;
 }
 
 /* ----- Calendar ----- */
@@ -4749,6 +4796,20 @@ button.ym-wheel-check:hover {
   background: #dceef8 !important;
   color: #3d5f78 !important;
   border-color: #a6c9de !important;
+}
+
+.selected-item.type-wedding_leave,
+.leave-type-pill.selected-item.type-wedding_leave {
+  background: #f3d5be !important;
+  color: #8a4b2e !important;
+  border-color: #e0b089 !important;
+}
+
+.selected-item.type-maternity_leave,
+.leave-type-pill.selected-item.type-maternity_leave {
+  background: #c5e4d4 !important;
+  color: #3d6b55 !important;
+  border-color: #8fc9ab !important;
 }
 
 .selected-item.request-dimmed-by-approval {

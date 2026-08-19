@@ -5,25 +5,43 @@ const LEAVE_TYPE_LABEL = {
   GENERAL_NORMAL: "일반휴가-후순위",
   HALF_DAY: "반차",
   SICK_LEAVE: "병가",
+  WEDDING_LEAVE: "결혼휴가",
+  MATERNITY_LEAVE: "분만휴가",
   CHIEF_LEAVE: "휴가",
 };
+
+const RANGE_AUTO_APPROVE_TYPES = new Set(["SICK_LEAVE", "WEDDING_LEAVE", "MATERNITY_LEAVE"]);
+export const WEDDING_LEAVE_WEEKDAYS = 5;
+export const MATERNITY_LEAVE_DAYS = 90;
 
 /** 신청 화면에 노출할 휴가 구분(역할별) */
 export function leaveTypesForApplicantRole(role) {
   const r = String(role ?? "").trim();
-  if (r === "ANESTHESIA") return ["GOLDKEY", "GENERAL", "HALF_DAY", "SICK_LEAVE"];
-  if (r === "CHIEF") return ["CHIEF_LEAVE", "SICK_LEAVE"];
-  return ["GOLDKEY", "GENERAL_PRIORITY", "GENERAL_NORMAL", "HALF_DAY", "SICK_LEAVE"];
+  if (r === "ANESTHESIA") return ["GOLDKEY", "GENERAL", "HALF_DAY", "SICK_LEAVE", "WEDDING_LEAVE", "MATERNITY_LEAVE"];
+  if (r === "CHIEF") return ["CHIEF_LEAVE", "SICK_LEAVE", "WEDDING_LEAVE", "MATERNITY_LEAVE"];
+  return ["GOLDKEY", "GENERAL_PRIORITY", "GENERAL_NORMAL", "HALF_DAY", "SICK_LEAVE", "WEDDING_LEAVE", "MATERNITY_LEAVE"];
 }
 
 export function isLeaveTypeAllowedForRole(role, leaveType) {
   return leaveTypesForApplicantRole(role).includes(String(leaveType ?? "").trim());
 }
 
+export function isRangeAutoApproveLeave(leaveType) {
+  return RANGE_AUTO_APPROVE_TYPES.has(String(leaveType ?? "").trim());
+}
+
 const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** 시작일~종료일(포함) YYYY-MM-DD 목록. 역전·형식 오류면 빈 배열, 상한 62일 */
-export function enumerateYmdInclusive(fromYmd, toYmd, maxDays = 62) {
+export function addCalendarDaysYmd(ymd, delta) {
+  const s = String(ymd ?? "").trim().slice(0, 10);
+  if (!YMD_RE.test(s)) return "";
+  const [y, m, d] = s.split("-").map(Number);
+  const next = new Date(y, m - 1, d + Number(delta || 0));
+  return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
+}
+
+/** 시작일~종료일(포함) YYYY-MM-DD 목록. 역전·형식 오류면 빈 배열 */
+export function enumerateYmdInclusive(fromYmd, toYmd, maxDays = 120) {
   const from = String(fromYmd ?? "").trim().slice(0, 10);
   const to = String(toYmd ?? from).trim().slice(0, 10);
   if (!YMD_RE.test(from) || !YMD_RE.test(to) || to < from) return [];
@@ -31,17 +49,73 @@ export function enumerateYmdInclusive(fromYmd, toYmd, maxDays = 62) {
   let cur = from;
   while (cur <= to && out.length < maxDays) {
     out.push(cur);
-    const [y, m, d] = cur.split("-").map(Number);
-    const next = new Date(y, m - 1, d + 1);
-    cur = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
+    cur = addCalendarDaysYmd(cur, 1);
   }
   if (cur <= to) return [];
   return out;
 }
 
+export function holidayDateSet(holidaysCache) {
+  const arr = Array.isArray(holidaysCache) ? holidaysCache : [];
+  const set = new Set();
+  for (const h of arr) {
+    const flag = h?.isHoliday ?? h?.is_holiday;
+    if (!flag) continue;
+    const d = String(h?.holidayDate ?? h?.holiday_date ?? "").trim().slice(0, 10);
+    if (YMD_RE.test(d)) set.add(d);
+  }
+  return set;
+}
+
+export function isWeekendYmd(ymd) {
+  const s = String(ymd ?? "").trim().slice(0, 10);
+  if (!YMD_RE.test(s)) return false;
+  const [y, m, d] = s.split("-").map(Number);
+  const w = new Date(y, m - 1, d).getDay();
+  return w === 0 || w === 6;
+}
+
+export function isNonWorkingYmd(ymd, holidaySet) {
+  const s = String(ymd ?? "").trim().slice(0, 10);
+  if (!YMD_RE.test(s)) return true;
+  if (isWeekendYmd(s)) return true;
+  return holidaySet instanceof Set ? holidaySet.has(s) : false;
+}
+
+/** 시작일부터 평일(주말·공휴일 제외) n일 */
+export function enumerateNWeekdaysFrom(startYmd, n, holidaySet) {
+  const start = String(startYmd ?? "").trim().slice(0, 10);
+  const count = Math.max(0, Number(n) || 0);
+  if (!YMD_RE.test(start) || count === 0) return [];
+  const out = [];
+  let cur = start;
+  let guard = 0;
+  while (out.length < count && guard < 60) {
+    if (!isNonWorkingYmd(cur, holidaySet)) out.push(cur);
+    cur = addCalendarDaysYmd(cur, 1);
+    guard += 1;
+  }
+  return out.length === count ? out : [];
+}
+
+export function weddingLeaveDatesInRange(fromYmd, toYmd, holidaySet) {
+  return enumerateYmdInclusive(fromYmd, toYmd, 21).filter((d) => !isNonWorkingYmd(d, holidaySet));
+}
+
+export function weddingEndFromStart(startYmd, holidaySet) {
+  const days = enumerateNWeekdaysFrom(startYmd, WEDDING_LEAVE_WEEKDAYS, holidaySet);
+  return days[days.length - 1] || "";
+}
+
+export function maternityEndFromStart(startYmd) {
+  return addCalendarDaysYmd(startYmd, MATERNITY_LEAVE_DAYS - 1);
+}
+
 const LEAVE_NATURE_LABEL = {
   PERSONAL: "개인휴가",
   SICK_LEAVE: "병가",
+  WEDDING_LEAVE: "결혼휴가",
+  MATERNITY_LEAVE: "분만휴가",
   PAID_TRAINING: "보수교육공가",
   REQUIRED_TRAINING: "필수교육",
 };
@@ -118,21 +192,23 @@ export function isLeaveDateBeforeTodayKst(leaveDateYmd) {
   return head < today;
 }
 
-/** 캘린더·목록 표기 우선: 골드키 → 병가 → 일반-우선 → 일반-후순위 → 반차 등 */
+/** 캘린더·목록 표기 우선: 골드키 → 병가 → 결혼·분만 → 일반-우선 → 일반-후순위 → 반차 등 */
 export function leaveTypeOrder(type) {
   if (type === "GOLDKEY") return 1;
   if (type === "SICK_LEAVE") return 2;
-  if (type === "GENERAL" || type === "GENERAL_PRIORITY") return 3;
-  if (type === "GENERAL_NORMAL") return 4;
-  if (type === "HALF_DAY") return 5;
-  if (type === "CHIEF_LEAVE") return 6;
+  if (type === "WEDDING_LEAVE") return 3;
+  if (type === "MATERNITY_LEAVE") return 4;
+  if (type === "GENERAL" || type === "GENERAL_PRIORITY") return 5;
+  if (type === "GENERAL_NORMAL") return 6;
+  if (type === "HALF_DAY") return 7;
+  if (type === "CHIEF_LEAVE") return 8;
   return 99;
 }
 
-/** 정렬용 유형 — leave_nature 병가도 병가로 취급 */
+/** 정렬용 유형 — leave_nature 병가·결혼·분반도 해당 유형으로 취급 */
 export function leaveSortType(requestRow) {
   const nature = String(requestRow?.leaveNature ?? requestRow?.leave_nature ?? "").trim();
-  if (nature === "SICK_LEAVE") return "SICK_LEAVE";
+  if (nature === "SICK_LEAVE" || nature === "WEDDING_LEAVE" || nature === "MATERNITY_LEAVE") return nature;
   return String(requestRow?.leaveType ?? requestRow?.leave_type ?? "").trim();
 }
 
@@ -410,8 +486,8 @@ export function validateRequest({
     return "";
   }
 
-  /** 병가: 기존 휴가 창·월 제한 없이 아무 때나 신청 가능 */
-  if (leaveType === "SICK_LEAVE") {
+  /** 병가·결혼휴가·분만휴가: 기존 휴가 창·월 제한 없이 아무 때나 신청 가능 */
+  if (leaveType === "SICK_LEAVE" || leaveType === "WEDDING_LEAVE" || leaveType === "MATERNITY_LEAVE") {
     return "";
   }
 
@@ -514,13 +590,6 @@ function ymdAddDays(ymd, deltaDays) {
   if (!p) return "";
   const d = new Date(Date.UTC(p.year, p.month - 1, p.day + Number(deltaDays || 0)));
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
-}
-
-function isWeekendYmd(ymd) {
-  const p = parseStrictYmd(ymd);
-  if (!p) return false;
-  const dow = new Date(Date.UTC(p.year, p.month - 1, p.day)).getUTCDay();
-  return dow === 0 || dow === 6;
 }
 
 /** 휴가일 직전 영업일(주말 제외). 6/29(월) → 6/26(금) */

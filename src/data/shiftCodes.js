@@ -38,13 +38,15 @@ export const NURSE_SHIFT_OPTIONS = [
   "9-5",
   "휴가",
   "병가",
+  "결가",
+  "분만",
   "공가",
   "반차",
   "교육",
 ];
 
 /** 마취과 간호사 */
-export const ANESTHESIA_SHIFT_OPTIONS = ["", "opd", "R1", "R3", "10시", "병가"];
+export const ANESTHESIA_SHIFT_OPTIONS = ["", "opd", "R1", "R3", "10시", "병가", "결가", "분만"];
 
 /** 마취과 번표 표기 통일 (레거시 r1/r3/D0 호환) */
 export function normalizeAnesthesiaShiftCode(value) {
