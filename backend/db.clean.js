@@ -12,6 +12,7 @@ import {
   OR_DUTY_ROTATION_EFFECTIVE_FROM,
 } from "../src/utils/holidayDutyPlan.clean.js";
 import { computeAutoHalfDaySlot } from "../src/utils/halfDayLeave.clean.js";
+import { enumerateYmdInclusive } from "../src/utils/rules.clean.js";
 
 const EMPLOYEE_NO_BY_NAME = {
   양현아: "0534411",
@@ -491,6 +492,7 @@ export async function initDb() {
   await ensureChiefKangMyunghoFrom20260625();
   await ensureYangHyunAhSickLeave20261012_16();
   await ensureAppliedSickLeavesAutoApproved();
+  await ensureOhMinaSickLeave20260811_31();
   return client;
 }
 
@@ -2100,5 +2102,87 @@ async function ensureAppliedSickLeavesAutoApproved() {
 
   await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
   console.log(`[db] sick_leave_auto_approve_v1 applied (${rows.length} rows)`);
+}
+
+/** 오민아 병가 2026-08-11 ~ 2026-08-31 */
+async function ensureOhMinaSickLeave20260811_31() {
+  const migrationId = "ohmina_sick_leave_20260811_31_v1";
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
+  if (done) return;
+
+  const user = await queryOne("SELECT id FROM users WHERE name = ? AND role = 'NURSE' LIMIT 1", "오민아");
+  if (!user?.id) {
+    console.warn("[db] ohmina_sick_leave_20260811_31: user not found - 오민아");
+    await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+    return;
+  }
+
+  const userId = String(user.id);
+  const dates = enumerateYmdInclusive("2026-08-11", "2026-08-31");
+  const nowIso = new Date().toISOString();
+
+  const extras = await queryAll(
+    `SELECT id FROM requests
+     WHERE user_id = ?
+       AND leave_type = 'SICK_LEAVE'
+       AND deleted_at IS NULL
+       AND leave_date LIKE '2026-08-%'
+       AND (leave_date < '2026-08-11' OR leave_date > '2026-08-31')`,
+    userId
+  );
+  for (const row of extras) {
+    await execute("UPDATE requests SET deleted_at = ? WHERE id = ?", nowIso, String(row.id));
+  }
+
+  for (const leaveDate of dates) {
+    const existing = await queryOne(
+      `SELECT id, deleted_at
+       FROM requests
+       WHERE user_id = ? AND leave_date = ?
+       ORDER BY CASE WHEN deleted_at IS NULL THEN 0 ELSE 1 END, requested_at DESC
+       LIMIT 1`,
+      userId,
+      leaveDate
+    );
+    let reqId;
+    if (existing?.id) {
+      reqId = String(existing.id);
+      await execute(
+        `UPDATE requests
+         SET leave_type = 'SICK_LEAVE',
+             leave_nature = 'SICK_LEAVE',
+             status = 'APPROVED',
+             deleted_at = NULL,
+             memo = '오민아 병가(8/11~8/31)'
+         WHERE id = ?`,
+        reqId
+      );
+    } else {
+      reqId = `lr_sick_ohmina_${leaveDate.replaceAll("-", "")}`;
+      await execute(
+        `INSERT INTO requests (
+           id, user_id, leave_date, leave_type, leave_nature, status, requested_at, memo
+         ) VALUES (?, ?, ?, 'SICK_LEAVE', 'SICK_LEAVE', 'APPROVED', ?, ?)`,
+        reqId,
+        userId,
+        leaveDate,
+        nowIso,
+        "오민아 병가(8/11~8/31)"
+      );
+    }
+    const sel = await queryOne("SELECT id FROM selections WHERE leave_request_id = ? LIMIT 1", reqId);
+    if (!sel?.id) {
+      await execute(
+        "INSERT INTO selections (id, leave_request_id, selected_by, selected_at) VALUES (?, ?, ?, ?)",
+        `sel_sick_ohmina_${leaveDate.replaceAll("-", "")}`,
+        reqId,
+        userId,
+        nowIso
+      );
+    }
+  }
+
+  await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+  console.log("[db] ohmina_sick_leave_20260811_31_v1 applied");
 }
 
