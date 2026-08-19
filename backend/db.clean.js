@@ -494,6 +494,7 @@ export async function initDb() {
   await ensureAppliedSickLeavesAutoApproved();
   await ensureOhMinaSickLeave20260811_31();
   await ensureJungSuyoungWeddingLeave20261019_23();
+  await ensureYoonJiminSickLeave20260812_18();
   return client;
 }
 
@@ -2290,5 +2291,98 @@ async function ensureJungSuyoungWeddingLeave20261019_23() {
 
   await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
   console.log("[db] jungsuyoung_wedding_leave_20261019_23_v1 applied");
+}
+
+/** 윤지민 병가 2026-08-12 ~ 2026-08-18 */
+async function ensureYoonJiminSickLeave20260812_18() {
+  const migrationId = "yoonjimin_sick_leave_20260812_18_v1";
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
+  if (done) return;
+
+  const user = await queryOne("SELECT id FROM users WHERE name = ? LIMIT 1", "윤지민");
+  if (!user?.id) {
+    console.warn("[db] yoonjimin_sick_leave_20260812_18: user not found - 윤지민");
+    await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+    return;
+  }
+
+  const userId = String(user.id);
+  const dates = enumerateYmdInclusive("2026-08-12", "2026-08-18");
+  const nowIso = new Date().toISOString();
+
+  for (const leaveDate of dates) {
+    const existing = await queryOne(
+      `SELECT id, leave_type
+       FROM requests
+       WHERE user_id = ? AND leave_date = ? AND deleted_at IS NULL
+       ORDER BY requested_at DESC
+       LIMIT 1`,
+      userId,
+      leaveDate
+    );
+    let reqId;
+    if (existing?.id) {
+      reqId = String(existing.id);
+      await execute(
+        `UPDATE requests
+         SET leave_type = 'SICK_LEAVE',
+             leave_nature = 'SICK_LEAVE',
+             status = 'APPROVED',
+             deleted_at = NULL,
+             memo = '윤지민 병가(8/12~8/18)'
+         WHERE id = ?`,
+        reqId
+      );
+    } else {
+      reqId = `lr_sick_yoonjimin_${leaveDate.replaceAll("-", "")}`;
+      await execute(
+        `INSERT INTO requests (
+           id, user_id, leave_date, leave_type, leave_nature, status, requested_at, memo
+         ) VALUES (?, ?, ?, 'SICK_LEAVE', 'SICK_LEAVE', 'APPROVED', ?, ?)`,
+        reqId,
+        userId,
+        leaveDate,
+        nowIso,
+        "윤지민 병가(8/12~8/18)"
+      );
+    }
+    const sel = await queryOne("SELECT id FROM selections WHERE leave_request_id = ? LIMIT 1", reqId);
+    if (!sel?.id) {
+      await execute(
+        "INSERT INTO selections (id, leave_request_id, selected_by, selected_at) VALUES (?, ?, ?, ?)",
+        `sel_sick_yoonjimin_${leaveDate.replaceAll("-", "")}`,
+        reqId,
+        userId,
+        nowIso
+      );
+    }
+  }
+
+  const quota = defaultGoldkeyQuotaForName("윤지민");
+  const reqRows = await queryAll(
+    `SELECT leave_date, status
+     FROM requests
+     WHERE user_id = ? AND leave_type = 'GOLDKEY' AND deleted_at IS NULL`,
+    userId
+  );
+  const usedDates = new Set();
+  for (const row of reqRows) {
+    const status = String(row.status ?? "").trim();
+    if (status === "REJECTED") continue;
+    if (status === "APPLIED" || status === "SELECTED" || status === "APPROVED" || status === "CANCELLED") {
+      const leaveDate = String(row.leave_date ?? "").trim().slice(0, 10);
+      if (leaveDate) usedDates.add(leaveDate);
+    }
+  }
+  const used = usedDates.size;
+  await execute(
+    `UPDATE goldkeys SET used_count = ?, remaining_count = ? WHERE user_id = ?`,
+    used,
+    Math.max(0, quota - used),
+    userId
+  );
+
+  await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+  console.log("[db] yoonjimin_sick_leave_20260812_18_v1 applied");
 }
 
