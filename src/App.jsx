@@ -1243,8 +1243,12 @@ function App() {
       applyBootstrapPayload(data);
       setServerMode(true);
     } catch {
-      setServerMode(false);
+      /* 일시적 bootstrap 실패로 serverMode를 끄지 않음 — 대체 저장 등 API 재시도 가능 */
     }
+  }
+
+  function canPersistSubstituteViaApi() {
+    return isApiConfigured() && Boolean(auth?.userId);
   }
 
   async function refreshServerData() {
@@ -2144,7 +2148,7 @@ function App() {
       }
       subItems.push(it);
     }
-    if (subItems.length > 0 && !serverMode) {
+    if (subItems.length > 0 && !canPersistSubstituteViaApi()) {
       window.alert?.("서버 연결 상태에서만 대체 근무를 함께 저장할 수 있습니다. 잠시 후 다시 시도해 주세요.");
       return;
     }
@@ -2160,17 +2164,19 @@ function App() {
       if (subItems.length === 0) return rest;
       return [...rest, ...subItems];
     });
-    if (serverMode) {
+    if (canPersistSubstituteViaApi()) {
       try {
         await api.selectRequest(requestId, payload);
-        await api.upsertSubstituteAssignments(requestId, {
-          actorUserId: auth.userId,
-          items: subItems.map((it) => ({
-            id: it.id,
-            substituteUserId: it.substituteUserId,
-            shiftCode: it.shiftCode,
-          })),
-        });
+        if (subItems.length > 0) {
+          await api.upsertSubstituteAssignments(requestId, {
+            actorUserId: auth.userId,
+            items: subItems.map((it) => ({
+              id: it.id,
+              substituteUserId: it.substituteUserId,
+              shiftCode: it.shiftCode,
+            })),
+          });
+        }
         await bootstrap();
         if (target) {
           createNotificationForNurses(`${target.leaveDate} 휴가자 발표`, {
@@ -2218,7 +2224,7 @@ function App() {
       window.alert?.("확정된 신청만 대체 근무를 저장할 수 있습니다.");
       return;
     }
-    if (!serverMode) {
+    if (!canPersistSubstituteViaApi()) {
       window.alert?.("서버 연결 상태에서만 대체 근무를 저장할 수 있습니다. 잠시 후 다시 시도해 주세요.");
       return;
     }
@@ -2319,7 +2325,7 @@ function App() {
   async function saveStandaloneSubstituteAssignments(leaveDate, items, staffRole = "NURSE") {
     const ld = String(leaveDate ?? "").slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(ld)) return;
-    if (!serverMode) {
+    if (!canPersistSubstituteViaApi()) {
       window.alert?.("서버 연결 상태에서만 대체 근무를 저장할 수 있습니다. 잠시 후 다시 시도해 주세요.");
       return;
     }
