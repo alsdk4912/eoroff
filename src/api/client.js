@@ -1,4 +1,11 @@
-export { api, isApiConfigured, pingApiHealth, getPublicApiBaseUrl } from "./client.clean.js";
+export {
+  api,
+  isApiConfigured,
+  pingApiHealth,
+  checkApiHealth,
+  describeApiHealthFailure,
+  getPublicApiBaseUrl,
+} from "./client.clean.js";
 /*
 const BASE_URL = `${import.meta.env.VITE_API_BASE_URL || "http://localhost:4010"}/api`;
 

@@ -8,7 +8,15 @@
 - `main` 푸시 후 Actions **Deploy GitHub Pages** 가 초록색인지 확인
 - 배포 후 로그인 화면 **빌드 7글자**가 최근 커밋 SHA와 맞는지 확인
 
-## 2. Render (백엔드 API) — **휴가 신청 내역이 사라지지 않게 하려면**
+## 2. 백엔드 API
+
+### 권장(Render 대역폭 Suspend 시): Oracle Always Free
+
+- 가이드: **[ORACLE_FREE.md](./ORACLE_FREE.md)** (`deploy/oracle/` Docker + Caddy)  
+- DB는 계속 **Turso** — API만 Oracle VM으로 옮김.  
+- GitHub Secret `VITE_API_BASE_URL` = `https://내-도메인` (끝 `/` 없음)
+
+### Render (참고) — **휴가 신청 내역이 사라지지 않게 하려면**
 
 앱은 **`@libsql/client`** 로 DB에 붙습니다.
 

@@ -39,7 +39,7 @@ import {
   isGeneralNormalLadderTimeLocked,
   generalNormalLadderLockedMessage,
 } from "./utils/rules";
-import { api, isApiConfigured, pingApiHealth } from "./api/client";
+import { api, isApiConfigured, pingApiHealth, checkApiHealth, describeApiHealthFailure } from "./api/client";
 import EoroffLoginLogo from "./components/EoroffLoginLogo.jsx";
 import { defaultGoldkeyQuotaForName } from "./data/goldkeyQuotas.js";
 import {
@@ -1097,18 +1097,17 @@ function App() {
   }
 
   useEffect(() => {
-    if (isLoggedIn) return;
     if (!isApiConfigured()) {
       setApiReachable("no");
-      setDataHydrated(true);
+      if (!isLoggedIn) setDataHydrated(true);
       return;
     }
     let cancelled = false;
     setApiReachable("checking");
     void (async () => {
-      const ok = await pingApiHealth();
-      if (!cancelled) setApiReachable(ok ? "yes" : "no");
-      if (!cancelled) setDataHydrated(true);
+      const check = await checkApiHealth();
+      if (!cancelled) setApiReachable(check.ok ? "yes" : "no");
+      if (!cancelled && !isLoggedIn) setDataHydrated(true);
     })();
     return () => {
       cancelled = true;
@@ -1249,6 +1248,21 @@ function App() {
 
   function canPersistSubstituteViaApi() {
     return isApiConfigured() && Boolean(auth?.userId);
+  }
+
+  async function ensureSubstituteApiReachable() {
+    if (!canPersistSubstituteViaApi()) {
+      window.alert?.("서버 연결 상태에서만 대체 근무를 저장할 수 있습니다. 잠시 후 다시 시도해 주세요.");
+      return false;
+    }
+    const check = await checkApiHealth({ timeoutMs: 12000 });
+    if (!check.ok) {
+      setApiReachable("no");
+      window.alert?.(describeApiHealthFailure(check));
+      return false;
+    }
+    setApiReachable("yes");
+    return true;
   }
 
   async function refreshServerData() {
@@ -2148,8 +2162,7 @@ function App() {
       }
       subItems.push(it);
     }
-    if (subItems.length > 0 && !canPersistSubstituteViaApi()) {
-      window.alert?.("서버 연결 상태에서만 대체 근무를 함께 저장할 수 있습니다. 잠시 후 다시 시도해 주세요.");
+    if (subItems.length > 0 && !(await ensureSubstituteApiReachable())) {
       return;
     }
     const payload = {
@@ -2224,8 +2237,7 @@ function App() {
       window.alert?.("확정된 신청만 대체 근무를 저장할 수 있습니다.");
       return;
     }
-    if (!canPersistSubstituteViaApi()) {
-      window.alert?.("서버 연결 상태에서만 대체 근무를 저장할 수 있습니다. 잠시 후 다시 시도해 주세요.");
+    if (!(await ensureSubstituteApiReachable())) {
       return;
     }
     const rawItems = Array.isArray(substituteItems)
@@ -2325,8 +2337,7 @@ function App() {
   async function saveStandaloneSubstituteAssignments(leaveDate, items, staffRole = "NURSE") {
     const ld = String(leaveDate ?? "").slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(ld)) return;
-    if (!canPersistSubstituteViaApi()) {
-      window.alert?.("서버 연결 상태에서만 대체 근무를 저장할 수 있습니다. 잠시 후 다시 시도해 주세요.");
+    if (!(await ensureSubstituteApiReachable())) {
       return;
     }
     const requestId = standaloneSubstituteRequestId(ld, staffRole);
@@ -2900,7 +2911,7 @@ function App() {
         apiReachable={apiReachable}
         onRetryApiCheck={() => {
           setApiReachable("checking");
-          void pingApiHealth().then((ok) => setApiReachable(ok ? "yes" : "no"));
+          void checkApiHealth().then((check) => setApiReachable(check.ok ? "yes" : "no"));
         }}
       />
     );
@@ -2978,6 +2989,25 @@ function App() {
           </div>
         </div>
       </header>
+
+      {isApiConfigured() && apiReachable === "no" ? (
+        <div className="app-api-warning" role="status">
+          <span>
+            데이터 서버에 연결되지 않아 저장·동기화가 되지 않습니다. Render에서 eoroff-api를 Resume한 뒤 다시 시도해
+            주세요.
+          </span>
+          <button
+            type="button"
+            className="app-api-warning__retry"
+            onClick={() => {
+              setApiReachable("checking");
+              void checkApiHealth().then((check) => setApiReachable(check.ok ? "yes" : "no"));
+            }}
+          >
+            다시 확인
+          </button>
+        </div>
+      ) : null}
 
       <main className="app-main">
       <Routes>

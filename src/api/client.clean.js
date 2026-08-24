@@ -41,21 +41,49 @@ export function getPublicApiBaseUrl() {
   return getResolvedApiBase();
 }
 
-/** 로그인 화면·앱 기동 시 서버 생존 확인 */
-export async function pingApiHealth() {
-  if (API_ROOT === null) return false;
+/** @returns {Promise<{ ok: boolean, reason?: string, status?: number }>} */
+export async function checkApiHealth(options = {}) {
+  const timeoutMs = options.timeoutMs ?? 8000;
+  if (API_ROOT === null) return { ok: false, reason: "not_configured" };
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 8000);
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const res = await fetch(`${API_ROOT}/health`, { cache: "no-store", signal: ctrl.signal });
-    if (!res.ok) return false;
+    if (res.headers.get("x-render-routing") === "suspend-by-user") {
+      return { ok: false, reason: "suspended", status: res.status };
+    }
+    if (!res.ok) {
+      return { ok: false, reason: res.status === 503 ? "unavailable" : "http_error", status: res.status };
+    }
     const data = await res.json();
-    return Boolean(data?.ok);
-  } catch {
-    return false;
+    return { ok: Boolean(data?.ok), reason: data?.ok ? undefined : "unhealthy" };
+  } catch (e) {
+    return { ok: false, reason: e?.name === "AbortError" ? "timeout" : "network" };
   } finally {
     clearTimeout(timer);
   }
+}
+
+export function describeApiHealthFailure(check) {
+  if (check?.reason === "suspended") {
+    return "API 서버(eoroff-api)가 Render에서 중지된 상태입니다. dashboard.render.com에서 Resume 후 다시 시도해 주세요.";
+  }
+  if (check?.reason === "timeout") {
+    return "API 서버 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.";
+  }
+  if (check?.reason === "network") {
+    return "API 서버에 연결할 수 없습니다. 네트워크를 확인해 주세요.";
+  }
+  if (check?.reason === "unavailable" || check?.status === 503) {
+    return "API 서버를 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.";
+  }
+  return "API 서버에 연결할 수 없습니다.";
+}
+
+/** 로그인 화면·앱 기동 시 서버 생존 확인 */
+export async function pingApiHealth() {
+  const check = await checkApiHealth();
+  return check.ok;
 }
 
 async function requestJson(path, options = {}) {
@@ -86,12 +114,15 @@ async function requestJson(path, options = {}) {
   }
 
   if (!res.ok) {
+    if (res.status === 503 && res.headers.get("x-render-routing") === "suspend-by-user") {
+      throw new Error(describeApiHealthFailure({ reason: "suspended" }));
+    }
     let message = `HTTP ${res.status}`;
     try {
       const data = await res.json();
       message = data?.error || message;
     } catch {
-      // ignore
+      if (res.status === 503) message = describeApiHealthFailure({ reason: "unavailable", status: 503 });
     }
     throw new Error(message);
   }
@@ -190,6 +221,7 @@ export const api = {
     requestJson(`/substitute-assignments/${encodeURIComponent(String(requestId ?? ""))}/upsert`, {
       method: "POST",
       body: JSON.stringify(payload),
+      timeoutMs: 45000,
     }),
   acknowledgeSubstituteAssignment: (id, payload) =>
     requestJson(`/substitute-assignments/${encodeURIComponent(String(id ?? ""))}/acknowledge`, {

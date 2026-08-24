@@ -1,0 +1,6 @@
+# DOMAIN 환경변수 = 공개 HTTPS 호스트 (예: eoroff-api.duckdns.org)
+# Let's Encrypt 인증서를 자동 발급합니다. 80·443 인바운드가 열려 있어야 합니다.
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy api:4015
+}

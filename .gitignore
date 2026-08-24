@@ -4,6 +4,7 @@ dist/
 .env.*
 !.env.example
 !.env.development.example
+!deploy/oracle/.env.example
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm

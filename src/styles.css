@@ -1779,6 +1779,31 @@ button.calendar-nav-btn:hover {
   border: 1px solid var(--separator);
 }
 
+.app-api-warning {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 0;
+  padding: 0.55rem 0.85rem;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  color: #b45309;
+  background: #fffbeb;
+  border-bottom: 1px solid rgba(180, 83, 9, 0.15);
+}
+
+.app-api-warning__retry {
+  flex-shrink: 0;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.78rem;
+  color: #b45309;
+  background: transparent;
+  border: 1px solid rgba(180, 83, 9, 0.35);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
 .login-retry-api {
   display: block;
   margin: 8px auto 0;
