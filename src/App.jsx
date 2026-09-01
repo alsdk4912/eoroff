@@ -156,6 +156,7 @@ import {
   userById,
   isStaffLeaveRole,
   isConfirmedLeaveStatus,
+  isRangeAutoApproveLeaveRow,
 } from "./utils/leaveVisibility.js";
 import AdminDayDeptPanel from "./components/AdminDayDeptPanel.jsx";
 import { NoticeImageGallery, NoticeImagePicker } from "./components/NoticeImageAttachments.jsx";

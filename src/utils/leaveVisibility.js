@@ -38,6 +38,20 @@ export function isConfirmedLeaveStatus(status) {
   return st === "SELECTED" || st === "APPROVED";
 }
 
+/** 병가·결혼·분만 — 즉시 확정이지만 일반휴가 선정·캘린더 신청 표시와 별도 */
+export function isRangeAutoApproveLeaveRow(row) {
+  const t = String(row?.leaveType ?? "").trim();
+  const n = String(row?.leaveNature ?? "").trim();
+  return (
+    t === "SICK_LEAVE" ||
+    t === "WEDDING_LEAVE" ||
+    t === "MATERNITY_LEAVE" ||
+    n === "SICK_LEAVE" ||
+    n === "WEDDING_LEAVE" ||
+    n === "MATERNITY_LEAVE"
+  );
+}
+
 /** 로그인 역할이 담당하는 휴가 신청·확정 부서 (관리자는 수술실·마취·주임에 대응) */
 function viewerOwnDepartmentRoles(viewerRole) {
   if (viewerRole === "ANESTHESIA" || viewerRole === "ADMIN2") return new Set(["ANESTHESIA"]);
@@ -64,15 +78,23 @@ function ownDeptRowsVisibleOnCalendarGrid(dayRows, leaveDateYmd) {
 
   const ld = String(leaveDateYmd ?? dayRows[0]?.leaveDate ?? "").slice(0, 10);
   const confirmed = dayRows.filter((r) => isConfirmedLeaveStatus(r.status));
-  if (confirmed.length > 0) return confirmed;
+  const rangeAutoConfirmed = confirmed.filter((r) => isRangeAutoApproveLeaveRow(r));
+  const selectionConfirmed = confirmed.filter((r) => !isRangeAutoApproveLeaveRow(r));
 
-  if (isLeaveDateBeforeTodayKst(ld)) return [];
+  if (selectionConfirmed.length > 0) {
+    return [...selectionConfirmed, ...rangeAutoConfirmed];
+  }
 
-  return dayRows.filter((r) => {
+  if (isLeaveDateBeforeTodayKst(ld)) {
+    return rangeAutoConfirmed;
+  }
+
+  const pending = dayRows.filter((r) => {
     const st = String(r.status ?? "").trim();
     if (st === "CANCELLED") return false;
     return st === "APPLIED" || st === "REJECTED";
   });
+  return [...pending, ...rangeAutoConfirmed];
 }
 
 /** 수술실 간호사·관리자1·부서파트장: 캘린더에 마취과 골드키도 함께 표시 */
@@ -90,7 +112,7 @@ function isAnesthesiaGoldkeyRequest(row, users) {
 
 /**
  * 월간 달력 칩: 소속 부서만 (+ 수술실 화면은 마취과 골드키 포함).
- * - 해당일 확정 있음 → 확정만
+ * - 해당일 일반휴가 등 선정 확정 있음 → 선정 확정만 (+ 병가·결혼·분만은 별도 항상 표시)
  * - 미확정(오늘 이후) → 신청·반려 표시, 취소(회색) 제외
  * - 타 부서 일반휴가 등 → 표시 안 함 (팝업 상세에서만)
  * - 관리자2·마취과 화면은 기존과 동일(마취 소속만)
