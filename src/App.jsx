@@ -1105,13 +1105,26 @@ function App() {
     let cancelled = false;
     setApiReachable("checking");
     void (async () => {
-      const check = await checkApiHealth();
+      const check = await checkApiHealth({ timeoutMs: 15000 });
       if (!cancelled) setApiReachable(check.ok ? "yes" : "no");
       if (!cancelled && !isLoggedIn) setDataHydrated(true);
     })();
     return () => {
       cancelled = true;
     };
+  }, [isLoggedIn]);
+
+  /** 앱 복귀·탭 전환 시 서버 연결 재확인 (콜드스타트·일시 오류 후 배너가 남는 것 방지) */
+  useEffect(() => {
+    if (!isLoggedIn || !isApiConfigured()) return;
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      void checkApiHealth({ timeoutMs: 12000 }).then((check) => {
+        setApiReachable(check.ok ? "yes" : "no");
+      });
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, [isLoggedIn]);
 
   useEffect(() => {
@@ -1127,6 +1140,7 @@ function App() {
         if (data) {
           applyBootstrapPayload(data);
           setServerMode(true);
+          setApiReachable("yes");
         }
       } catch {
         if (!cancelled) setServerMode(false);
@@ -1241,6 +1255,7 @@ function App() {
       const data = await api.bootstrap();
       applyBootstrapPayload(data);
       setServerMode(true);
+      setApiReachable("yes");
     } catch {
       /* 일시적 bootstrap 실패로 serverMode를 끄지 않음 — 대체 저장 등 API 재시도 가능 */
     }
@@ -1272,6 +1287,7 @@ function App() {
       const data = await api.bootstrap();
       applyBootstrapPayload(data);
       setServerMode(true);
+      setApiReachable("yes");
       return true;
     } catch {
       return false;
@@ -2990,18 +3006,26 @@ function App() {
         </div>
       </header>
 
-      {isApiConfigured() && apiReachable === "no" ? (
+      {isApiConfigured() && apiReachable === "no" && !serverMode ? (
         <div className="app-api-warning" role="status">
-          <span>
-            데이터 서버에 연결되지 않아 저장·동기화가 되지 않습니다. Render에서 eoroff-api를 Resume한 뒤 다시 시도해
-            주세요.
-          </span>
+          <span>데이터 서버에 잠시 연결되지 않습니다. 네트워크 확인 후 다시 시도해 주세요.</span>
           <button
             type="button"
             className="app-api-warning__retry"
             onClick={() => {
               setApiReachable("checking");
-              void checkApiHealth().then((check) => setApiReachable(check.ok ? "yes" : "no"));
+              void checkApiHealth({ timeoutMs: 12000 }).then(async (check) => {
+                setApiReachable(check.ok ? "yes" : "no");
+                if (check.ok) {
+                  try {
+                    const data = await api.bootstrap();
+                    applyBootstrapPayload(data);
+                    setServerMode(true);
+                  } catch {
+                    /* ignore */
+                  }
+                }
+              });
             }}
           >
             다시 확인
