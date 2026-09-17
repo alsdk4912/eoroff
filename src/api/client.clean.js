@@ -133,9 +133,10 @@ async function requestJson(path, options = {}) {
 export const api = {
   login: (payload) => requestJson("/login", { method: "POST", body: JSON.stringify(payload) }),
   register: (payload) => requestJson("/register", { method: "POST", body: JSON.stringify(payload) }),
-  bootstrap: () => requestJson("/bootstrap"),
+  /** Render 콜드스타트·모바일 네트워크 대비 긴 타임아웃 */
+  bootstrap: () => requestJson("/bootstrap", { timeoutMs: 60000 }),
   createRequest: (payload) =>
-    requestJson("/requests", { method: "POST", body: JSON.stringify(payload) }),
+    requestJson("/requests", { method: "POST", body: JSON.stringify(payload), timeoutMs: 45000 }),
   /** POST: 일부 호스팅에서 PATCH가 404로 떨어지는 경우 대비(cancel 등과 동일 메서드 패턴) */
   patchNegotiationOrder: (id, payload) =>
     requestJson(`/requests/${encodeURIComponent(id)}/negotiation-order`, {
@@ -160,9 +161,17 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   cancelRequest: (id, payload) =>
-    requestJson(`/requests/${id}/cancel`, { method: "POST", body: JSON.stringify(payload) }),
+    requestJson(`/requests/${id}/cancel`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      timeoutMs: 45000,
+    }),
   uncancelRequest: (id, payload) =>
-    requestJson(`/requests/${id}/uncancel`, { method: "POST", body: JSON.stringify(payload) }),
+    requestJson(`/requests/${id}/uncancel`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      timeoutMs: 45000,
+    }),
   selectRequest: (id, payload) =>
     requestJson(`/requests/${id}/select`, { method: "POST", body: JSON.stringify(payload) }),
   unselectRequest: (id, payload) =>

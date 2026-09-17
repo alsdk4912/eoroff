@@ -1120,13 +1120,35 @@ function App() {
     if (!isLoggedIn || !isApiConfigured()) return;
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;
-      void checkApiHealth({ timeoutMs: 12000 }).then((check) => {
+      void (async () => {
+        if (!serverMode) {
+          await tryReconnectServer({ silent: true });
+          return;
+        }
+        const check = await checkApiHealth({ timeoutMs: 12000 });
         setApiReachable(check.ok ? "yes" : "no");
-      });
+      })();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [isLoggedIn]);
+  }, [isLoggedIn, serverMode, auth?.userId]);
+
+  /** serverMode가 꺼진 채면 주기적으로 재연결 — 취소가 로컬만 되는 상태 방지 */
+  useEffect(() => {
+    if (!isLoggedIn || !isApiConfigured() || serverMode) return;
+    let cancelled = false;
+    let timerId;
+    const tick = async () => {
+      if (cancelled) return;
+      const ok = await tryReconnectServer({ silent: true });
+      if (!cancelled && !ok) timerId = window.setTimeout(tick, 20000);
+    };
+    timerId = window.setTimeout(tick, 3000);
+    return () => {
+      cancelled = true;
+      if (timerId) window.clearTimeout(timerId);
+    };
+  }, [isLoggedIn, serverMode, auth?.userId]);
 
   useEffect(() => {
     if (!isLoggedIn) {
@@ -1259,6 +1281,26 @@ function App() {
       setApiReachable("yes");
     } catch {
       /* 일시적 bootstrap 실패로 serverMode를 끄지 않음 — 대체 저장 등 API 재시도 가능 */
+    }
+  }
+
+  /** 로그인 후 서버 모드가 꺼진 경우 복구 (취소·신청이 로컬만 되는 사고 방지) */
+  async function tryReconnectServer({ silent = false } = {}) {
+    if (!isApiConfigured() || !auth?.userId) return false;
+    try {
+      const check = await checkApiHealth({ timeoutMs: 15000 });
+      if (!check.ok) {
+        if (!silent) setApiReachable("no");
+        return false;
+      }
+      const data = await api.bootstrap();
+      applyBootstrapPayload(data);
+      setServerMode(true);
+      setApiReachable("yes");
+      return true;
+    } catch {
+      if (!silent) setApiReachable("no");
+      return false;
     }
   }
 
@@ -1689,6 +1731,9 @@ function App() {
         /* ignore */
       }
       setAuth({ userId: matches[0].id });
+      window.alert?.(
+        "서버 연결이 불안정해 오프라인으로 로그인했습니다. 상단에 연결 경고가 보이면「다시 확인」을 누른 뒤 신청·취소를 해 주세요. (연결 전에는 서버에 저장되지 않습니다.)"
+      );
     }
   }
 
@@ -1707,7 +1752,7 @@ function App() {
     () => filterRequestsForViewerRole(requestsRawVisible, users, viewerRole),
     [requestsRawVisible, users, viewerRole]
   );
-  /** 월 달력 칩: 소속 부서 — 미확정일은 신청 표시(취소 제외), 확정일은 확정만 */
+  /** 월 달력 칩: 소속 부서 — 미확정일은 신청 표시(병가·결혼·분만 확정과 병행), 일반 선정 확정일은 선정만 */
   const requestsForCalendarGrid = useMemo(
     () => filterRequestsForCalendarGrid(requestsVisibleInUi, users, viewerRole),
     [requestsVisibleInUi, users, viewerRole]
@@ -1882,7 +1927,16 @@ function App() {
       doneNote = "일반휴가-우선순위 기간(매월 2일 09시)이 지나 일반휴가-후순위로 신청되었습니다.";
     }
 
-    if (serverMode) {
+    if (isApiConfigured() && Boolean(auth?.userId)) {
+      if (!serverMode) {
+        const recovered = await tryReconnectServer({ silent: true });
+        if (!recovered) {
+          setMessage(
+            "서버에 연결되지 않아 신청을 저장할 수 없습니다. 상단「다시 확인」후 다시 신청해 주세요."
+          );
+          return;
+        }
+      }
       try {
         await api.createRequest(payload);
       } catch (err) {
@@ -1946,6 +2000,17 @@ function App() {
       window.alert?.("휴가일이 지난 신청은 취소할 수 없습니다.");
       return;
     }
+    /** API가 설정된 환경에서는 반드시 서버에 취소 — 로컬만 반영하면 관리자·타 기기에 신청이 남음 */
+    const mustUseApi = isApiConfigured() && Boolean(auth?.userId);
+    if (mustUseApi && !serverMode) {
+      const recovered = await tryReconnectServer({ silent: true });
+      if (!recovered) {
+        window.alert?.(
+          "서버에 연결되지 않아 취소를 저장할 수 없습니다. 상단「다시 확인」또는 네트워크 연결 후 다시 취소해 주세요. (기기에만 취소하면 관리자 화면에는 신청이 그대로 남습니다.)"
+        );
+        return;
+      }
+    }
     const ok = window.confirm("정말 취소하시겠습니까?");
     if (!ok) return;
     const payload = {
@@ -1959,19 +2024,51 @@ function App() {
     const prevSnapshot = requests;
     const prevCancellations = cancellations;
     const prevGoldkeys = goldkeys;
+
+    if (mustUseApi) {
+      setRequests((prev) =>
+        prev.map((r) => (r.id === requestId ? { ...r, status: "CANCELLED", cancelLocked: true } : r))
+      );
+      setCancellations((prev) => [
+        ...prev,
+        { id: payload.cancellationId, leaveRequestId: requestId, ...payload, deductionExempt, deductionNote },
+      ]);
+      try {
+        const result = await api.cancelRequest(requestId, payload);
+        setServerMode(true);
+        setApiReachable("yes");
+        try {
+          await bootstrap();
+        } catch {
+          /* 서버 취소는 성공 — 목록 갱신만 실패해도 취소는 반영됨 */
+        }
+        notifyDone("취소되었습니다.");
+        if (result?.deductionExempt) {
+          window.alert?.(result?.deductionNote || "차감 제외 처리됨(장기휴가 모집기간)");
+        }
+      } catch (e) {
+        window.alert?.(`취소 반영 실패: ${e?.message || e}\n\n서버에 저장되지 않았습니다. 연결 후 다시 시도해 주세요.`);
+        setRequests(prevSnapshot);
+        setCancellations(prevCancellations);
+        setGoldkeys(prevGoldkeys);
+      }
+      return;
+    }
+
     setRequests((prev) => {
       const next = prev.map((r) => (r.id === requestId ? { ...r, status: "CANCELLED", cancelLocked: true } : r));
-      if (!serverMode) {
-        try {
-          localStorage.setItem(LS_REQUESTS, JSON.stringify(next));
-        } catch {
-          /* ignore */
-        }
+      try {
+        localStorage.setItem(LS_REQUESTS, JSON.stringify(next));
+      } catch {
+        /* ignore */
       }
       return next;
     });
-    setCancellations((prev) => [...prev, { id: payload.cancellationId, leaveRequestId: requestId, ...payload, deductionExempt, deductionNote }]);
-    if (!serverMode && deductionExempt && target?.leaveType === "GOLDKEY" && target?.userId) {
+    setCancellations((prev) => [
+      ...prev,
+      { id: payload.cancellationId, leaveRequestId: requestId, ...payload, deductionExempt, deductionNote },
+    ]);
+    if (deductionExempt && target?.leaveType === "GOLDKEY" && target?.userId) {
       setGoldkeys((prev) =>
         prev.map((g) =>
           g.userId === target.userId
@@ -1984,25 +2081,7 @@ function App() {
         )
       );
     }
-    if (serverMode) {
-      try {
-        const result = await api.cancelRequest(requestId, payload);
-        await bootstrap();
-        if (result?.deductionExempt) {
-          window.alert?.(result?.deductionNote || "차감 제외 처리됨(장기휴가 모집기간)");
-        }
-      } catch (e) {
-        window.alert?.(`취소 반영 실패: ${e?.message || e}`);
-        setRequests(prevSnapshot);
-        setCancellations(prevCancellations);
-        setGoldkeys(prevGoldkeys);
-        try {
-          localStorage.setItem(LS_REQUESTS, JSON.stringify(prevSnapshot));
-        } catch {
-          /* ignore */
-        }
-      }
-    }
+    notifyDone("취소되었습니다. (오프라인·로컬만)");
   }
 
   async function uncancelRequest(requestId) {
@@ -3009,23 +3088,16 @@ function App() {
 
       {isApiConfigured() && apiReachable === "no" && !serverMode ? (
         <div className="app-api-warning" role="status">
-          <span>데이터 서버에 잠시 연결되지 않습니다. 네트워크 확인 후 다시 시도해 주세요.</span>
+          <span>
+            서버 미연결 — 신청·취소가 저장되지 않습니다. 「다시 확인」을 눌러 연결한 뒤 작업해 주세요.
+          </span>
           <button
             type="button"
             className="app-api-warning__retry"
             onClick={() => {
               setApiReachable("checking");
-              void checkApiHealth({ timeoutMs: 12000 }).then(async (check) => {
-                setApiReachable(check.ok ? "yes" : "no");
-                if (check.ok) {
-                  try {
-                    const data = await api.bootstrap();
-                    applyBootstrapPayload(data);
-                    setServerMode(true);
-                  } catch {
-                    /* ignore */
-                  }
-                }
+              void tryReconnectServer({ silent: false }).then((ok) => {
+                if (!ok) setApiReachable("no");
               });
             }}
           >
@@ -10060,7 +10132,8 @@ function dedupeRequestsForCalendarChips(sortedDayReqs) {
   const seen = new Set();
   const out = [];
   for (const r of sortedDayReqs) {
-    const key = `${String(r.userId ?? "")}|${String(r.leaveDate ?? "")}`;
+    const rangeTag = isRangeAutoApproveLeaveRow(r) ? String(r.leaveType ?? r.leaveNature ?? "range") : "sel";
+    const key = `${String(r.userId ?? "")}|${String(r.leaveDate ?? "")}|${rangeTag}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(r);
