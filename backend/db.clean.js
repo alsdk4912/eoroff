@@ -497,6 +497,7 @@ export async function initDb() {
   await ensureYoonJiminSickLeave20260812_18();
   await ensureKimInjaRemoveGoldkey20261030();
   await ensureYangHyunAhLeaveDutyFrom20261101();
+  await ensureNov7_8DutyHistorySlotFix();
   return client;
 }
 
@@ -2543,7 +2544,6 @@ async function ensureYangHyunAhLeaveDutyFrom20261101() {
       `[db] yanghyunah_leave_duty_from_20261101: missing users ohmina=${Boolean(ohminaId)} yujin=${Boolean(yujinId)} choe=${Boolean(choeId)}`
     );
   } else {
-    const baseIso = new Date().toISOString();
     for (const hd of specialWeekendDates) {
       const existing = await queryOne(
         "SELECT nurse1_user_id, nurse2_user_id, anesthesia_user_id FROM holiday_duties WHERE holiday_date = ?",
@@ -2551,7 +2551,7 @@ async function ensureYangHyunAhLeaveDutyFrom20261101() {
       );
       const anes = String(existing?.anesthesia_user_id ?? "").trim();
 
-      // 재배정 결과(양현아 제외): 오민아·유진 → 이어서 당직자1 오민아→유진→최종선 이력, 최종 최종선·유진
+      // 최종 당직: 최종선·유진 (변경 이력은 기존 8/10·8/11 건을 당직자1로 유지)
       await execute(
         `INSERT INTO holiday_duties (holiday_date, nurse1_user_id, nurse2_user_id, anesthesia_user_id)
          VALUES (?, ?, ?, ?)
@@ -2568,32 +2568,66 @@ async function ensureYangHyunAhLeaveDutyFrom20261101() {
         yujinId,
         anes || null
       );
-
-      const hist = [
-        { slot: "nurse1", from: ohminaId, to: yujinId, at: new Date(Date.parse(baseIso) + 1000).toISOString() },
-        { slot: "nurse1", from: yujinId, to: choeId, at: new Date(Date.parse(baseIso) + 2000).toISOString() },
-      ];
-      for (const h of hist) {
-        await execute(
-          `INSERT INTO holiday_duty_history (id, holiday_date, slot, from_user_id, to_user_id, changed_by, changed_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          `hdh_yang_leave_${hd.replaceAll("-", "")}_${h.slot}_${h.to.slice(-6)}_${h.at.slice(17, 19)}`,
-          hd,
-          h.slot,
-          h.from,
-          h.to,
-          "system_migration",
-          h.at
-        );
-      }
       upserted += 1;
-      console.log(
-        `[db] ${hd} duty set to ${nameById.get(choeId)}/${nameById.get(yujinId)} with history 오민아→유진→최종선`
-      );
+      console.log(`[db] ${hd} duty set to ${nameById.get(choeId)}/${nameById.get(yujinId)}`);
     }
   }
 
   await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
   console.log(`[db] ${migrationId} applied (upserted≈${upserted} from ${assignFrom})`);
+}
+
+/** 11/7·8 당직 이력: 9/21 생성분 삭제, 기존 8/10·8/11 이력을 당직자1로 표시 */
+async function ensureNov7_8DutyHistorySlotFix() {
+  const migrationId = "nov7_8_duty_history_slot_fix_v1";
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
+  if (done) return;
+
+  const dates = ["2026-11-07", "2026-11-08"];
+  const users = await queryAll("SELECT id, name FROM users WHERE name IN ('오민아', '유진', '최종선')");
+  const idByName = new Map(users.map((u) => [String(u.name).trim(), String(u.id).trim()]));
+  const ohminaId = idByName.get("오민아") || "";
+  const yujinId = idByName.get("유진") || "";
+  const choeId = idByName.get("최종선") || "";
+
+  for (const hd of dates) {
+    // 9/21 system_migration으로 넣은 당직자1 이력만 제거
+    await execute(
+      `DELETE FROM holiday_duty_history
+       WHERE holiday_date = ?
+         AND (changed_by = 'system_migration' OR id LIKE 'hdh_yang_leave_%')`,
+      hd
+    );
+
+    if (ohminaId && yujinId) {
+      await execute(
+        `UPDATE holiday_duty_history
+         SET slot = 'nurse1'
+         WHERE holiday_date = ?
+           AND slot = 'nurse2'
+           AND from_user_id = ?
+           AND to_user_id = ?`,
+        hd,
+        ohminaId,
+        yujinId
+      );
+    }
+    if (yujinId && choeId) {
+      await execute(
+        `UPDATE holiday_duty_history
+         SET slot = 'nurse1'
+         WHERE holiday_date = ?
+           AND slot = 'nurse2'
+           AND from_user_id = ?
+           AND to_user_id = ?`,
+        hd,
+        yujinId,
+        choeId
+      );
+    }
+  }
+
+  await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+  console.log(`[db] ${migrationId} applied`);
 }
 
