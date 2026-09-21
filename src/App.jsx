@@ -38,6 +38,9 @@ import {
   MATERNITY_LEAVE_DAYS,
   isGeneralNormalLadderTimeLocked,
   generalNormalLadderLockedMessage,
+  countsTowardSpecialShiftMonthlyLeaveCap,
+  countConfirmedLeavesInCalendarMonth,
+  specialShiftMonthlyLeaveCapBlockMessage,
 } from "./utils/rules";
 import { api, isApiConfigured, pingApiHealth, checkApiHealth, describeApiHealthFailure } from "./api/client";
 import EoroffLoginLogo from "./components/EoroffLoginLogo.jsx";
@@ -2258,6 +2261,24 @@ function App() {
       window.alert?.("이 휴가를 확정할 권한이 없습니다.");
       return;
     }
+    if (countsTowardSpecialShiftMonthlyLeaveCap(target.leaveType)) {
+      const leaveOwner = users.find((u) => u.id === target.userId);
+      const shiftCode = baseMonthCodeForNurseName(leaveOwner?.name, target.leaveDate, workScheduleByYear);
+      const confirmedInMonth = countConfirmedLeavesInCalendarMonth(
+        requests,
+        target.userId,
+        target.leaveDate,
+        requestId
+      );
+      const capMsg = specialShiftMonthlyLeaveCapBlockMessage({
+        shiftCode,
+        confirmedCountInMonth: confirmedInMonth,
+      });
+      if (capMsg) {
+        window.alert?.(capMsg);
+        return;
+      }
+    }
     const rawItems = Array.isArray(substituteOpts?.substituteItems)
       ? substituteOpts.substituteItems
       : [{ substituteUserId: substituteOpts?.substituteUserId ?? "", shiftCode: substituteOpts?.shiftCode ?? "" }];
@@ -2326,6 +2347,11 @@ function App() {
         }
       } catch (e) {
         window.alert?.(`선정 반영 실패: ${e?.message || e}`);
+        try {
+          await bootstrap();
+        } catch {
+          /* ignore */
+        }
       }
     } else if (target) {
       createNotificationForNurses(`${target.leaveDate} 휴가자 발표`, {

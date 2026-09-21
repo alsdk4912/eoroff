@@ -636,3 +636,75 @@ export function generalNormalLadderLockedMessage(leaveDateYmd) {
   return `일반휴가-후순위(${ld})는 전 영업일(${prevBusinessYmd}) 09:00 이후부터 사다리를 실행할 수 있습니다.`;
 }
 
+/** PRN·수술실E(수E)·안정실E(안E) 해당 월 확정 휴가 상한 */
+export const SPECIAL_SHIFT_MONTHLY_LEAVE_CAP = 3;
+export const SPECIAL_SHIFT_MONTHLY_LEAVE_CAP_MESSAGE =
+  "해당월은 휴가가 3회미만이어야 합니다. 확인해주세요";
+
+const SPECIAL_SHIFT_MONTHLY_LEAVE_CAP_CODES = new Set(["PRN", "수E", "안E"]);
+const SPECIAL_SHIFT_MONTHLY_LEAVE_COUNT_TYPES = new Set([
+  "GOLDKEY",
+  "GENERAL",
+  "GENERAL_PRIORITY",
+  "GENERAL_NORMAL",
+  "HALF_DAY",
+  "CHIEF_LEAVE",
+]);
+
+export function isSpecialShiftMonthLeaveCapCode(shiftCode) {
+  const raw = String(shiftCode ?? "").trim();
+  if (!raw || raw === "—") return false;
+  if (SPECIAL_SHIFT_MONTHLY_LEAVE_CAP_CODES.has(raw)) return true;
+  return raw.split(/[/|,]/).some((part) => SPECIAL_SHIFT_MONTHLY_LEAVE_CAP_CODES.has(String(part).trim()));
+}
+
+export function countsTowardSpecialShiftMonthlyLeaveCap(leaveType) {
+  const t = String(leaveType ?? "").trim();
+  if (!t || isRangeAutoApproveLeave(t)) return false;
+  return SPECIAL_SHIFT_MONTHLY_LEAVE_COUNT_TYPES.has(t);
+}
+
+function isConfirmedLeaveStatus(status) {
+  const st = String(status ?? "").trim();
+  return st === "APPROVED" || st === "SELECTED";
+}
+
+/** 해당 달력월에 이미 확정된(본인) 휴가 건수. excludeRequestId는 재확정 시 제외용 */
+export function countConfirmedLeavesInCalendarMonth(requests, userId, leaveDateYmd, excludeRequestId = null) {
+  const month = String(leaveDateYmd ?? "").trim().slice(0, 7);
+  if (!month || !userId) return 0;
+  const exclude = excludeRequestId != null && String(excludeRequestId) !== "" ? String(excludeRequestId) : null;
+  return (requests ?? []).filter((r) => {
+    if (String(r.userId ?? "") !== String(userId)) return false;
+    if (exclude && String(r.id ?? "") === exclude) return false;
+    if (!countsTowardSpecialShiftMonthlyLeaveCap(r.leaveType)) return false;
+    if (!isConfirmedLeaveStatus(r.status)) return false;
+    const ymd = ymdFromRequestRow(r);
+    return ymd.startsWith(month);
+  }).length;
+}
+
+/**
+ * 근무표 rows에서 해당 월 번표 코드 조회 (서버·클라 공용).
+ * values[monthIndex] — monthIndex는 0=1월.
+ */
+export function monthShiftCodeFromScheduleRows(rows, nurseName, leaveDateYmd) {
+  const m = /^(\d{4})-(\d{2})/.exec(String(leaveDateYmd ?? "").trim());
+  if (!m) return "";
+  const month = Number(m[2]);
+  if (month < 1 || month > 12) return "";
+  const name = String(nurseName ?? "").trim();
+  if (!name) return "";
+  const row = (Array.isArray(rows) ? rows : []).find((r) => String(r?.name ?? "").trim() === name);
+  const raw = row?.values?.[month - 1];
+  if (raw == null) return "";
+  return String(raw).trim();
+}
+
+/** 상한 초과 시 관리자 알림 문구, 아니면 null */
+export function specialShiftMonthlyLeaveCapBlockMessage({ shiftCode, confirmedCountInMonth }) {
+  if (!isSpecialShiftMonthLeaveCapCode(shiftCode)) return null;
+  if (Number(confirmedCountInMonth) < SPECIAL_SHIFT_MONTHLY_LEAVE_CAP) return null;
+  return SPECIAL_SHIFT_MONTHLY_LEAVE_CAP_MESSAGE;
+}
+

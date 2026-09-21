@@ -32,6 +32,11 @@ import {
   maternityEndFromStart,
   WEDDING_LEAVE_WEEKDAYS,
   MATERNITY_LEAVE_DAYS,
+  countsTowardSpecialShiftMonthlyLeaveCap,
+  countConfirmedLeavesInCalendarMonth,
+  monthShiftCodeFromScheduleRows,
+  specialShiftMonthlyLeaveCapBlockMessage,
+  SPECIAL_SHIFT_MONTHLY_LEAVE_CAP_MESSAGE,
 } from "../src/utils/rules.clean.js";
 import {
   computeAutoHalfDaySlot,
@@ -3372,6 +3377,54 @@ app.post("/api/requests/:id/select", async (req, res) => {
       await assertActorCanManageLeaveRequest(selectedBy, leaveOwner?.user_id);
     } catch (authErr) {
       return res.status(authErr.statusCode || 403).json({ error: String(authErr?.message || authErr) });
+    }
+
+    if (countsTowardSpecialShiftMonthlyLeaveCap(row.leave_type)) {
+      const ownerUser = await queryOne("SELECT id, name FROM users WHERE id = ?", String(row.user_id ?? ""));
+      const leaveYmd = String(row.leave_date ?? "").slice(0, 10);
+      const year = leaveYmd.slice(0, 4);
+      let scheduleRows = [];
+      if (year) {
+        const sched = await queryOne("SELECT rows_json FROM work_schedules WHERE year = ?", year);
+        try {
+          scheduleRows = sched?.rows_json ? JSON.parse(sched.rows_json) : [];
+        } catch {
+          scheduleRows = [];
+        }
+      }
+      const shiftCode = monthShiftCodeFromScheduleRows(scheduleRows, ownerUser?.name, leaveYmd);
+      const monthPrefix = leaveYmd.slice(0, 7);
+      const approvedRows = monthPrefix
+        ? await queryAll(
+            `SELECT id, user_id, leave_date, leave_type, status
+             FROM requests
+             WHERE user_id = ?
+               AND deleted_at IS NULL
+               AND status IN ('APPROVED', 'SELECTED')
+               AND substr(leave_date, 1, 7) = ?`,
+            String(row.user_id ?? ""),
+            monthPrefix
+          )
+        : [];
+      const confirmedInMonth = countConfirmedLeavesInCalendarMonth(
+        approvedRows.map((r) => ({
+          id: r.id,
+          userId: r.user_id,
+          leaveDate: String(r.leave_date ?? "").slice(0, 10),
+          leaveType: r.leave_type,
+          status: r.status,
+        })),
+        String(row.user_id ?? ""),
+        leaveYmd,
+        requestId
+      );
+      const capMsg = specialShiftMonthlyLeaveCapBlockMessage({
+        shiftCode,
+        confirmedCountInMonth: confirmedInMonth,
+      });
+      if (capMsg) {
+        return res.status(409).json({ error: SPECIAL_SHIFT_MONTHLY_LEAVE_CAP_MESSAGE });
+      }
     }
 
     await runTransaction(async (tx) => {
