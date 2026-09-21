@@ -2479,8 +2479,11 @@ app.post("/api/ladder-results", async (req, res) => {
 
     const actor = await queryOne("SELECT id, role FROM users WHERE id = ?", createdBy);
     if (!actor) return res.status(403).json({ error: "사용자 정보가 올바르지 않습니다." });
-    if (!isOrLeaveAdminRoleServer(actor.role)) {
-      return res.status(403).json({ error: "사다리 기능은 관리자만 사용할 수 있습니다." });
+    const actorRole = String(actor.role ?? "").trim();
+    const canOr = isOrLeaveAdminRoleServer(actorRole);
+    const canAnes = actorRole === "ADMIN2";
+    if (!canOr && !canAnes) {
+      return res.status(403).json({ error: "사다리 기능은 관리자(수술실) 또는 관리자2(마취과)만 사용할 수 있습니다." });
     }
 
     const ld = String(leaveDate ?? "").trim();
@@ -2497,6 +2500,18 @@ app.post("/api/ladder-results", async (req, res) => {
     const oArr = Array.isArray(order) ? order : [];
     if (pArr.length < 2 || oArr.length < 2) {
       return res.status(400).json({ error: "참여자/결과는 2명 이상이어야 합니다." });
+    }
+
+    const expectedStaffRole = canAnes ? "ANESTHESIA" : "NURSE";
+    for (const uid of [...new Set([...pArr, ...oArr].map((x) => String(x ?? "").trim()).filter(Boolean))]) {
+      const u = await queryOne("SELECT id, role FROM users WHERE id = ?", uid);
+      const role = String(u?.role ?? "").trim();
+      if (expectedStaffRole === "ANESTHESIA" && role !== "ANESTHESIA") {
+        return res.status(400).json({ error: "관리자2 사다리는 마취과 간호사만 대상으로 할 수 있습니다." });
+      }
+      if (expectedStaffRole === "NURSE" && role !== "NURSE") {
+        return res.status(400).json({ error: "수술실 사다리는 수술실 간호사만 대상으로 할 수 있습니다." });
+      }
     }
 
     await execute(

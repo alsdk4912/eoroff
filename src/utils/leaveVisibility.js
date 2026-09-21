@@ -213,15 +213,22 @@ export function isOrLeaveAdminRole(role) {
   return role === "ADMIN" || role === "DEPT_HEAD";
 }
 
-/** 협의 사다리 실행·저장 — 수술실 관리자(ADMIN·DEPT_HEAD)만 */
+/** 협의 사다리 실행·저장 — 수술실 관리자(ADMIN·DEPT_HEAD) 또는 마취 관리자2(ADMIN2) */
 export function canRunLadderGame(role) {
-  return isOrLeaveAdminRole(role);
+  return isOrLeaveAdminRole(role) || isAnesthesiaLeaveAdminRole(role);
 }
 
-/** 현황 탭 사다리 결과 조회 — 수술실 간호사·관리자·부서파트장 */
+/** 사다리 대상 부서: 관리자2 → 마취과, 수술실 관리자 → 수술실 간호사 */
+export function ladderStaffRoleForViewer(viewerRole) {
+  if (isAnesthesiaLeaveAdminRole(viewerRole)) return "ANESTHESIA";
+  if (isOrLeaveAdminRole(viewerRole)) return "NURSE";
+  return null;
+}
+
+/** 현황 탭 사다리 결과 조회 — 수술실 간호사·관리자·부서파트장 (+ 관리자2는 본인 결과 확인용) */
 export function canViewLadderResultsDashboard(role) {
   const r = String(role ?? "").trim();
-  return r === "NURSE" || r === "ADMIN" || r === "DEPT_HEAD";
+  return r === "NURSE" || r === "ADMIN" || r === "DEPT_HEAD" || r === "ADMIN2";
 }
 
 export function isAnesthesiaLeaveAdminRole(role) {

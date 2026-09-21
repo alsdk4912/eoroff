@@ -130,6 +130,7 @@ import {
   isOrLeaveAdminRole,
   canRunLadderGame,
   canViewLadderResultsDashboard,
+  ladderStaffRoleForViewer,
   isEmergencyOrRole,
   isHolidayDutyContactViewer,
   isDeptHeadRole,
@@ -200,11 +201,14 @@ const LS_NOTIFICATIONS = "or.notifications.v1";
 const LS_NOTICES = "or.notices.v1";
 const LS_NOTICE_COMMENTS = "or.noticeComments.v1";
 
-/** 같은 날·같은 유형 APPLIED 신청으로부터 사다리 협의 대상자 userId 목록 (사다리 페이지와 동일 규칙) */
-function getLadderParticipantUserIdsForRequests(requests, leaveDate, leaveType) {
-  const rows = (Array.isArray(requests) ? requests : []).filter(
+/** 같은 날·같은 유형 APPLIED 신청으로부터 사다리 협의 대상자 userId 목록 (부서 스코프 가능) */
+function getLadderParticipantUserIdsForRequests(requests, leaveDate, leaveType, users = null, staffRole = null) {
+  let rows = (Array.isArray(requests) ? requests : []).filter(
     (r) => r.leaveDate === leaveDate && r.leaveType === leaveType && r.status === "APPLIED"
   );
+  if (staffRole && Array.isArray(users)) {
+    rows = rows.filter((r) => String(userById(users, r.userId)?.role ?? "") === String(staffRole));
+  }
   if (leaveType !== "GOLDKEY") return [...new Set(rows.map((r) => r.userId))];
   const forcedRows = rows.filter((r) =>
     FORCE_GOLDKEY_NEGOTIATION_KEYS.has(`${String(r.leaveDate ?? "")}|${String(r.userId ?? "")}`)
@@ -215,18 +219,36 @@ function getLadderParticipantUserIdsForRequests(requests, leaveDate, leaveType) 
   return [...new Set(peers.map((r) => r.userId))];
 }
 
-function hasSavedLadderResultForKey(ladderResults, leaveDate, leaveType) {
-  const key = `${String(leaveDate ?? "").trim()}|${String(leaveType ?? "").trim()}`;
+function ladderResultTouchesStaffRole(row, users, staffRole) {
+  if (!staffRole) return true;
+  const ids = [
+    ...(Array.isArray(row?.participants) ? row.participants : []),
+    ...(Array.isArray(row?.order) ? row.order : []),
+  ]
+    .map((id) => String(id ?? "").trim())
+    .filter(Boolean);
+  if (ids.length === 0) return staffRole === "NURSE";
+  return ids.some((uid) => {
+    const role = String(userById(users, uid)?.role ?? "");
+    if (staffRole === "ANESTHESIA") return role === "ANESTHESIA";
+    return role === "NURSE";
+  });
+}
+
+function hasSavedLadderResultForKey(ladderResults, leaveDate, leaveType, users = null, staffRole = null) {
+  const keyDate = String(leaveDate ?? "").trim();
+  const keyType = String(leaveType ?? "").trim();
   return (Array.isArray(ladderResults) ? ladderResults : []).some((row) => {
     const k = `${String(row?.leaveDate ?? "").trim()}|${String(row?.leaveType ?? "").trim()}`;
-    return k === key;
+    if (k !== `${keyDate}|${keyType}`) return false;
+    return ladderResultTouchesStaffRole(row, users, staffRole);
   });
 }
 
 /** 사다리 결과 저장 전, 협의 대상자 중 누구라도 수기로 순번을 넣었으면 사다리 실행 불가 */
-function manualNegotiationOrderBlocksLadder(requests, leaveDate, leaveType, ladderResults) {
-  if (hasSavedLadderResultForKey(ladderResults, leaveDate, leaveType)) return false;
-  const participantUserIds = getLadderParticipantUserIdsForRequests(requests, leaveDate, leaveType);
+function manualNegotiationOrderBlocksLadder(requests, leaveDate, leaveType, ladderResults, users = null, staffRole = null) {
+  if (hasSavedLadderResultForKey(ladderResults, leaveDate, leaveType, users, staffRole)) return false;
+  const participantUserIds = getLadderParticipantUserIdsForRequests(requests, leaveDate, leaveType, users, staffRole);
   if (participantUserIds.length < 2) return false;
   const rows = (Array.isArray(requests) ? requests : []).filter(
     (r) => r.leaveDate === leaveDate && r.leaveType === leaveType && r.status === "APPLIED"
@@ -242,10 +264,12 @@ function manualNegotiationOrderBlocksLadder(requests, leaveDate, leaveType, ladd
   return false;
 }
 
-function isNegotiationOrderInputLocked(requestRow, ladderDoneKeySet) {
+function isNegotiationOrderInputLocked(requestRow, ladderDoneKeySet, users = null) {
   if (!requestRow) return false;
   if (requestRow.negotiationOrderLocked) return true;
-  const key = `${String(requestRow.leaveDate ?? "").trim()}|${String(requestRow.leaveType ?? "").trim()}`;
+  const role = String(userById(users, requestRow.userId)?.role ?? "NURSE");
+  const staffRole = role === "ANESTHESIA" ? "ANESTHESIA" : "NURSE";
+  const key = `${String(requestRow.leaveDate ?? "").trim()}|${String(requestRow.leaveType ?? "").trim()}|${staffRole}`;
   return Boolean(ladderDoneKeySet?.has?.(key));
 }
 
@@ -1568,7 +1592,7 @@ function App() {
 
   async function createLadderResult(payload) {
     if (!canRunLadderGame(viewerRole)) {
-      window.alert?.("사다리 기능은 관리자만 사용할 수 있습니다.");
+      window.alert?.("사다리 기능은 관리자(수술실) 또는 관리자2(마취과)만 사용할 수 있습니다.");
       return;
     }
     if (isGeneralNormalLadderTimeLocked(payload?.leaveDate, payload?.leaveType)) {
@@ -1634,7 +1658,13 @@ function App() {
       window.alert?.("협의 순번이 확정되어 수정할 수 없습니다.");
       return;
     }
-    if (target && hasSavedLadderResultForKey(ladderResults, target.leaveDate, target.leaveType)) {
+    if (target && hasSavedLadderResultForKey(
+      ladderResults,
+      target.leaveDate,
+      target.leaveType,
+      users,
+      String(userById(users, target.userId)?.role ?? "") === "ANESTHESIA" ? "ANESTHESIA" : "NURSE"
+    )) {
       window.alert?.("사다리로 순번이 확정되어 수정할 수 없습니다.");
       return;
     }
@@ -1805,7 +1835,7 @@ function App() {
     }),
     [requestsVisibleInUi]
   );
-  const ladderDoneKeySet = useMemo(() => buildLadderDoneKeySet(ladderResults), [ladderResults]);
+  const ladderDoneKeySet = useMemo(() => buildLadderDoneKeySet(ladderResults, users), [ladderResults, users]);
   const calendarData = useMemo(() => {
     const [year, month] = calendarMonth.split("-").map(Number);
     return buildMonthMatrix(
@@ -3215,7 +3245,7 @@ function App() {
         <Route
           path="/ladder"
           element={
-            isEmergencyOrViewer || !isOrLeaveAdmin ? (
+            isEmergencyOrViewer || !canRunLadderGame(viewerRole) ? (
               <Navigate to="/calendar" replace />
             ) : (
             <LadderGamePage
@@ -3225,6 +3255,7 @@ function App() {
               createLadderResult={createLadderResult}
               applyLadderResultToNegotiationOrder={applyLadderResultToNegotiationOrder}
               currentUserId={auth?.userId}
+              viewerRole={viewerRole}
             />
             )
           }
@@ -7568,12 +7599,21 @@ function NoticeBoardPage({
   );
 }
 
-function LadderGamePage({ users, requests, ladderResults, createLadderResult, applyLadderResultToNegotiationOrder, currentUserId }) {
+function LadderGamePage({
+  users,
+  requests,
+  ladderResults,
+  createLadderResult,
+  applyLadderResultToNegotiationOrder,
+  currentUserId,
+  viewerRole = "",
+}) {
   const location = useLocation();
   const navigate = useNavigate();
+  const staffRole = ladderStaffRoleForViewer(viewerRole) || "NURSE";
   const now = toLocalYMD(new Date());
   const [leaveDate, setLeaveDate] = useState(now);
-  const [leaveType, setLeaveType] = useState("GENERAL_PRIORITY");
+  const [leaveType, setLeaveType] = useState(staffRole === "ANESTHESIA" ? "GENERAL" : "GENERAL_PRIORITY");
   const [selectedUserIds, setSelectedUserIds] = useState([]);
   const [previewOrder, setPreviewOrder] = useState([]);
   const [ladderMsg, setLadderMsg] = useState("");
@@ -7623,41 +7663,45 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
     return () => mq.removeListener(onChange);
   }, []);
 
-  const nurseUsers = useMemo(() => staffUsersByRole(users, "NURSE"), [users]);
+  const poolUsers = useMemo(() => staffUsersByRole(users, staffRole), [users, staffRole]);
 
   const idToName = useMemo(() => new Map(users.map((u) => [u.id, u.name])), [users]);
   const applicantsForTarget = useMemo(
     () =>
       (Array.isArray(requests) ? requests : [])
-        .filter((r) => r.leaveDate === leaveDate && r.leaveType === leaveType && r.status === "APPLIED")
+        .filter(
+          (r) =>
+            r.leaveDate === leaveDate &&
+            r.leaveType === leaveType &&
+            r.status === "APPLIED" &&
+            String(userById(users, r.userId)?.role ?? "") === staffRole
+        )
         .map((r) => r.userId),
-    [requests, leaveDate, leaveType]
+    [requests, leaveDate, leaveType, users, staffRole]
   );
   const applicantUserIds = useMemo(() => [...new Set(applicantsForTarget)], [applicantsForTarget]);
   const ladderParticipantUserIds = useMemo(
-    () => getLadderParticipantUserIdsForRequests(requests, leaveDate, leaveType),
-    [requests, leaveDate, leaveType]
+    () => getLadderParticipantUserIdsForRequests(requests, leaveDate, leaveType, users, staffRole),
+    [requests, leaveDate, leaveType, users, staffRole]
   );
   const manualOrderBlocksLadder = useMemo(
-    () => manualNegotiationOrderBlocksLadder(requests, leaveDate, leaveType, ladderResults),
-    [requests, leaveDate, leaveType, ladderResults]
+    () => manualNegotiationOrderBlocksLadder(requests, leaveDate, leaveType, ladderResults, users, staffRole),
+    [requests, leaveDate, leaveType, ladderResults, users, staffRole]
   );
   const forceManualOnly = isForceManualOrderOnly(leaveDate, leaveType);
   const generalNormalLadderTimeLocked = isGeneralNormalLadderTimeLocked(leaveDate, leaveType);
   const canRunLadderForTarget =
     ladderParticipantUserIds.length >= 2 && !manualOrderBlocksLadder && !forceManualOnly && !generalNormalLadderTimeLocked;
-  const savedLadderKeySet = useMemo(() => {
-    const set = new Set();
-    for (const row of Array.isArray(ladderResults) ? ladderResults : []) {
-      const d = String(row?.leaveDate ?? "").trim();
-      const t = String(row?.leaveType ?? "").trim();
-      if (!d || !t) continue;
-      set.add(`${d}|${t}`);
-    }
-    return set;
-  }, [ladderResults]);
-  const hasSavedForCurrentTarget = savedLadderKeySet.has(`${leaveDate}|${leaveType}`);
+  const savedLadderKeySet = useMemo(() => buildLadderDoneKeySet(ladderResults, users), [ladderResults, users]);
+  const hasSavedForCurrentTarget = savedLadderKeySet.has(`${leaveDate}|${leaveType}|${staffRole}`);
 
+  const visibleLadderResults = useMemo(
+    () =>
+      (Array.isArray(ladderResults) ? ladderResults : []).filter((r) =>
+        ladderResultTouchesStaffRole(r, users, staffRole)
+      ),
+    [ladderResults, users, staffRole]
+  );
   function closeLadderModal() {
     setLadderModalOpen(false);
     if (!queryFromCalendar) return;
@@ -7959,17 +8003,27 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
         <label className="ladder-field ladder-field--type">
           <span className="field-label ladder-field-label">휴가 유형</span>
           <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)}>
-            <option value="GENERAL_PRIORITY">일반휴가-우선순위</option>
-            <option value="GENERAL_NORMAL">일반휴가-후순위</option>
-            <option value="GOLDKEY">골드키</option>
-            <option value="HALF_DAY">반차</option>
+            {staffRole === "ANESTHESIA" ? (
+              <>
+                <option value="GENERAL">일반휴가</option>
+                <option value="GOLDKEY">골드키</option>
+                <option value="HALF_DAY">반차</option>
+              </>
+            ) : (
+              <>
+                <option value="GENERAL_PRIORITY">일반휴가-우선순위</option>
+                <option value="GENERAL_NORMAL">일반휴가-후순위</option>
+                <option value="GOLDKEY">골드키</option>
+                <option value="HALF_DAY">반차</option>
+              </>
+            )}
           </select>
         </label>
       </div>
 
       <div className="ladder-participant-block ladder-participant-block--compact">
         <div className="ladder-participant-grid ladder-participant-grid--three">
-          {nurseUsers.map((u) => (
+          {poolUsers.map((u) => (
             <label key={u.id} className="row ladder-participant-tile ladder-participant-tile--compact">
               <input type="checkbox" checked={selectedUserIds.includes(u.id)} onChange={() => toggleUser(u.id)} />
               <span>{u.name}</span>
@@ -8037,7 +8091,7 @@ function LadderGamePage({ users, requests, ladderResults, createLadderResult, ap
               </tr>
             </thead>
             <tbody>
-              {(Array.isArray(ladderResults) ? ladderResults : []).map((r) => (
+              {(Array.isArray(visibleLadderResults) ? visibleLadderResults : []).map((r) => (
                 <tr key={r.id}>
                   <td>{`${r.leaveDate} ${leaveTypeLabel(r.leaveType)} 사다리 게임 결과`}</td>
                   <td>{(Array.isArray(r.order) ? r.order : []).map((id, idx) => `${idx + 1}순위 ${idToName.get(id) ?? id}`).join(" / ")}</td>
@@ -8658,15 +8712,17 @@ function CalendarPage({
     onDeleteComment: deleteDayComment,
   };
 
-  const ladderDoneKeySet = useMemo(() => buildLadderDoneKeySet(ladderResults), [ladderResults]);
+  const ladderDoneKeySet = useMemo(() => buildLadderDoneKeySet(ladderResults, users), [ladderResults, users]);
   const negotiationMetaByRequestId = useMemo(
     () => buildNegotiationMetaByRequestId(dayRequests, selectedYmd, { ladderDoneKeys: ladderDoneKeySet, users }),
     [selectedYmd, dayRequests, ladderDoneKeySet, users]
   );
 
   const quickLadderTargets = useMemo(() => {
+    const scopeRole = ladderStaffRoleForViewer(viewerRole);
     const byType = new Map();
     for (const r of dayRequests || []) {
+      if (scopeRole && String(userById(users, r.userId)?.role ?? "") !== scopeRole) continue;
       const meta = negotiationMetaByRequestId.get(r.id);
       if (!meta || meta.mode !== "negotiate" || r.status !== "APPLIED") continue;
       const k = `${r.leaveDate}|${r.leaveType}`;
@@ -8674,7 +8730,7 @@ function CalendarPage({
       byType.get(k).count += 1;
     }
     return [...byType.values()].filter((t) => t.count >= 2);
-  }, [dayRequests, negotiationMetaByRequestId]);
+  }, [dayRequests, negotiationMetaByRequestId, viewerRole, users]);
 
   function moveCalendarMonth(offset) {
     const [yy, mm] = String(calendarMonth || "").split("-").map(Number);
@@ -9329,13 +9385,21 @@ function CalendarPage({
                         <p className="help">이 날짜에 등록된 신청이 없습니다.</p>
                       ) : (
                         <>
-                          {isOrLeaveAdmin && !deptHeadWeekdayCalendarReadonly && quickLadderTargets.length > 0 ? (
+                          {canRunLadderGame(viewerRole) && !deptHeadWeekdayCalendarReadonly && quickLadderTargets.length > 0 ? (
                             <div className="calendar-ladder-quick-bar">
                               {quickLadderTargets.map((t) => (
                                 (() => {
-                                  const key = `${String(t.leaveDate ?? "")}|${String(t.leaveType ?? "")}`;
+                                  const scopeRole = ladderStaffRoleForViewer(viewerRole) || "NURSE";
+                                  const key = `${String(t.leaveDate ?? "")}|${String(t.leaveType ?? "")}|${scopeRole}`;
                                   const isDone = ladderDoneKeySet.has(key);
-                                  const manualBlock = manualNegotiationOrderBlocksLadder(dayRequests, t.leaveDate, t.leaveType, ladderResults);
+                                  const manualBlock = manualNegotiationOrderBlocksLadder(
+                                    dayRequests,
+                                    t.leaveDate,
+                                    t.leaveType,
+                                    ladderResults,
+                                    users,
+                                    scopeRole
+                                  );
                                   const timeLocked = isGeneralNormalLadderTimeLocked(t.leaveDate, t.leaveType);
                                   return (
                                 <button
@@ -9403,7 +9467,7 @@ function CalendarPage({
                               const isAuto = meta.mode === "auto";
                               const isCancelledRow = meta.mode === "cancelled";
                               const autoRank = meta.mode === "auto" ? meta.autoRank : null;
-                              const orderLocked = isManualOnly ? false : isNegotiationOrderInputLocked(r, ladderDoneKeySet);
+                              const orderLocked = isManualOnly ? false : isNegotiationOrderInputLocked(r, ladderDoneKeySet, users);
                               const showModePill = isNegotiate || isAuto || isManualOnly;
                               let prefix = "";
                               if (isAuto && autoRank != null) prefix = `${autoRank}. `;

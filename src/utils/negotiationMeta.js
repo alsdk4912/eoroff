@@ -72,25 +72,60 @@ export function filterGoldkeyRowsForNegotiationPeers(rows) {
   return sorted.filter((r) => isGoldkeyWithin24HoursAfterAnchor(anchorMs, r.requestedAt ?? r.requested_at));
 }
 
-/** 저장된 사다리 결과 키 집합 (`leaveDate|leaveType`) */
-export function buildLadderDoneKeySet(ladderResults) {
+/** 저장된 사다리 결과 키 집합 (`leaveDate|leaveType|staffRole`) — 수술실·마취 분리 */
+export function buildLadderDoneKeySet(ladderResults, users = []) {
   const set = new Set();
+  const userList = Array.isArray(users) ? users : [];
   for (const r of Array.isArray(ladderResults) ? ladderResults : []) {
     const d = String(r?.leaveDate ?? "").trim();
     const t = String(r?.leaveType ?? "").trim();
-    if (d && t) set.add(`${d}|${t}`);
+    if (!d || !t) continue;
+    const ids = [
+      ...(Array.isArray(r?.participants) ? r.participants : []),
+      ...(Array.isArray(r?.order) ? r.order : []),
+    ].map((id) => String(id ?? "").trim()).filter(Boolean);
+    const roles = new Set();
+    for (const uid of ids) {
+      const role = String(userList.find((u) => String(u.id) === uid)?.role ?? "").trim();
+      if (role === "ANESTHESIA") roles.add("ANESTHESIA");
+      else if (role === "NURSE" || role === "ADMIN" || role === "DEPT_HEAD") roles.add("NURSE");
+    }
+    if (roles.size === 0) {
+      // 구 데이터(참가자 없음): 수술실 키로만 취급
+      set.add(`${d}|${t}|NURSE`);
+      continue;
+    }
+    for (const role of roles) set.add(`${d}|${t}|${role}`);
   }
   return set;
 }
 
-function goldkeyLadderDoneKey(leaveDateYmd) {
+function goldkeyLadderDoneKey(leaveDateYmd, staffRole = "NURSE") {
   const d = String(leaveDateYmd ?? "").trim();
-  return d ? `${d}|GOLDKEY` : "";
+  const role = staffRole === "ANESTHESIA" ? "ANESTHESIA" : "NURSE";
+  return d ? `${d}|GOLDKEY|${role}` : "";
 }
 
-/** 같은 휴가일 골드키 중 실제 협의가 필요한 신청 id (24시간 내 2명 이상) */
+/** 같은 휴가일 골드키 중 실제 협의가 필요한 신청 id (24시간 내 2명 이상) — 부서(역할)끼리만 */
 function goldkeyIdsNeedingNegotiation(rows, options = {}) {
-  const sorted = [...rows].sort((a, b) =>
+  const users = options.users;
+  if (Array.isArray(users) && users.length > 0) {
+    const byRole = new Map();
+    for (const r of Array.isArray(rows) ? rows : []) {
+      const role = staffRoleForRequest(r, users);
+      if (!byRole.has(role)) byRole.set(role, []);
+      byRole.get(role).push(r);
+    }
+    const out = new Set();
+    for (const group of byRole.values()) {
+      for (const id of goldkeyIdsNeedingNegotiation(group, { nowMs: options.nowMs })) {
+        out.add(id);
+      }
+    }
+    return out;
+  }
+
+  const sorted = [...(Array.isArray(rows) ? rows : [])].sort((a, b) =>
     String(a.requestedAt ?? a.requested_at ?? "").localeCompare(String(b.requestedAt ?? b.requested_at ?? ""))
   );
   const forced = sorted.filter((r) =>
@@ -162,12 +197,13 @@ export function buildNegotiationMetaByRequestId(dayRequests, leaveDateYmd, optio
       }
       if (lt === "GOLDKEY") {
         const ladderDoneKeys = options.ladderDoneKeys ?? null;
-        const gkLadderDone = Boolean(ladderDoneKeys?.has?.(goldkeyLadderDoneKey(selectedYmd)));
+        const role = staffRoleForRequest(only, options.users);
+        const gkLadderDone = Boolean(ladderDoneKeys?.has?.(goldkeyLadderDoneKey(selectedYmd, role)));
         if (gkLadderDone) {
           map.set(String(only.id), { mode: "negotiate", ladderDone: true });
           continue;
         }
-        const negotiateIds = goldkeyIdsNeedingNegotiation([only], { nowMs });
+        const negotiateIds = goldkeyIdsNeedingNegotiation([only], { nowMs, users: options.users });
         if (negotiateIds.has(String(only.id))) {
           map.set(String(only.id), { mode: "negotiate" });
           continue;
@@ -190,10 +226,8 @@ export function buildNegotiationMetaByRequestId(dayRequests, leaveDateYmd, optio
     );
     const leaveType0 = list[0]?.leaveType ?? list[0]?.leave_type;
     const ladderDoneKeys = options.ladderDoneKeys ?? null;
-    const gkLadderDone =
-      leaveType0 === "GOLDKEY" && Boolean(ladderDoneKeys?.has?.(goldkeyLadderDoneKey(selectedYmd)));
     const goldkeyNegotiateIds =
-      leaveType0 === "GOLDKEY" && !gkLadderDone ? goldkeyIdsNeedingNegotiation(list, { nowMs }) : new Set();
+      leaveType0 === "GOLDKEY" ? goldkeyIdsNeedingNegotiation(list, { nowMs, users: options.users }) : new Set();
     const gkAnchorMs = leaveType0 === "GOLDKEY" ? goldkeyAnchorRequestedAtMs(sortedAll) : NaN;
     const gkWindowOpen = leaveType0 === "GOLDKEY" && isGoldkeyNegotiationWindowOpen(gkAnchorMs, nowMs);
 
@@ -210,6 +244,8 @@ export function buildNegotiationMetaByRequestId(dayRequests, leaveDateYmd, optio
         continue;
       }
       if (lt === "GOLDKEY") {
+        const role = staffRoleForRequest(r, options.users);
+        const gkLadderDone = Boolean(ladderDoneKeys?.has?.(goldkeyLadderDoneKey(selectedYmd, role)));
         const autoRank = autoRankWithinStaffRole(sortedAll, r, options.users);
         if (gkLadderDone) {
           map.set(String(r.id), { mode: "negotiate", ladderDone: true });
