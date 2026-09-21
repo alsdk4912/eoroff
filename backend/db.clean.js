@@ -496,6 +496,7 @@ export async function initDb() {
   await ensureJungSuyoungWeddingLeave20261019_23();
   await ensureYoonJiminSickLeave20260812_18();
   await ensureKimInjaRemoveGoldkey20261030();
+  await ensureYangHyunAhLeaveDutyFrom20261101();
   return client;
 }
 
@@ -2447,5 +2448,152 @@ async function ensureKimInjaRemoveGoldkey20261030() {
   console.log(
     `[db] kim_inja_remove_goldkey_20261030_v1 applied (deleted=${rows.length}, used=${used}, remaining=${remaining})`
   );
+}
+
+/** 양현아 2026-11-01~ 휴직: 당직 제외 후 순번 재배정, 11/7·8은 최종선·유진 + 변경 이력 */
+async function ensureYangHyunAhLeaveDutyFrom20261101() {
+  const migrationId = "yanghyunah_leave_duty_from_20261101_v1";
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
+  if (done) return;
+
+  const assignFrom = "2026-11-01";
+  const endYear = new Date().getFullYear() + 3;
+  const specialWeekendDates = ["2026-11-07", "2026-11-08"];
+
+  const users = await queryAll("SELECT id, name, role, IFNULL(is_active, 1) AS is_active FROM users");
+  const idByName = new Map(
+    users.map((u) => [String(u.name ?? "").trim(), String(u.id ?? "").trim()]).filter(([n, id]) => n && id)
+  );
+  const nameById = new Map(users.map((u) => [String(u.id ?? "").trim(), String(u.name ?? "").trim()]));
+
+  const holidayRows = await queryAll(
+    "SELECT holiday_date, holiday_name, is_holiday FROM holidays WHERE holiday_date >= ? AND holiday_date <= ?",
+    "2026-01-01",
+    `${endYear}-12-31`
+  );
+  const holidays = holidayRows.map((h) => ({
+    holidayDate: String(h.holiday_date ?? "").slice(0, 10),
+    holidayName: h.holiday_name ?? "",
+    isHoliday: Boolean(h.is_holiday),
+  }));
+
+  const dutyRows = await queryAll("SELECT * FROM holiday_duties WHERE holiday_date >= ?", "2026-01-01");
+  const holidayDuties = {};
+  for (const d of dutyRows) {
+    const hd = String(d.holiday_date ?? "").slice(0, 10);
+    if (!hd) continue;
+    holidayDuties[hd] = {
+      nurse1UserId: d.nurse1_user_id ?? "",
+      nurse2UserId: d.nurse2_user_id ?? "",
+      anesthesiaUserId: d.anesthesia_user_id ?? "",
+    };
+  }
+
+  const plan = buildFullAutoHolidayDutyPlansForYears({
+    startYear: 2026,
+    endYear,
+    users: users.map((u) => ({ ...u, isActive: Number(u.is_active ?? 1) === 1 })),
+    holidays,
+    holidayDuties,
+    preserveBeforeYmd: assignFrom,
+    overwriteOrFromYmd: assignFrom,
+    overwriteExisting: true,
+  });
+
+  let upserted = 0;
+  for (const row of plan) {
+    const hd = String(row.holidayDate ?? "").slice(0, 10);
+    if (!hd || hd < assignFrom) continue;
+    if (specialWeekendDates.includes(hd)) continue;
+
+    const n1 = String(row.nurse1UserId ?? "").trim();
+    const n2 = String(row.nurse2UserId ?? "").trim();
+    if (!n1 || !n2) continue;
+
+    const existing = await queryOne(
+      "SELECT anesthesia_user_id FROM holiday_duties WHERE holiday_date = ?",
+      hd
+    );
+    const anes = String(row.anesthesiaUserId ?? existing?.anesthesia_user_id ?? "").trim();
+
+    await execute(
+      `INSERT INTO holiday_duties (holiday_date, nurse1_user_id, nurse2_user_id, anesthesia_user_id)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(holiday_date) DO UPDATE SET
+         nurse1_user_id = excluded.nurse1_user_id,
+         nurse2_user_id = excluded.nurse2_user_id,
+         anesthesia_user_id = CASE
+           WHEN holiday_duties.anesthesia_user_id IS NULL OR TRIM(holiday_duties.anesthesia_user_id) = ''
+           THEN excluded.anesthesia_user_id
+           ELSE holiday_duties.anesthesia_user_id
+         END`,
+      hd,
+      n1,
+      n2,
+      anes || null
+    );
+    upserted += 1;
+  }
+
+  const ohminaId = idByName.get("오민아") || "";
+  const yujinId = idByName.get("유진") || "";
+  const choeId = idByName.get("최종선") || "";
+  if (!ohminaId || !yujinId || !choeId) {
+    console.warn(
+      `[db] yanghyunah_leave_duty_from_20261101: missing users ohmina=${Boolean(ohminaId)} yujin=${Boolean(yujinId)} choe=${Boolean(choeId)}`
+    );
+  } else {
+    const baseIso = new Date().toISOString();
+    for (const hd of specialWeekendDates) {
+      const existing = await queryOne(
+        "SELECT nurse1_user_id, nurse2_user_id, anesthesia_user_id FROM holiday_duties WHERE holiday_date = ?",
+        hd
+      );
+      const anes = String(existing?.anesthesia_user_id ?? "").trim();
+
+      // 재배정 결과(양현아 제외): 오민아·유진 → 이어서 당직자1 오민아→유진→최종선 이력, 최종 최종선·유진
+      await execute(
+        `INSERT INTO holiday_duties (holiday_date, nurse1_user_id, nurse2_user_id, anesthesia_user_id)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(holiday_date) DO UPDATE SET
+           nurse1_user_id = excluded.nurse1_user_id,
+           nurse2_user_id = excluded.nurse2_user_id,
+           anesthesia_user_id = CASE
+             WHEN holiday_duties.anesthesia_user_id IS NULL OR TRIM(holiday_duties.anesthesia_user_id) = ''
+             THEN excluded.anesthesia_user_id
+             ELSE holiday_duties.anesthesia_user_id
+           END`,
+        hd,
+        choeId,
+        yujinId,
+        anes || null
+      );
+
+      const hist = [
+        { slot: "nurse1", from: ohminaId, to: yujinId, at: new Date(Date.parse(baseIso) + 1000).toISOString() },
+        { slot: "nurse1", from: yujinId, to: choeId, at: new Date(Date.parse(baseIso) + 2000).toISOString() },
+      ];
+      for (const h of hist) {
+        await execute(
+          `INSERT INTO holiday_duty_history (id, holiday_date, slot, from_user_id, to_user_id, changed_by, changed_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          `hdh_yang_leave_${hd.replaceAll("-", "")}_${h.slot}_${h.to.slice(-6)}_${h.at.slice(17, 19)}`,
+          hd,
+          h.slot,
+          h.from,
+          h.to,
+          "system_migration",
+          h.at
+        );
+      }
+      upserted += 1;
+      console.log(
+        `[db] ${hd} duty set to ${nameById.get(choeId)}/${nameById.get(yujinId)} with history 오민아→유진→최종선`
+      );
+    }
+  }
+
+  await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+  console.log(`[db] ${migrationId} applied (upserted≈${upserted} from ${assignFrom})`);
 }
 

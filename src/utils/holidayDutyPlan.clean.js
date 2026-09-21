@@ -82,6 +82,8 @@ export const OR_DUTY_WEEKEND_ANCHORS = [
   { saturday: "2026-08-15", nurse1: "최유경", nurse2: "최종선" },
   { saturday: "2026-08-22", nurse1: "최유리", nurse2: "허정숙" },
   { saturday: "2026-10-10", nurse1: "정수영", nurse2: "장지은" },
+  /** 양현아 휴직 반영 후 수동 확정(이력: 오민아→유진→최종선) */
+  { saturday: "2026-11-07", nurse1: "최종선", nurse2: "유진" },
   { saturday: "2026-11-28", nurse1: "임희종", nurse2: "장성필" },
 ];
 
@@ -95,9 +97,12 @@ export const OR_DUTY_FESTIVAL_ANCHORS = [
 
 function isDutyBlockedByRule(name, ymd) {
   const nm = String(name ?? "").trim();
-  if (nm === "장지은") return ymd <= "2026-08-05";
-  if (nm === "정수영") return ymd < "2026-10-01";
-  if (nm === "이지선") return ymd <= "2026-09-06";
+  const d = String(ymd ?? "").slice(0, 10);
+  if (nm === "장지은") return d <= "2026-08-05";
+  if (nm === "정수영") return d < "2026-10-01";
+  if (nm === "이지선") return d <= "2026-09-06";
+  /** 양현아 휴직: 2026-11-01~ 주말·공휴·명절 당직 제외 */
+  if (nm === "양현아") return d >= "2026-11-01";
   return false;
 }
 
