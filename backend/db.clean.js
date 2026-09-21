@@ -495,6 +495,7 @@ export async function initDb() {
   await ensureOhMinaSickLeave20260811_31();
   await ensureJungSuyoungWeddingLeave20261019_23();
   await ensureYoonJiminSickLeave20260812_18();
+  await ensureKimInjaRemoveGoldkey20261030();
   return client;
 }
 
@@ -2384,5 +2385,67 @@ async function ensureYoonJiminSickLeave20260812_18() {
 
   await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
   console.log("[db] yoonjimin_sick_leave_20260812_18_v1 applied");
+}
+
+/** 김인자 2026-10-30 골드키 신청 삭제(내역 제외) + 차감 복구 */
+async function ensureKimInjaRemoveGoldkey20261030() {
+  const migrationId = "kim_inja_remove_goldkey_20261030_v1";
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
+  if (done) return;
+
+  const user = await queryOne(
+    "SELECT id FROM users WHERE name = ? AND role = 'ANESTHESIA' LIMIT 1",
+    "김인자"
+  );
+  if (!user?.id) {
+    console.warn("[db] kim_inja_remove_goldkey_20261030: user not found - 김인자");
+    await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+    return;
+  }
+
+  const userId = String(user.id);
+  const leaveDate = "2026-10-30";
+  const nowIso = new Date().toISOString();
+
+  const rows = await queryAll(
+    `SELECT id FROM requests
+     WHERE user_id = ? AND leave_date = ? AND leave_type = 'GOLDKEY' AND deleted_at IS NULL`,
+    userId,
+    leaveDate
+  );
+  for (const row of rows) {
+    const reqId = String(row.id);
+    await execute("UPDATE requests SET deleted_at = ? WHERE id = ?", nowIso, reqId);
+  }
+
+  const quota = defaultGoldkeyQuotaForName("김인자");
+  const reqRows = await queryAll(
+    `SELECT leave_date, status
+     FROM requests
+     WHERE user_id = ? AND leave_type = 'GOLDKEY' AND deleted_at IS NULL`,
+    userId
+  );
+  const usedDates = new Set();
+  for (const row of reqRows) {
+    const status = String(row.status ?? "").trim();
+    if (status === "REJECTED") continue;
+    if (status === "APPLIED" || status === "SELECTED" || status === "APPROVED" || status === "CANCELLED") {
+      const d = String(row.leave_date ?? "").trim().slice(0, 10);
+      if (d) usedDates.add(d);
+    }
+  }
+  const used = usedDates.size;
+  const remaining = Math.max(0, quota - used);
+  await execute(
+    `UPDATE goldkeys SET used_count = ?, remaining_count = ? WHERE user_id = ?`,
+    used,
+    remaining,
+    userId
+  );
+
+  await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+  console.log(
+    `[db] kim_inja_remove_goldkey_20261030_v1 applied (deleted=${rows.length}, used=${used}, remaining=${remaining})`
+  );
 }
 
