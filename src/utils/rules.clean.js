@@ -639,7 +639,7 @@ export function generalNormalLadderLockedMessage(leaveDateYmd) {
 /** PRN·수술실E(수E)·안정실E(안E) 해당 월 확정 휴가 상한 */
 export const SPECIAL_SHIFT_MONTHLY_LEAVE_CAP = 3;
 export const SPECIAL_SHIFT_MONTHLY_LEAVE_CAP_MESSAGE =
-  "해당월은 휴가가 3회미만이어야 합니다. 확인해주세요";
+  "위의 사람은 당월 휴가가 3회까지 허용됩니다. 확인해주세요";
 
 const SPECIAL_SHIFT_MONTHLY_LEAVE_CAP_CODES = new Set(["PRN", "수E", "안E"]);
 const SPECIAL_SHIFT_MONTHLY_LEAVE_COUNT_TYPES = new Set([
