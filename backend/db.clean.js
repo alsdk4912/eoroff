@@ -498,6 +498,7 @@ export async function initDb() {
   await ensureKimInjaRemoveGoldkey20261030();
   await ensureYangHyunAhLeaveDutyFrom20261101();
   await ensureNov7_8DutyHistorySlotFix();
+  await ensureWeekendDutyFixFrom20261128();
   return client;
 }
 
@@ -2629,5 +2630,137 @@ async function ensureNov7_8DutyHistorySlotFix() {
 
   await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
   console.log(`[db] ${migrationId} applied`);
+}
+
+/**
+ * 주말당직: 11/28·29 임희종 중복 오류 수정 → 장성필·장지은,
+ * 이후 순번(12/5·6 정수영·최종선 등) 재배정
+ */
+async function ensureWeekendDutyFixFrom20261128() {
+  const migrationId = "weekend_duty_fix_from_20261128_v1";
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
+  if (done) return;
+
+  const assignFrom = "2026-11-28";
+  const endYear = new Date().getFullYear() + 3;
+
+  const users = await queryAll("SELECT id, name, role, IFNULL(is_active, 1) AS is_active FROM users");
+  const holidayRows = await queryAll(
+    "SELECT holiday_date, holiday_name, is_holiday FROM holidays WHERE holiday_date >= ? AND holiday_date <= ?",
+    "2026-01-01",
+    `${endYear}-12-31`
+  );
+  const holidays = holidayRows.map((h) => ({
+    holidayDate: String(h.holiday_date ?? "").slice(0, 10),
+    holidayName: h.holiday_name ?? "",
+    isHoliday: Boolean(h.is_holiday),
+  }));
+
+  const dutyRows = await queryAll("SELECT * FROM holiday_duties WHERE holiday_date >= ?", "2026-01-01");
+  const holidayDuties = {};
+  for (const d of dutyRows) {
+    const hd = String(d.holiday_date ?? "").slice(0, 10);
+    if (!hd) continue;
+    holidayDuties[hd] = {
+      nurse1UserId: d.nurse1_user_id ?? "",
+      nurse2UserId: d.nurse2_user_id ?? "",
+      anesthesiaUserId: d.anesthesia_user_id ?? "",
+    };
+  }
+
+  const plan = buildFullAutoHolidayDutyPlansForYears({
+    startYear: 2026,
+    endYear,
+    users: users.map((u) => ({ ...u, isActive: Number(u.is_active ?? 1) === 1 })),
+    holidays,
+    holidayDuties,
+    preserveBeforeYmd: assignFrom,
+    overwriteOrFromYmd: assignFrom,
+    overwriteExisting: true,
+  });
+
+  const idByName = new Map(
+    users.map((u) => [String(u.name ?? "").trim(), String(u.id ?? "").trim()]).filter(([n, id]) => n && id)
+  );
+  const nameById = new Map(users.map((u) => [String(u.id ?? "").trim(), String(u.name ?? "").trim()]));
+
+  let upserted = 0;
+  const spotCheck = ["2026-11-28", "2026-11-29", "2026-12-05", "2026-12-06"];
+  for (const row of plan) {
+    const hd = String(row.holidayDate ?? "").slice(0, 10);
+    if (!hd || hd < assignFrom) continue;
+
+    const n1 = String(row.nurse1UserId ?? "").trim();
+    const n2 = String(row.nurse2UserId ?? "").trim();
+    if (!n1 || !n2) continue;
+
+    const existing = await queryOne(
+      "SELECT anesthesia_user_id FROM holiday_duties WHERE holiday_date = ?",
+      hd
+    );
+    const anes = String(row.anesthesiaUserId ?? existing?.anesthesia_user_id ?? "").trim();
+
+    await execute(
+      `INSERT INTO holiday_duties (holiday_date, nurse1_user_id, nurse2_user_id, anesthesia_user_id)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(holiday_date) DO UPDATE SET
+         nurse1_user_id = excluded.nurse1_user_id,
+         nurse2_user_id = excluded.nurse2_user_id,
+         anesthesia_user_id = CASE
+           WHEN holiday_duties.anesthesia_user_id IS NULL OR TRIM(holiday_duties.anesthesia_user_id) = ''
+           THEN excluded.anesthesia_user_id
+           ELSE holiday_duties.anesthesia_user_id
+         END`,
+      hd,
+      n1,
+      n2,
+      anes || null
+    );
+    upserted += 1;
+    if (spotCheck.includes(hd)) {
+      console.log(`[db] ${hd} weekend duty → ${nameById.get(n1)}/${nameById.get(n2)}`);
+    }
+  }
+
+  // 앵커 강제 보정 (플랜이 비어 있어도 핵심 주말은 맞춤)
+  const forced = [
+    { dates: ["2026-11-28", "2026-11-29"], n1: "장성필", n2: "장지은" },
+    { dates: ["2026-12-05", "2026-12-06"], n1: "정수영", n2: "최종선" },
+  ];
+  for (const block of forced) {
+    const n1 = idByName.get(block.n1) || "";
+    const n2 = idByName.get(block.n2) || "";
+    if (!n1 || !n2) {
+      console.warn(`[db] ${migrationId}: missing users ${block.n1}/${block.n2}`);
+      continue;
+    }
+    for (const hd of block.dates) {
+      const existing = await queryOne(
+        "SELECT anesthesia_user_id FROM holiday_duties WHERE holiday_date = ?",
+        hd
+      );
+      const anes = String(existing?.anesthesia_user_id ?? "").trim();
+      await execute(
+        `INSERT INTO holiday_duties (holiday_date, nurse1_user_id, nurse2_user_id, anesthesia_user_id)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(holiday_date) DO UPDATE SET
+           nurse1_user_id = excluded.nurse1_user_id,
+           nurse2_user_id = excluded.nurse2_user_id,
+           anesthesia_user_id = CASE
+             WHEN holiday_duties.anesthesia_user_id IS NULL OR TRIM(holiday_duties.anesthesia_user_id) = ''
+             THEN excluded.anesthesia_user_id
+             ELSE holiday_duties.anesthesia_user_id
+           END`,
+        hd,
+        n1,
+        n2,
+        anes || null
+      );
+      upserted += 1;
+    }
+  }
+
+  await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+  console.log(`[db] ${migrationId} applied (upserted≈${upserted} from ${assignFrom})`);
 }
 

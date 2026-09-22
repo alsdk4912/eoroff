@@ -84,7 +84,9 @@ export const OR_DUTY_WEEKEND_ANCHORS = [
   { saturday: "2026-10-10", nurse1: "정수영", nurse2: "장지은" },
   /** 양현아 휴직 반영 후 수동 확정(이력: 오민아→유진→최종선) */
   { saturday: "2026-11-07", nurse1: "최종선", nurse2: "유진" },
-  { saturday: "2026-11-28", nurse1: "임희종", nurse2: "장성필" },
+  /** 11/21 이현숙·임희종 다음 — 임희종 중복 방지 */
+  { saturday: "2026-11-28", nurse1: "장성필", nurse2: "장지은" },
+  { saturday: "2026-12-05", nurse1: "정수영", nurse2: "최종선" },
 ];
 
 /** 명절 일자별 고정 배정 (추석·설날 등) */
