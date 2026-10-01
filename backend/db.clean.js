@@ -486,6 +486,7 @@ export async function initDb() {
   await backfillGeneralNormalNegotiationOrderFromAppliedOrder();
   await backfillHalfDaySlots();
   await ensureHalfDayHistoricalRecords();
+  await ensureHalfDayHistoricalSep2026();
   await ensureChiefLeechanjooLeave20260630();
   await ensureAnesthesiaLeeJihyunGoldkeys20260724_27();
   await ensureChiefOhMoonhwanAndDeactivateLeechanjoo();
@@ -1813,6 +1814,78 @@ async function ensureHalfDayHistoricalRecords() {
 
   await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
   console.log("[db] half_day_historical_jang_son_v1 applied");
+}
+
+/** 2026-09 반차1: 김해림 9/1, 유진·장성필 9/4, 최종선 9/11 */
+async function ensureHalfDayHistoricalSep2026() {
+  const migrationId = "half_day_historical_sep2026_v1";
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
+  if (done) return;
+
+  const admin = await queryOne("SELECT id FROM users WHERE role = 'ADMIN' ORDER BY id ASC LIMIT 1");
+  const selectedBy = String(admin?.id ?? "u_admin_1");
+
+  const seeds = [
+    { name: "김해림", leaveDate: "2026-09-01", requestId: "req_hd_hist_kim_20260901", selectionId: "sel_hd_hist_kim_20260901" },
+    { name: "유진", leaveDate: "2026-09-04", requestId: "req_hd_hist_yujin_20260904", selectionId: "sel_hd_hist_yujin_20260904" },
+    { name: "장성필", leaveDate: "2026-09-04", requestId: "req_hd_hist_jangsp_20260904", selectionId: "sel_hd_hist_jangsp_20260904" },
+    { name: "최종선", leaveDate: "2026-09-11", requestId: "req_hd_hist_choe_20260911", selectionId: "sel_hd_hist_choe_20260911" },
+  ];
+
+  let upserted = 0;
+  for (const seed of seeds) {
+    const user = await queryOne("SELECT id FROM users WHERE name = ? LIMIT 1", seed.name);
+    if (!user?.id) {
+      console.warn(`[db] half_day_historical_sep2026: user not found — ${seed.name}`);
+      continue;
+    }
+    const userId = String(user.id);
+    const existing = await queryOne(
+      `SELECT id FROM requests
+       WHERE user_id = ? AND leave_date = ? AND leave_type = 'HALF_DAY' AND deleted_at IS NULL`,
+      userId,
+      seed.leaveDate
+    );
+    const requestedAt = `${seed.leaveDate}T00:30:00.000Z`;
+    if (existing?.id) {
+      await execute(
+        "UPDATE requests SET status = 'APPROVED', half_day_slot = '1', leave_nature = 'PERSONAL' WHERE id = ?",
+        existing.id
+      );
+      const sel = await queryOne("SELECT id FROM selections WHERE leave_request_id = ? LIMIT 1", existing.id);
+      if (!sel?.id) {
+        await execute(
+          "INSERT INTO selections (id, leave_request_id, selected_by, selected_at) VALUES (?, ?, ?, ?)",
+          `${seed.selectionId}_alt`,
+          existing.id,
+          selectedBy,
+          requestedAt
+        );
+      }
+      upserted += 1;
+      continue;
+    }
+    await execute(
+      `INSERT INTO requests (
+         id, user_id, leave_date, leave_type, leave_nature, status, requested_at, memo, half_day_slot
+       ) VALUES (?, ?, ?, 'HALF_DAY', 'PERSONAL', 'APPROVED', ?, '과거 반차1 사용 기록', '1')`,
+      seed.requestId,
+      userId,
+      seed.leaveDate,
+      requestedAt
+    );
+    await execute(
+      "INSERT INTO selections (id, leave_request_id, selected_by, selected_at) VALUES (?, ?, ?, ?)",
+      seed.selectionId,
+      seed.requestId,
+      selectedBy,
+      requestedAt
+    );
+    upserted += 1;
+  }
+
+  await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+  console.log(`[db] ${migrationId} applied (upserted=${upserted})`);
 }
 
 /** 이찬주 주임 2026-06-30 휴가 신청 */
