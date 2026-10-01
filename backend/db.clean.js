@@ -500,6 +500,7 @@ export async function initDb() {
   await ensureNov7_8DutyHistorySlotFix();
   await ensureWeekendDutyFixFrom20261128();
   await ensureLeeJihyunRemoveGoldkey20261016();
+  await ensureLeeJihyunRemoveGoldkey20261015();
   return client;
 }
 
@@ -2780,6 +2781,80 @@ async function ensureLeeJihyunRemoveGoldkey20261016() {
 
   const userId = String(user.id);
   const leaveDate = "2026-10-16";
+  const nowIso = new Date().toISOString();
+
+  const rows = await queryAll(
+    `SELECT id FROM requests
+     WHERE user_id = ? AND leave_date = ? AND leave_type = 'GOLDKEY' AND deleted_at IS NULL`,
+    userId,
+    leaveDate
+  );
+  const requestIds = rows.map((row) => String(row.id)).filter(Boolean);
+
+  for (const reqId of requestIds) {
+    await execute("DELETE FROM cancellations WHERE leave_request_id = ?", reqId);
+    await execute("DELETE FROM leave_request_audit WHERE leave_request_id = ?", reqId);
+    await execute("DELETE FROM selections WHERE leave_request_id = ?", reqId);
+    await execute("UPDATE requests SET deleted_at = ? WHERE id = ?", nowIso, reqId);
+  }
+
+  const quota = defaultGoldkeyQuotaForName("이지현");
+  const reqRows = await queryAll(
+    `SELECT id, leave_date, status
+     FROM requests
+     WHERE user_id = ? AND leave_type = 'GOLDKEY' AND deleted_at IS NULL`,
+    userId
+  );
+  const cancelRows = await queryAll(
+    `SELECT c.leave_request_id, IFNULL(c.deduction_exempt, 0) AS deduction_exempt
+     FROM cancellations c
+     JOIN requests r ON r.id = c.leave_request_id
+     WHERE r.user_id = ? AND r.leave_type = 'GOLDKEY' AND r.deleted_at IS NULL AND c.revoked_at IS NULL`,
+    userId
+  );
+  const exemptCancelled = new Set(
+    cancelRows.filter((c) => Number(c.deduction_exempt) === 1).map((c) => String(c.leave_request_id))
+  );
+  const usedDates = new Set();
+  for (const row of reqRows) {
+    const status = String(row.status ?? "").trim();
+    if (status === "REJECTED") continue;
+    if (status === "CANCELLED" && exemptCancelled.has(String(row.id))) continue;
+    if (status === "APPLIED" || status === "SELECTED" || status === "APPROVED" || status === "CANCELLED") {
+      const d = String(row.leave_date ?? "").trim().slice(0, 10);
+      if (d) usedDates.add(d);
+    }
+  }
+  const used = usedDates.size;
+  const remaining = Math.max(0, quota - used);
+  await execute(
+    `UPDATE goldkeys SET used_count = ?, remaining_count = ? WHERE user_id = ?`,
+    used,
+    remaining,
+    userId
+  );
+
+  await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+  console.log(
+    `[db] ${migrationId} applied (deleted=${requestIds.length}, used=${used}, remaining=${remaining})`
+  );
+}
+
+/** 이지현 2026-10-15 오신청 골드키·취소내역 삭제(내역 제외) + 차감 복구 */
+async function ensureLeeJihyunRemoveGoldkey20261015() {
+  const migrationId = "lee_jihyun_remove_goldkey_20261015_v1";
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
+  if (done) return;
+
+  const user = await queryOne("SELECT id FROM users WHERE name = ? LIMIT 1", "이지현");
+  if (!user?.id) {
+    console.warn("[db] lee_jihyun_remove_goldkey_20261015: user not found - 이지현");
+    await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+    return;
+  }
+
+  const userId = String(user.id);
+  const leaveDate = "2026-10-15";
   const nowIso = new Date().toISOString();
 
   const rows = await queryAll(
