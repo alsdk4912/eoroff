@@ -20,13 +20,12 @@ import {
   runTransaction,
 } from "./db.clean.js";
 import {
-  generalNormalLadderLockedMessage,
-  isGeneralNormalLadderTimeLocked,
   isLeaveDateBeforeTodayKst,
   canEditLeaveNatureStatus,
   enumerateYmdInclusive,
   isRangeAutoApproveLeave,
   holidayDateSet,
+  previousBusinessDayBeforeYmd,
   weddingLeaveDatesInRange,
   enumerateNWeekdaysFrom,
   maternityEndFromStart,
@@ -2481,9 +2480,7 @@ app.post("/api/ladder-results", async (req, res) => {
     const lt = String(leaveType ?? "").trim();
     if (!lt) return res.status(400).json({ error: "leaveType이 필요합니다." });
 
-    if (isGeneralNormalLadderTimeLocked(ld, lt)) {
-      return res.status(409).json({ error: generalNormalLadderLockedMessage(ld) });
-    }
+    // 일반휴가-후순위 시간 잠금은 자동 사다리용. 관리자 수동 실행은 허용.
 
     const pArr = Array.isArray(participants) ? participants : [];
     const oArr = Array.isArray(order) ? order : [];
@@ -4115,52 +4112,82 @@ async function main() {
     "1 0 9 * * *",
     async () => {
       try {
-        const targetLeaveDate = kstYmdPlusDays(1, new Date());
+        const todayYmd = kstYmdPlusDays(0, new Date());
         const cutoffIso = kstTodayCutoffIsoNineAmOneSecond(new Date());
-        const appliedRows = await queryAll(
-          `SELECT id, user_id, leave_date, leave_type, status, requested_at
-           FROM requests
-           WHERE ${SQL_REQ_ACTIVE}
-             AND leave_type = 'GENERAL_NORMAL'
-             AND leave_date = ?
-             AND status = 'APPLIED'`,
-          targetLeaveDate
-        );
-        const eligible = (Array.isArray(appliedRows) ? appliedRows : []).filter((r) => String(r.requested_at ?? "") < cutoffIso);
-        if (eligible.length < 2) {
-          console.log(`[auto-ladder] skip ${targetLeaveDate}: eligible < 2`);
+        const holidayRows = await queryAll("SELECT holiday_date, is_holiday FROM holidays WHERE is_holiday = 1");
+        const holidaySet = holidayDateSet(holidayRows);
+
+        // 오늘이 근무일 기준 전일인 휴가일 후보(최대 21일 앞)
+        const targetLeaveDates = [];
+        for (let offset = 1; offset <= 21; offset += 1) {
+          const candidate = kstYmdPlusDays(offset, new Date());
+          if (previousBusinessDayBeforeYmd(candidate, holidaySet) === todayYmd) {
+            targetLeaveDates.push(candidate);
+          }
+        }
+        if (targetLeaveDates.length === 0) {
+          console.log(`[auto-ladder] skip ${todayYmd}: no leave dates unlock today`);
           return;
         }
-        const shuffled = shuffleArray(eligible);
-        const orderedUserIds = shuffled.map((r) => String(r.user_id));
-        await runTransaction(async (tx) => {
-          for (let i = 0; i < shuffled.length; i += 1) {
-            const row = shuffled[i];
-            const ord = i + 1;
-            await tx.execute("UPDATE requests SET negotiation_order = ?, negotiation_order_locked = 1 WHERE id = ?", ord, row.id);
-            await insertLeaveRequestAuditRow(tx, {
-              leaveRequestId: row.id,
-              action: "AUTO_LADDER_SET",
-              fromStatus: "APPLIED",
-              toStatus: "APPLIED",
-              actorUserId: "system",
-              reason: "GENERAL_NORMAL 내일 휴가 09:00:01 자동 사다리",
-              idempotencyKey: null,
-              metadataJson: { leaveDate: targetLeaveDate, leaveType: "GENERAL_NORMAL", negotiationOrder: ord },
-            });
-          }
-          await tx.execute(
-            "INSERT INTO ladder_results (id, leave_date, leave_type, participants_json, order_json, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            `lrg_auto_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-            targetLeaveDate,
-            "GENERAL_NORMAL",
-            JSON.stringify(orderedUserIds),
-            JSON.stringify(orderedUserIds),
-            "system",
-            new Date().toISOString()
+
+        for (const targetLeaveDate of targetLeaveDates) {
+          const existing = await queryOne(
+            "SELECT id FROM ladder_results WHERE leave_date = ? AND leave_type = 'GENERAL_NORMAL' LIMIT 1",
+            targetLeaveDate
           );
-        });
-        console.log(`[auto-ladder] applied ${targetLeaveDate}: ${eligible.length} rows`);
+          if (existing) {
+            console.log(`[auto-ladder] skip ${targetLeaveDate}: ladder already exists`);
+            continue;
+          }
+          const appliedRows = await queryAll(
+            `SELECT id, user_id, leave_date, leave_type, status, requested_at, negotiation_order_locked
+             FROM requests
+             WHERE ${SQL_REQ_ACTIVE}
+               AND leave_type = 'GENERAL_NORMAL'
+               AND leave_date = ?
+               AND status = 'APPLIED'`,
+            targetLeaveDate
+          );
+          const eligible = (Array.isArray(appliedRows) ? appliedRows : []).filter((r) => String(r.requested_at ?? "") < cutoffIso);
+          if (eligible.length < 2) {
+            console.log(`[auto-ladder] skip ${targetLeaveDate}: eligible < 2`);
+            continue;
+          }
+          if (eligible.some((r) => Number(r.negotiation_order_locked) === 1)) {
+            console.log(`[auto-ladder] skip ${targetLeaveDate}: negotiation order already locked`);
+            continue;
+          }
+          const shuffled = shuffleArray(eligible);
+          const orderedUserIds = shuffled.map((r) => String(r.user_id));
+          await runTransaction(async (tx) => {
+            for (let i = 0; i < shuffled.length; i += 1) {
+              const row = shuffled[i];
+              const ord = i + 1;
+              await tx.execute("UPDATE requests SET negotiation_order = ?, negotiation_order_locked = 1 WHERE id = ?", ord, row.id);
+              await insertLeaveRequestAuditRow(tx, {
+                leaveRequestId: row.id,
+                action: "AUTO_LADDER_SET",
+                fromStatus: "APPLIED",
+                toStatus: "APPLIED",
+                actorUserId: "system",
+                reason: "GENERAL_NORMAL 근무일 기준 전일 09:00:01 자동 사다리",
+                idempotencyKey: null,
+                metadataJson: { leaveDate: targetLeaveDate, leaveType: "GENERAL_NORMAL", negotiationOrder: ord, unlockWorkday: todayYmd },
+              });
+            }
+            await tx.execute(
+              "INSERT INTO ladder_results (id, leave_date, leave_type, participants_json, order_json, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+              `lrg_auto_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+              targetLeaveDate,
+              "GENERAL_NORMAL",
+              JSON.stringify(orderedUserIds),
+              JSON.stringify(orderedUserIds),
+              "system",
+              new Date().toISOString()
+            );
+          });
+          console.log(`[auto-ladder] applied ${targetLeaveDate}: ${eligible.length} rows (unlock workday ${todayYmd})`);
+        }
       } catch (err) {
         console.error("[auto-ladder] failed", err);
       }

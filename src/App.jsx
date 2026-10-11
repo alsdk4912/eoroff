@@ -1584,10 +1584,7 @@ function App() {
       window.alert?.("사다리 기능은 관리자(수술실) 또는 관리자2(마취과)만 사용할 수 있습니다.");
       return;
     }
-    if (isGeneralNormalLadderTimeLocked(payload?.leaveDate, payload?.leaveType)) {
-      window.alert?.(generalNormalLadderLockedMessage(payload?.leaveDate));
-      return;
-    }
+    // 시간 잠금은 자동 사다리 안내용. 관리자 수동 저장은 허용.
     if (serverMode) {
       try {
         await api.createLadderResult(payload);
@@ -3268,6 +3265,7 @@ function App() {
               applyLadderResultToNegotiationOrder={applyLadderResultToNegotiationOrder}
               currentUserId={auth?.userId}
               viewerRole={viewerRole}
+              holidays={holidays}
             />
             )
           }
@@ -7607,6 +7605,7 @@ function LadderGamePage({
   applyLadderResultToNegotiationOrder,
   currentUserId,
   viewerRole = "",
+  holidays = [],
 }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -7689,9 +7688,11 @@ function LadderGamePage({
     [requests, leaveDate, leaveType, ladderResults, users, staffRole]
   );
   const forceManualOnly = isForceManualOrderOnly(leaveDate, leaveType);
-  const generalNormalLadderTimeLocked = isGeneralNormalLadderTimeLocked(leaveDate, leaveType);
+  const holidaySetForLadder = useMemo(() => holidayDateSet(holidays), [holidays]);
+  const generalNormalLadderTimeLocked = isGeneralNormalLadderTimeLocked(leaveDate, leaveType, new Date(), holidaySetForLadder);
+  // 시간 잠금은 자동 사다리 안내만. 관리자 수동 실행은 항상 가능.
   const canRunLadderForTarget =
-    ladderParticipantUserIds.length >= 2 && !manualOrderBlocksLadder && !forceManualOnly && !generalNormalLadderTimeLocked;
+    ladderParticipantUserIds.length >= 2 && !manualOrderBlocksLadder && !forceManualOnly;
   const savedLadderKeySet = useMemo(() => buildLadderDoneKeySet(ladderResults, users), [ladderResults, users]);
   const hasSavedForCurrentTarget = savedLadderKeySet.has(`${leaveDate}|${leaveType}|${staffRole}`);
 
@@ -7743,9 +7744,8 @@ function LadderGamePage({
       return null;
     }
     if (!canRunLadderForTarget) {
-      const msg = generalNormalLadderTimeLocked
-        ? generalNormalLadderLockedMessage(leaveDate)
-        : leaveType === "GOLDKEY"
+      const msg =
+        leaveType === "GOLDKEY"
           ? "현재 골드키는 협의 대상이 아니어서 사다리를 실행할 수 없습니다. (신청순 자동 배정)"
           : "현재 조건에서는 사다리를 실행할 수 없습니다.";
       setLadderMsg(msg);
@@ -7817,12 +7817,6 @@ function LadderGamePage({
       setLadderMsg("이미 저장된 사다리 결과가 있어 다시 저장할 수 없습니다.");
       return;
     }
-    if (generalNormalLadderTimeLocked) {
-      const msg = generalNormalLadderLockedMessage(leaveDate);
-      setLadderMsg(msg);
-      window.alert?.(msg);
-      return;
-    }
     const selected = Array.isArray(selectedUserIdsOverride) ? selectedUserIdsOverride : selectedUserIds;
     const order = Array.isArray(previewOrderOverride) ? previewOrderOverride : previewOrder;
     if (order.length < 2) {
@@ -7871,10 +7865,6 @@ function LadderGamePage({
     }
     if (manualOrderBlocksLadder) {
       setLadderMsg("협의 순번이 수기로 저장되어 자동 사다리를 건너뜁니다.");
-      return;
-    }
-    if (generalNormalLadderTimeLocked) {
-      setLadderMsg(generalNormalLadderLockedMessage(leaveDate));
       return;
     }
     if (!canRunLadderForTarget) return;
@@ -7992,7 +7982,7 @@ function LadderGamePage({
       ) : null}
       {generalNormalLadderTimeLocked && !hasSavedForCurrentTarget ? (
         <p className="help" style={{ marginTop: 8 }}>
-          {generalNormalLadderLockedMessage(leaveDate)}
+          {generalNormalLadderLockedMessage(leaveDate, holidaySetForLadder)}
         </p>
       ) : null}
       <div className="ladder-date-type-row ladder-date-type-row--compact ladder-date-type-row--inline">
@@ -9453,16 +9443,21 @@ function CalendarPage({
                                     users,
                                     scopeRole
                                   );
-                                  const timeLocked = isGeneralNormalLadderTimeLocked(t.leaveDate, t.leaveType);
+                                  const timeLocked = isGeneralNormalLadderTimeLocked(
+                                    t.leaveDate,
+                                    t.leaveType,
+                                    new Date(),
+                                    holidays
+                                  );
                                   return (
                                 <button
                                   key={`${t.leaveDate}-${t.leaveType}`}
                                   type="button"
                                   className="calendar-ladder-quick-btn"
-                                  disabled={isDone || manualBlock || timeLocked}
+                                  disabled={isDone || manualBlock}
                                   title={
                                     timeLocked
-                                      ? generalNormalLadderLockedMessage(t.leaveDate)
+                                      ? generalNormalLadderLockedMessage(t.leaveDate, holidays)
                                       : manualBlock
                                         ? "수기로 순번이 저장되어 사다리를 사용할 수 없습니다."
                                         : undefined
@@ -9477,10 +9472,10 @@ function CalendarPage({
                                 >
                                   {isDone
                                     ? `${typeFullLabel(t.leaveType)} 사다리 완료`
-                                    : timeLocked
-                                      ? `${typeFullLabel(t.leaveType)} 사다리(09:00 이후)`
                                     : manualBlock
                                       ? `${typeFullLabel(t.leaveType)} 사다리 불가`
+                                      : timeLocked
+                                        ? `${typeFullLabel(t.leaveType)} 사다리(수동)`
                                       : `${typeFullLabel(t.leaveType)} 사다리`}
                                 </button>
                                   );

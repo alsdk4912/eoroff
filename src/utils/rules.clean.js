@@ -706,11 +706,16 @@ function ymdAddDays(ymd, deltaDays) {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 }
 
-/** 휴가일 직전 영업일(주말 제외). 6/29(월) → 6/26(금) */
-function previousBusinessDayBeforeYmd(ymd) {
+/**
+ * 휴가일 직전 근무일(주말·공휴일 제외).
+ * 예) 10/6 → 10/2 (10/3–4 주말, 10/5 대체공휴일)
+ * holidaysOrSet: Set 또는 holidays 배열(없으면 주말만 제외)
+ */
+export function previousBusinessDayBeforeYmd(ymd, holidaysOrSet = null) {
+  const holidaySet = holidaysOrSet instanceof Set ? holidaysOrSet : holidayDateSet(holidaysOrSet);
   let cur = ymdAddDays(ymd, -1);
-  for (let i = 0; i < 14 && cur; i += 1) {
-    if (!isWeekendYmd(cur)) return cur;
+  for (let i = 0; i < 21 && cur; i += 1) {
+    if (!isNonWorkingYmd(cur, holidaySet)) return cur;
     cur = ymdAddDays(cur, -1);
   }
   return cur;
@@ -724,30 +729,30 @@ function kstNineAmMs(ymd) {
 }
 
 /**
- * 일반휴가-후순위: 휴가일 전 영업일 09:00(KST)부터 사다리 실행 가능.
- * 예) 6/29(월) 휴가 → 6/26(금) 09:00 이후 (주말 건너뜀)
+ * 일반휴가-후순위: 휴가일 근무일 기준 전일 09:00(KST)부터 사다리 실행 가능.
+ * 예) 10/6 휴가 → 10/2(금) 09:00 이후
  */
-export function isGeneralNormalLadderUnlocked(leaveDateYmd, now = new Date()) {
+export function isGeneralNormalLadderUnlocked(leaveDateYmd, now = new Date(), holidaysOrSet = null) {
   const ld = String(leaveDateYmd ?? "").slice(0, 10);
-  const prevBusinessYmd = previousBusinessDayBeforeYmd(ld);
+  const prevBusinessYmd = previousBusinessDayBeforeYmd(ld, holidaysOrSet);
   if (!prevBusinessYmd) return true;
   const unlockMs = kstNineAmMs(prevBusinessYmd);
   if (!Number.isFinite(unlockMs)) return true;
   return now.getTime() >= unlockMs;
 }
 
-export function isGeneralNormalLadderTimeLocked(leaveDateYmd, leaveType, now = new Date()) {
+export function isGeneralNormalLadderTimeLocked(leaveDateYmd, leaveType, now = new Date(), holidaysOrSet = null) {
   if (String(leaveType ?? "") !== "GENERAL_NORMAL") return false;
-  return !isGeneralNormalLadderUnlocked(leaveDateYmd, now);
+  return !isGeneralNormalLadderUnlocked(leaveDateYmd, now, holidaysOrSet);
 }
 
-export function generalNormalLadderLockedMessage(leaveDateYmd) {
+export function generalNormalLadderLockedMessage(leaveDateYmd, holidaysOrSet = null) {
   const ld = String(leaveDateYmd ?? "").slice(0, 10);
-  const prevBusinessYmd = previousBusinessDayBeforeYmd(ld);
+  const prevBusinessYmd = previousBusinessDayBeforeYmd(ld, holidaysOrSet);
   if (!prevBusinessYmd || !ld) {
-    return "일반휴가-후순위는 휴가 전 영업일 09:00 이후부터 사다리를 실행할 수 있습니다.";
+    return "일반휴가-후순위는 근무일 기준 전일 09:00 이후 자동 사다리가 실행됩니다. 관리자는 수동으로도 실행할 수 있습니다.";
   }
-  return `일반휴가-후순위(${ld})는 전 영업일(${prevBusinessYmd}) 09:00 이후부터 사다리를 실행할 수 있습니다.`;
+  return `일반휴가-후순위(${ld})는 근무일 기준 전일(${prevBusinessYmd}) 09:00 이후 자동 사다리가 실행됩니다. 관리자는 수동으로도 실행할 수 있습니다.`;
 }
 
 /** PRN·수술실E(수E)·안정실E(안E) 해당 월 확정 휴가 상한 */
