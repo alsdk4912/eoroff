@@ -3375,20 +3375,13 @@ button.ym-wheel-check:hover {
   box-shadow: none !important;
 }
 
-/* 본인 당직일: 연한 스톤 채우기 (기존 노란 하이라이트 대체) */
+/* 본인 당직일: 셀 배경은 그대로, 당직 박스만 스톤 채우기 */
 .calendar-cell--my-duty {
-  background: #f3f0ea !important;
   border: none;
   box-shadow: none;
 }
 
-.calendar-cell--today.calendar-cell--my-duty,
-.calendar-cell--selected.calendar-cell--my-duty,
-.calendar-cell--today.calendar-cell--selected.calendar-cell--my-duty {
-  background: #ebe6dc !important;
-}
-
-/* 캘린더 휴일 셀 당직자: 테두리만 (채우기 없음) */
+/* 캘린더 휴일 셀 당직자: 기본은 테두리만 */
 .calendar-duty-box {
   display: flex;
   flex-direction: column;
@@ -3420,7 +3413,7 @@ button.ym-wheel-check:hover {
 }
 
 .calendar-cell--my-duty .calendar-duty-box {
-  background: transparent;
+  background: #f3f0ea;
   border-color: #b7ab98;
 }
 
