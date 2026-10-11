@@ -3375,13 +3375,20 @@ button.ym-wheel-check:hover {
   box-shadow: none !important;
 }
 
+/* 본인 당직일: 연한 스톤 채우기 (기존 노란 하이라이트 대체) */
 .calendar-cell--my-duty {
-  background: rgba(245, 158, 11, 0.08);
+  background: #f3f0ea !important;
   border: none;
   box-shadow: none;
 }
 
-/* 캘린더 휴일 셀 당직자: 한 박스·3행 (스톤 톤 — 휴가·본인당직 노란 셀과 분리) */
+.calendar-cell--today.calendar-cell--my-duty,
+.calendar-cell--selected.calendar-cell--my-duty,
+.calendar-cell--today.calendar-cell--selected.calendar-cell--my-duty {
+  background: #ebe6dc !important;
+}
+
+/* 캘린더 휴일 셀 당직자: 테두리만 (채우기 없음) */
 .calendar-duty-box {
   display: flex;
   flex-direction: column;
@@ -3393,7 +3400,7 @@ button.ym-wheel-check:hover {
   padding: 2px 3px;
   border: 1px solid #c9bfb0;
   border-radius: 6px;
-  background: #f3f0ea;
+  background: transparent;
   color: #5c5346;
 }
 
@@ -3413,7 +3420,7 @@ button.ym-wheel-check:hover {
 }
 
 .calendar-cell--my-duty .calendar-duty-box {
-  background: #ebe6dc;
+  background: transparent;
   border-color: #b7ab98;
 }
 
