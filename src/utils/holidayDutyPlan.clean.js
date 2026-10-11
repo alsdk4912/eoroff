@@ -73,6 +73,8 @@ export const OR_DUTY_PUBLIC_ANCHORS = [
   { date: "2026-10-05", nurse1: "이지선", nurse2: "임희종" },
   { date: "2026-10-09", nurse1: "장성필", nurse2: "장지은" },
   { date: "2026-12-25", nurse1: "정수영", nurse2: "최종선" },
+  /** 유진 청원휴직(2027-03-01~): 삼일절 공휴 — 최유리·김해림 (유진은 순번에서 건너뜀) */
+  { date: "2027-03-01", nurse1: "최유리", nurse2: "김해림" },
 ];
 
 export const OR_DUTY_WEEKEND_ANCHORS = [
@@ -87,6 +89,8 @@ export const OR_DUTY_WEEKEND_ANCHORS = [
   /** 11/21 이현숙·임희종 다음 — 임희종 중복 방지 */
   { saturday: "2026-11-28", nurse1: "장성필", nurse2: "장지은" },
   { saturday: "2026-12-05", nurse1: "정수영", nurse2: "최종선" },
+  /** 유진 청원휴직: 오민아 다음은 유진 건너뛰고 이양희·이지선 */
+  { saturday: "2027-03-06", nurse1: "이양희", nurse2: "이지선" },
 ];
 
 /** 명절 일자별 고정 배정 (추석·설날 등) */
@@ -97,6 +101,10 @@ export const OR_DUTY_FESTIVAL_ANCHORS = [
   { date: "2026-09-27", nurse1: "이지선", nurse2: "이현숙" },
 ];
 
+/** 유진 청원휴직 1년: 2027-03-01 ~ 2028-02-29 */
+export const YUJIN_LEAVE_DUTY_FROM = "2027-03-01";
+export const YUJIN_LEAVE_DUTY_UNTIL = "2028-02-29";
+
 function isDutyBlockedByRule(name, ymd) {
   const nm = String(name ?? "").trim();
   const d = String(ymd ?? "").slice(0, 10);
@@ -105,6 +113,8 @@ function isDutyBlockedByRule(name, ymd) {
   if (nm === "이지선") return d <= "2026-09-06";
   /** 양현아 휴직: 2026-11-01~ 주말·공휴·명절 당직 제외 */
   if (nm === "양현아") return d >= "2026-11-01";
+  /** 유진 청원휴직 1년 */
+  if (nm === "유진" && d >= YUJIN_LEAVE_DUTY_FROM && d <= YUJIN_LEAVE_DUTY_UNTIL) return true;
   return false;
 }
 
