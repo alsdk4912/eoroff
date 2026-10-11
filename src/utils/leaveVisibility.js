@@ -271,18 +271,27 @@ export function isYmdOffDay(ymd, holidaysCache) {
   );
 }
 
-/** 휴일 당직 의사소통 메모: 당직 3인·진기숙·의국만 */
-export function canUseHolidayDutyDayMemo({ viewerUserId, viewerRole, ymd, holidayDuties, users, holidaysCache }) {
+/** 듀티/의사소통 메모 작성 가능 역할 — 수술실·마취·주임·관리자 전원 */
+const DUTY_MEMO_WRITE_ROLES = new Set([
+  "NURSE",
+  "ANESTHESIA",
+  "CHIEF",
+  "ADMIN",
+  "ADMIN2",
+  "DEPT_HEAD",
+  "EMERGENCY_OR",
+]);
+
+export function canWriteDutyDayMemo(viewerRole, viewerUserId) {
+  if (!String(viewerUserId ?? "").trim()) return false;
+  return DUTY_MEMO_WRITE_ROLES.has(String(viewerRole ?? "").trim());
+}
+
+/** 휴일 당직 의사소통 메모: 로그인 직원·관리자 전원 */
+export function canUseHolidayDutyDayMemo({ viewerUserId, viewerRole, ymd, holidaysCache }) {
   const ld = String(ymd ?? "").slice(0, 10);
   if (!ld || !isYmdOffDay(ld, holidaysCache)) return false;
-  if (isEmergencyOrRole(viewerRole)) return true;
-  if (isDeptHeadRole(viewerRole)) return true;
-  const duty = holidayDuties?.[ld];
-  if (!duty) return false;
-  const dutyIds = [duty.nurse1UserId, duty.nurse2UserId, duty.anesthesiaUserId]
-    .map((id) => String(id ?? "").trim())
-    .filter(Boolean);
-  return dutyIds.includes(String(viewerUserId ?? "").trim());
+  return canWriteDutyDayMemo(viewerRole, viewerUserId);
 }
 
 export function canManageHolidayDutyDayComment({ viewerUserId, users, commentUserId }) {

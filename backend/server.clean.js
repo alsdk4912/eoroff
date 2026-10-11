@@ -1717,19 +1717,24 @@ async function isYmdOffDayServer(ymd) {
   return Boolean(row?.ok);
 }
 
-async function canActorUseHolidayDutyDayMemoForDate(actor, ymd) {
+const DUTY_MEMO_WRITE_ROLES_SERVER = new Set([
+  "NURSE",
+  "ANESTHESIA",
+  "CHIEF",
+  "ADMIN",
+  "ADMIN2",
+  "DEPT_HEAD",
+  "EMERGENCY_OR",
+]);
+
+function canActorWriteDutyDayMemo(actor) {
   const role = String(actor?.role ?? "").trim();
-  if (role === "EMERGENCY_OR") return true;
-  if (isDeptHeadRoleServer(role)) return true;
-  const duty = await queryOne(
-    "SELECT nurse1_user_id, nurse2_user_id, anesthesia_user_id FROM holiday_duties WHERE holiday_date = ?",
-    ymd
-  );
-  if (!duty) return false;
   const uid = String(actor?.id ?? "").trim();
-  return [duty.nurse1_user_id, duty.nurse2_user_id, duty.anesthesia_user_id]
-    .map((id) => String(id ?? "").trim())
-    .includes(uid);
+  return Boolean(uid) && DUTY_MEMO_WRITE_ROLES_SERVER.has(role);
+}
+
+async function canActorUseHolidayDutyDayMemoForDate(actor, _ymd) {
+  return canActorWriteDutyDayMemo(actor);
 }
 
 async function holidayDutyNotifyUserIds(ymd) {
@@ -1750,7 +1755,13 @@ async function holidayDutyNotifyUserIds(ymd) {
 
 async function canManageHolidayDutyDayCommentServer(actor, commentUserId) {
   if (String(actor?.id) === String(commentUserId)) return true;
-  return isDeptHeadRoleServer(actor?.role);
+  const role = String(actor?.role ?? "").trim();
+  return (
+    isDeptHeadRoleServer(role) ||
+    isOrLeaveAdminRoleServer(role) ||
+    role === "ADMIN2" ||
+    role === "CHIEF"
+  );
 }
 
 app.post("/api/day-comments", async (req, res) => {
@@ -1767,9 +1778,9 @@ app.post("/api/day-comments", async (req, res) => {
     const offDay = await isYmdOffDayServer(ymd);
     if (offDay) {
       if (!(await canActorUseHolidayDutyDayMemoForDate(actor, ymd))) {
-        return res.status(403).json({ error: "휴일 메모는 당직 간호사·부서파트장·의국만 작성할 수 있습니다." });
+        return res.status(403).json({ error: "메모 작성 권한이 없습니다." });
       }
-    } else if (!["ADMIN", "DEPT_HEAD", "NURSE", "ANESTHESIA"].includes(String(actor.role))) {
+    } else if (!canActorWriteDutyDayMemo(actor)) {
       return res.status(403).json({ error: "권한이 없습니다." });
     }
 

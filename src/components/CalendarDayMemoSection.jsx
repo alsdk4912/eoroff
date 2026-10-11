@@ -145,7 +145,7 @@ export default function CalendarDayMemoSection({
             </div>
           </div>
         ) : (
-          <p className="help">이 날짜 메모는 당직 간호사·진기숙·의국만 이용할 수 있습니다.</p>
+          <p className="help">메모 작성 권한이 없습니다.</p>
         )}
       </div>
     </section>

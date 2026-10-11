@@ -140,6 +140,7 @@ import {
   canUseWebPushRole,
   isCalendarOffDaysOnlyRole,
   canUseHolidayDutyDayMemo,
+  canWriteDutyDayMemo,
   canManageHolidayDutyDayComment,
   isScheduleOnlyDashboardRole,
   canViewHalfDayDashboardTab,
@@ -8685,18 +8686,22 @@ function CalendarPage({
         viewerUserId: currentUserId,
         viewerRole,
         ymd: selectedYmd,
-        holidayDuties,
-        users,
         holidaysCache: holidays,
       }),
-    [currentUserId, viewerRole, selectedYmd, holidayDuties, users, holidays]
+    [currentUserId, viewerRole, selectedYmd, holidays]
+  );
+  const canComposeDutyMemo = useMemo(
+    () =>
+      selectedIsOffDay
+        ? canHolidayDutyMemo
+        : canWriteDutyDayMemo(viewerRole, currentUserId),
+    [selectedIsOffDay, canHolidayDutyMemo, viewerRole, currentUserId]
   );
 
   const visibleDayComments = useMemo(() => {
     if (!selectedYmd) return [];
-    if (selectedIsOffDay && !canHolidayDutyMemo) return [];
     return selectedDayComments;
-  }, [selectedYmd, selectedIsOffDay, canHolidayDutyMemo, selectedDayComments]);
+  }, [selectedYmd, selectedDayComments]);
 
   const dayMemoSectionProps = {
     selectedYmd,
@@ -8708,10 +8713,13 @@ function CalendarPage({
     selectedDayComments: visibleDayComments,
     users,
     currentUserId,
-    canComposeMemo: selectedIsOffDay ? canHolidayDutyMemo : true,
+    canComposeMemo: canComposeDutyMemo,
     canManageCommentForRow: (row) =>
       selectedIsOffDay
-        ? canManageHolidayDutyDayComment({ viewerUserId: currentUserId, users, commentUserId: row.userId })
+        ? canManageHolidayDutyDayComment({ viewerUserId: currentUserId, users, commentUserId: row.userId }) ||
+          isOrLeaveAdmin ||
+          isAnesthesiaLeaveAdmin ||
+          isChiefLeaveAdmin
         : currentUserId === row.userId || isOrLeaveAdmin || isAnesthesiaLeaveAdmin || isChiefLeaveAdmin,
     commentDraft,
     onCommentDraftChange: setCommentDraft,
