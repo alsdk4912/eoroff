@@ -3381,6 +3381,31 @@ button.ym-wheel-check:hover {
   box-shadow: none;
 }
 
+/* 캘린더 휴일 셀 당직자 이름 (수술실1·2 / 마취) */
+.calendar-cell-events--duty {
+  margin-top: 0;
+  gap: 2px;
+}
+
+.calendar-day-chip--duty {
+  background: #fff8e7 !important;
+  color: #7a4a00 !important;
+  border: 1px solid #f0c96a !important;
+  font-weight: 700 !important;
+}
+
+.calendar-day-chip--duty-anes {
+  background: #f3efff !important;
+  color: #43316b !important;
+  border-color: #c4b5fd !important;
+  box-shadow: inset 0 -2px 0 0 #6b5b95;
+}
+
+.calendar-cell--my-duty .calendar-day-chip--duty {
+  background: #fff3d1 !important;
+  border-color: #e8b84a !important;
+}
+
 .calendar-detail {
   margin-top: 18px;
   padding-top: 16px;

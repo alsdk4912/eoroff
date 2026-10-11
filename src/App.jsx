@@ -8283,6 +8283,39 @@ function renderCalendarDayChip(applicant, keyPrefix, chipClassExtra, titlePrefix
   );
 }
 
+/** 캘린더 휴일 셀용 당직자 칩 (수술실1·2·마취) */
+function buildCalendarDutyNameChips(duty, users) {
+  if (!duty) return [];
+  const slots = [
+    { key: "n1", userId: duty.nurse1UserId, label: "수술실 당직1", chipClass: "calendar-day-chip--duty" },
+    { key: "n2", userId: duty.nurse2UserId, label: "수술실 당직2", chipClass: "calendar-day-chip--duty" },
+    {
+      key: "anes",
+      userId: duty.anesthesiaUserId,
+      label: "마취과 당직",
+      chipClass: "calendar-day-chip--duty calendar-day-chip--duty-anes",
+    },
+  ];
+  const out = [];
+  for (const slot of slots) {
+    const uid = String(slot.userId ?? "").trim();
+    if (!uid) continue;
+    const name = users.find((u) => u.id === uid)?.name ?? uid;
+    const nameLen = [...String(name)].length;
+    const name3 = nameLen === 3 ? " calendar-day-chip--name3" : "";
+    out.push(
+      <span
+        key={`duty_${slot.key}_${uid}`}
+        className={`calendar-day-chip selected-item ${slot.chipClass}${name3}`.trim()}
+        title={`${slot.label} · ${name}`}
+      >
+        <span className="calendar-day-chip__text">{name}</span>
+      </span>
+    );
+  }
+  return out;
+}
+
 function HolidayDutyHistoryBlock({ selectedYmd, holidayDutyHistory, users }) {
   const entries = useMemo(() => {
     const hd = String(selectedYmd ?? "").slice(0, 10);
@@ -9094,8 +9127,10 @@ function CalendarPage({
               }}
             >
               <div className={`calendar-date${cell.isOffDay ? " calendar-date--holiday" : ""}`}>{cell.day}</div>
-              {cell.inMonth && !offDaysOnlyViewer ? (
+              {cell.inMonth ? (
                 (() => {
+                    const nodes = [];
+                    if (!offDaysOnlyViewer) {
                     const orAll = cell.displayApplicants ?? [];
                     const anesAll = cell.anesthesiaDisplayApplicants ?? [];
                     const chiefAll = cell.chiefDisplayApplicants ?? [];
@@ -9106,7 +9141,6 @@ function CalendarPage({
                     const anes = anesSplit.rest;
                     const chief = chiefSplit.rest;
                     const spanAll = [...orSplit.span, ...anesSplit.span, ...chiefSplit.span];
-                    const nodes = [];
                     const drawnKeys = new Set();
 
                     const pushSpanBar = (a, kind) => {
@@ -9207,6 +9241,21 @@ function CalendarPage({
                       maxNames: CALENDAR_DAY_CHIP_MAX,
                       moreKey: "chief",
                     });
+                    }
+
+                    if (cell.isOffDay) {
+                      const dutyChips = buildCalendarDutyNameChips(duty, users);
+                      if (dutyChips.length) {
+                        if (nodes.length) {
+                          nodes.push(<div key="div_duty" className="calendar-cell-divider" aria-hidden />);
+                        }
+                        nodes.push(
+                          <div key="wrap_duty" className="calendar-cell-events calendar-cell-events--duty">
+                            {dutyChips}
+                          </div>
+                        );
+                      }
+                    }
 
                     if (!nodes.length) return null;
                     return <div className="calendar-cell-events">{nodes}</div>;
