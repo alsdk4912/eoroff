@@ -3381,16 +3381,16 @@ button.ym-wheel-check:hover {
   box-shadow: none;
 }
 
-/* 캘린더 휴일 셀 당직자: 한 박스·3열 (스톤 톤 — 휴가·본인당직 노란 셀과 분리) */
+/* 캘린더 휴일 셀 당직자: 한 박스·3행 (스톤 톤 — 휴가·본인당직 노란 셀과 분리) */
 .calendar-duty-box {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
   gap: 1px;
   width: 100%;
   box-sizing: border-box;
   margin-top: 1px;
-  padding: 2px 2px;
+  padding: 2px 3px;
   border: 1px solid #c9bfb0;
   border-radius: 6px;
   background: #f3f0ea;
@@ -3400,19 +3400,16 @@ button.ym-wheel-check:hover {
 .calendar-duty-box__name {
   min-width: 0;
   padding: 1px 0;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
-  line-height: 1.25;
+  line-height: 1.3;
   text-align: center;
   word-break: keep-all;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .calendar-duty-box__name--empty {
-  opacity: 0.35;
-  font-weight: 500;
+  display: none;
 }
 
 .calendar-cell--my-duty .calendar-duty-box {

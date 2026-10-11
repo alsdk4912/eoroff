@@ -8283,7 +8283,7 @@ function renderCalendarDayChip(applicant, keyPrefix, chipClassExtra, titlePrefix
   );
 }
 
-/** 캘린더 휴일 셀: 당직자 3명(수술실1·2·마취)을 한 박스·3열로 표시 */
+/** 캘린더 휴일 셀: 당직자 3명(수술실1·2·마취)을 한 박스·3행으로 표시 */
 function buildCalendarDutyNameBox(duty, users) {
   if (!duty) return null;
   const slots = [
