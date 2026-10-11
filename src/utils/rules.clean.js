@@ -181,6 +181,125 @@ export function kstTodayYmd() {
 }
 
 /**
+ * 장기 골드키 모집:
+ * - 신청창: 매월(4/10월) 1~10일
+ * - 취소 차감 면제 유예: 같은 달 1~13일 (14일부터 취소도 차감)
+ * - 잔여 신청 일괄 반영: 같은 달 14일 00:00(KST)부터
+ */
+export const LONG_TERM_GOLDKEY_APPLY_DAY_END = 10;
+export const LONG_TERM_GOLDKEY_CANCEL_GRACE_DAY_END = 13;
+export const LONG_TERM_GOLDKEY_BATCH_DAY_FROM = 14;
+
+export function kstYmdPartsFromDateLike(dateLike) {
+  if (dateLike == null || dateLike === "") return null;
+  if (dateLike instanceof Date && !Number.isNaN(dateLike.getTime())) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(dateLike);
+    const year = Number(parts.find((p) => p.type === "year")?.value);
+    const month = Number(parts.find((p) => p.type === "month")?.value);
+    const day = Number(parts.find((p) => p.type === "day")?.value);
+    if (!year || !month || !day) return null;
+    return { year, month, day };
+  }
+  const raw = String(dateLike).trim();
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  if (iso && !/[T ]/.test(raw.slice(10))) {
+    return { year: Number(iso[1]), month: Number(iso[2]), day: Number(iso[3]) };
+  }
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) {
+    const m = /^(\d{4})\D+(\d{1,2})\D+(\d{1,2})/.exec(raw);
+    if (!m) return null;
+    return { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) };
+  }
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+  const year = Number(parts.find((p) => p.type === "year")?.value);
+  const month = Number(parts.find((p) => p.type === "month")?.value);
+  const day = Number(parts.find((p) => p.type === "day")?.value);
+  if (!year || !month || !day) return null;
+  return { year, month, day };
+}
+
+function parseLeaveYmdParts(ymd) {
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(String(ymd ?? "").trim().slice(0, 10));
+  if (!m) return null;
+  return { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) };
+}
+
+export function isLongTermAprilApplyWindowKst(dateLike) {
+  const p = kstYmdPartsFromDateLike(dateLike);
+  return Boolean(p && p.month === 4 && p.day >= 1 && p.day <= LONG_TERM_GOLDKEY_APPLY_DAY_END);
+}
+
+export function isLongTermAprilCancelGraceKst(dateLike) {
+  const p = kstYmdPartsFromDateLike(dateLike);
+  return Boolean(p && p.month === 4 && p.day >= 1 && p.day <= LONG_TERM_GOLDKEY_CANCEL_GRACE_DAY_END);
+}
+
+export function isLongTermOctoberApplyWindowKst(dateLike) {
+  const p = kstYmdPartsFromDateLike(dateLike);
+  return Boolean(p && p.month === 10 && p.day >= 1 && p.day <= LONG_TERM_GOLDKEY_APPLY_DAY_END);
+}
+
+export function isLongTermOctoberCancelGraceKst(dateLike) {
+  const p = kstYmdPartsFromDateLike(dateLike);
+  return Boolean(p && p.month === 10 && p.day >= 1 && p.day <= LONG_TERM_GOLDKEY_CANCEL_GRACE_DAY_END);
+}
+
+/** 장기 모집창(1~10)에 신청한 건을 유예일(1~13) 안에 취소하면 차감 면제 */
+export function isLongTermGoldkeyCancelDeductionExempt({ leaveType, leaveDate, requestedAt, cancelledAt }) {
+  if (String(leaveType ?? "").trim() !== "GOLDKEY") return false;
+  const leave = parseLeaveYmdParts(leaveDate);
+  const requested = kstYmdPartsFromDateLike(requestedAt);
+  const cancelled = kstYmdPartsFromDateLike(cancelledAt);
+  if (!leave || !requested || !cancelled) return false;
+  if (leave.month >= 7 && leave.month <= 12) {
+    if (leave.year !== requested.year || leave.year !== cancelled.year) return false;
+    return isLongTermAprilApplyWindowKst(requestedAt) && isLongTermAprilCancelGraceKst(cancelledAt);
+  }
+  if (leave.month >= 1 && leave.month <= 6) {
+    if (leave.year !== requested.year + 1 || cancelled.year !== requested.year) return false;
+    return isLongTermOctoberApplyWindowKst(requestedAt) && isLongTermOctoberCancelGraceKst(cancelledAt);
+  }
+  return false;
+}
+
+/** 4월 모집(당해 7~12월) 잔여 신청 일괄 반영: 휴가 연도 4/14~ */
+export function isAfterLongTermAprilBatchKst(nowLike, leaveYear) {
+  const now = kstYmdPartsFromDateLike(nowLike);
+  if (!now) return false;
+  const y = Number(leaveYear);
+  if (!Number.isFinite(y)) return false;
+  if (now.year > y) return true;
+  if (now.year < y) return false;
+  if (now.month > 4) return true;
+  if (now.month < 4) return false;
+  return now.day >= LONG_TERM_GOLDKEY_BATCH_DAY_FROM;
+}
+
+/** 10월 모집(익년 1~6월) 잔여 신청 일괄 반영: 신청 연도 10/14~ */
+export function isAfterLongTermOctoberBatchKst(nowLike, requestYear) {
+  const now = kstYmdPartsFromDateLike(nowLike);
+  if (!now) return false;
+  const y = Number(requestYear);
+  if (!Number.isFinite(y)) return false;
+  if (now.year > y) return true;
+  if (now.year < y) return false;
+  if (now.month > 10) return true;
+  if (now.month < 10) return false;
+  return now.day >= LONG_TERM_GOLDKEY_BATCH_DAY_FROM;
+}
+
+/**
  * 휴가일이 오늘(KST)보다 이전이면 true.
  * 과거 휴가는 취소 불가 정책에 사용한다.
  */
@@ -355,7 +474,7 @@ function isRecruitConsultationGoldkeyRequest(request) {
 }
 
 /**
- * 장기 모집기간에 신청한 골드키를 모집기간 안에 취소한 건만 목록에서 숨긴다.
+ * 장기 모집창에 신청한 골드키를 취소 유예일(1~13일) 안에 취소한 건만 목록에서 숨긴다.
  * 절대규칙: 그 외 취소는 회색 이력으로 남기고 사용량에도 포함된다.
  * @param {object} request
  * @param {Array<{leaveRequestId?: string, deductionExempt?: boolean, revokedAt?: string|null, cancelledAt?: string}>} [cancellations]
@@ -372,17 +491,12 @@ export function shouldHideAprilRecruitHalfGoldkeyCancelledRow(request, cancellat
   }
   const cancelledAt = request.cancelledAt ?? request.cancelled_at;
   if (!cancelledAt) return false;
-  const leaveYmd = ymdFromRequestRow(request);
-  const leave = leaveYmd ? parseYmdAsLocalDate(leaveYmd) : null;
-  if (!leave || Number.isNaN(leave.getTime())) return false;
-  const cancelAt = new Date(cancelledAt);
-  if (Number.isNaN(cancelAt.getTime())) return false;
-  const lm = leave.getMonth() + 1;
-  const cm = cancelAt.getMonth() + 1;
-  const cd = cancelAt.getDate();
-  if (lm >= 7 && lm <= 12) return cm === 4 && cd >= 1 && cd <= 10;
-  if (lm >= 1 && lm <= 6) return cm === 10 && cd >= 1 && cd <= 10;
-  return false;
+  return isLongTermGoldkeyCancelDeductionExempt({
+    leaveType: request.leaveType ?? request.leave_type,
+    leaveDate: ymdFromRequestRow(request),
+    requestedAt: request.requestedAt ?? request.requested_at,
+    cancelledAt,
+  });
 }
 
 /** 취소·미선정 제외: 진행 중인 골드키가 해당 날짜에 이미 있으면 true */

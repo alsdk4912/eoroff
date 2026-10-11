@@ -41,6 +41,9 @@ import {
   countsTowardSpecialShiftMonthlyLeaveCap,
   countConfirmedLeavesInCalendarMonth,
   specialShiftMonthlyLeaveCapBlockMessage,
+  isLongTermGoldkeyCancelDeductionExempt,
+  isAfterLongTermAprilBatchKst,
+  isAfterLongTermOctoberBatchKst,
 } from "./utils/rules";
 import { api, isApiConfigured, pingApiHealth, checkApiHealth, describeApiHealthFailure } from "./api/client";
 import EoroffLoginLogo from "./components/EoroffLoginLogo.jsx";
@@ -380,11 +383,6 @@ function isKstAprilGeneralPriorityWindow(dateLike) {
   return kst.getTime() >= startKstMs && kst.getTime() <= endKstMs;
 }
 
-function isKstAprilFirstToTenth(dateLike) {
-  const p = toKstParts(dateLike);
-  return Boolean(p && p.month === 4 && p.day >= 1 && p.day <= 10);
-}
-
 function notifyDone(message) {
   const msg = String(message ?? "").trim();
   if (!msg) return;
@@ -466,26 +464,13 @@ function withTimeout(promise, ms, message) {
   ]);
 }
 
-function isKstOctoberFirstToTenth(dateLike) {
-  const p = toKstParts(dateLike);
-  return Boolean(p && p.month === 10 && p.day >= 1 && p.day <= 10);
-}
-
 function isLongTermGoldkeyDeductionExempt(requestRow, cancelledAt) {
-  if (!requestRow || requestRow.leaveType !== "GOLDKEY") return false;
-  const leave = parseYmdParts(requestRow.leaveDate);
-  const requested = toKstParts(requestRow.requestedAt);
-  const cancelled = toKstParts(cancelledAt);
-  if (!leave || !requested || !cancelled) return false;
-  if (leave.month >= 7 && leave.month <= 12) {
-    if (leave.year !== cancelled.year) return false;
-    return isKstAprilFirstToTenth(requestRow.requestedAt) && isKstAprilFirstToTenth(cancelledAt);
-  }
-  if (leave.month >= 1 && leave.month <= 6) {
-    if (leave.year !== requested.year + 1 || cancelled.year !== requested.year) return false;
-    return isKstOctoberFirstToTenth(requestRow.requestedAt) && isKstOctoberFirstToTenth(cancelledAt);
-  }
-  return false;
+  return isLongTermGoldkeyCancelDeductionExempt({
+    leaveType: requestRow?.leaveType,
+    leaveDate: requestRow?.leaveDate,
+    requestedAt: requestRow?.requestedAt,
+    cancelledAt,
+  });
 }
 
 function leaveTypeCssClass(leaveType) {
@@ -4126,24 +4111,12 @@ function parseYmdLoose(ymd) {
 }
 
 function isAfterApril10(nowLike, leaveYear) {
-  const p = toKstParts(nowLike);
-  if (!p) return false;
-  if (p.year > leaveYear) return true;
-  if (p.year < leaveYear) return false;
-  if (p.month > 4) return true;
-  if (p.month < 4) return false;
-  return p.day >= 11;
+  return isAfterLongTermAprilBatchKst(nowLike, leaveYear);
 }
 
-/** 10월 장기 모집(익년 1~6월): 신청 연도의 10/11 이후에만 잔여 반영 */
+/** 10월 장기 모집(익년 1~6월): 신청 연도의 10/14 이후에만 잔여 반영 */
 function isAfterOctober10ForRequestYear(nowLike, requestYear) {
-  const p = toKstParts(nowLike);
-  if (!p) return false;
-  if (p.year > requestYear) return true;
-  if (p.year < requestYear) return false;
-  if (p.month > 10) return true;
-  if (p.month < 10) return false;
-  return p.day >= 11;
+  return isAfterLongTermOctoberBatchKst(nowLike, requestYear);
 }
 
 function isSpecialLongTermGoldkeyRequestForDashboardApril(r) {
@@ -6596,7 +6569,7 @@ function DashboardPage({
           </div>
           <p className="help page-lead goldkey-policy-note">
             <span>선택한 연도(1/1~12/31) 휴가일 기준 집계 · 신청 시 차감</span>
-            <span>장기휴가 모집: 상반기←전년 10/1~10 · 하반기←당해 4/1~10 (기간 내 취소만 차감 면제)</span>
+            <span>장기휴가 모집: 상반기←전년 10/1~10 · 하반기←당해 4/1~10 (신청창 건은 같은 달 13일까지 취소 시 차감 면제, 14일부터 반영)</span>
           </p>
           <div className="table-wrap">
             <table>

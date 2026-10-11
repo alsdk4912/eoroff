@@ -37,6 +37,9 @@ import {
   monthShiftCodeFromScheduleRows,
   specialShiftMonthlyLeaveCapBlockMessage,
   SPECIAL_SHIFT_MONTHLY_LEAVE_CAP_MESSAGE,
+  isLongTermGoldkeyCancelDeductionExempt,
+  isAfterLongTermAprilBatchKst,
+  isAfterLongTermOctoberBatchKst,
 } from "../src/utils/rules.clean.js";
 import {
   computeAutoHalfDaySlot,
@@ -106,16 +109,6 @@ function toYmdPartsLoose(dateLike) {
   return { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) };
 }
 
-function isKstAprilFirstToTenth(dateLike) {
-  const p = toYmdPartsLoose(dateLike);
-  return Boolean(p && p.month === 4 && p.day >= 1 && p.day <= 10);
-}
-
-function isKstOctoberFirstToTenth(dateLike) {
-  const p = toYmdPartsLoose(dateLike);
-  return Boolean(p && p.month === 10 && p.day >= 1 && p.day <= 10);
-}
-
 function parseYmdParts(ymd) {
   const s = String(ymd ?? "").trim();
   const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
@@ -157,20 +150,12 @@ function shuffleArray(arr) {
 }
 
 function isLongTermGoldkeyDeductionExempt(row, cancelledAt) {
-  if (String(row?.leave_type ?? "") !== "GOLDKEY") return false;
-  const leave = parseYmdParts(row?.leave_date);
-  const requested = toYmdPartsLoose(row?.requested_at);
-  const cancelled = toYmdPartsLoose(cancelledAt);
-  if (!leave || !requested || !cancelled) return false;
-  if (leave.month >= 7 && leave.month <= 12) {
-    if (leave.year !== requested.year || leave.year !== cancelled.year) return false;
-    return isKstAprilFirstToTenth(row.requested_at) && isKstAprilFirstToTenth(cancelledAt);
-  }
-  if (leave.month >= 1 && leave.month <= 6) {
-    if (leave.year !== requested.year + 1 || cancelled.year !== requested.year) return false;
-    return isKstOctoberFirstToTenth(row.requested_at) && isKstOctoberFirstToTenth(cancelledAt);
-  }
-  return false;
+  return isLongTermGoldkeyCancelDeductionExempt({
+    leaveType: row?.leave_type,
+    leaveDate: row?.leave_date,
+    requestedAt: row?.requested_at,
+    cancelledAt,
+  });
 }
 
 function isSpecialLongTermGoldkeyRequestApril(row) {
@@ -197,26 +182,14 @@ function isSpecialLongTermGoldkeyRequest(row) {
   return isSpecialLongTermGoldkeyRequestApril(row) || isSpecialLongTermGoldkeyRequestOctober(row);
 }
 
-/** 장기 모집(4월) 일괄 반영 시점: 해당 휴가 연도의 4/11 00:00(KST) 이후 */
+/** 장기 모집(4월) 일괄 반영 시점: 해당 휴가 연도의 4/14 00:00(KST) 이후 */
 function isAfterRecruitWindowKst(nowLike, leaveYear) {
-  const now = toYmdPartsLoose(nowLike);
-  if (!now) return false;
-  if (now.year > leaveYear) return true;
-  if (now.year < leaveYear) return false;
-  if (now.month > 4) return true;
-  if (now.month < 4) return false;
-  return now.day >= 11;
+  return isAfterLongTermAprilBatchKst(nowLike, leaveYear);
 }
 
-/** 10월 모집(익년 1~6월) 일괄 반영 시점: 신청 연도의 10/11 00:00(KST) 이후 */
+/** 10월 모집(익년 1~6월) 일괄 반영 시점: 신청 연도의 10/14 00:00(KST) 이후 */
 function isAfterOctoberRecruitBatchKst(nowLike, requestYear) {
-  const now = toYmdPartsLoose(nowLike);
-  if (!now) return false;
-  if (now.year > requestYear) return true;
-  if (now.year < requestYear) return false;
-  if (now.month > 10) return true;
-  if (now.month < 10) return false;
-  return now.day >= 11;
+  return isAfterLongTermOctoberBatchKst(nowLike, requestYear);
 }
 
 /** 소프트 삭제되지 않은 휴가 요청만 대상으로 하는 SQL 조각 (쿼리 문자열에 직접 삽입) */

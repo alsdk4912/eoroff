@@ -13,7 +13,10 @@ import {
   YUJIN_LEAVE_DUTY_FROM,
 } from "../src/utils/holidayDutyPlan.clean.js";
 import { computeAutoHalfDaySlot } from "../src/utils/halfDayLeave.clean.js";
-import { enumerateYmdInclusive } from "../src/utils/rules.clean.js";
+import {
+  enumerateYmdInclusive,
+  isLongTermGoldkeyCancelDeductionExempt,
+} from "../src/utils/rules.clean.js";
 
 const EMPLOYEE_NO_BY_NAME = {
   양현아: "0534411",
@@ -65,16 +68,6 @@ function toYmdPartsLoose(dateLike) {
   const day = Number(parts.find((p) => p.type === "day")?.value);
   if (!year || !month || !day) return null;
   return { year, month, day };
-}
-
-function isKstAprilFirstToTenth(dateLike) {
-  const p = toYmdPartsLoose(dateLike);
-  return Boolean(p && p.month === 4 && p.day >= 1 && p.day <= 10);
-}
-
-function isKstOctoberFirstToTenth(dateLike) {
-  const p = toYmdPartsLoose(dateLike);
-  return Boolean(p && p.month === 10 && p.day >= 1 && p.day <= 10);
 }
 
 function parseLeaveYmd(ymd) {
@@ -1553,25 +1546,13 @@ async function backfillLongTermGoldkeyCancellationExemptions() {
 
   for (const row of cancellationRows) {
     if (String(row.leave_type || "") !== "GOLDKEY") continue;
-    const leave = parseLeaveYmd(row.leave_date);
-    if (!leave) continue;
-    const req = toYmdPartsLoose(row.requested_at);
-    const can = toYmdPartsLoose(row.cancelled_at);
-    if (!req || !can) continue;
-
-    let exempt = false;
-    if (leave.month >= 7 && leave.month <= 12) {
-      exempt =
-        leave.year === req.year &&
-        isKstAprilFirstToTenth(row.requested_at) &&
-        isKstAprilFirstToTenth(row.cancelled_at);
-    } else if (leave.month >= 1 && leave.month <= 6) {
-      exempt =
-        leave.year === req.year + 1 &&
-        can.year === req.year &&
-        isKstOctoberFirstToTenth(row.requested_at) &&
-        isKstOctoberFirstToTenth(row.cancelled_at);
-    }
+    if (!parseLeaveYmd(row.leave_date)) continue;
+    const exempt = isLongTermGoldkeyCancelDeductionExempt({
+      leaveType: row.leave_type,
+      leaveDate: row.leave_date,
+      requestedAt: row.requested_at,
+      cancelledAt: row.cancelled_at,
+    });
     if (!exempt) continue;
 
     await execute(
