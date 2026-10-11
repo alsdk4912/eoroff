@@ -8283,37 +8283,38 @@ function renderCalendarDayChip(applicant, keyPrefix, chipClassExtra, titlePrefix
   );
 }
 
-/** 캘린더 휴일 셀용 당직자 칩 (수술실1·2·마취) */
-function buildCalendarDutyNameChips(duty, users) {
-  if (!duty) return [];
+/** 캘린더 휴일 셀: 당직자 3명(수술실1·2·마취)을 한 박스·3열로 표시 */
+function buildCalendarDutyNameBox(duty, users) {
+  if (!duty) return null;
   const slots = [
-    { key: "n1", userId: duty.nurse1UserId, label: "수술실 당직1", chipClass: "calendar-day-chip--duty" },
-    { key: "n2", userId: duty.nurse2UserId, label: "수술실 당직2", chipClass: "calendar-day-chip--duty" },
-    {
-      key: "anes",
-      userId: duty.anesthesiaUserId,
-      label: "마취과 당직",
-      chipClass: "calendar-day-chip--duty calendar-day-chip--duty-anes",
-    },
+    { key: "n1", userId: duty.nurse1UserId, label: "수술실 당직1" },
+    { key: "n2", userId: duty.nurse2UserId, label: "수술실 당직2" },
+    { key: "anes", userId: duty.anesthesiaUserId, label: "마취과 당직" },
   ];
-  const out = [];
-  for (const slot of slots) {
+  const names = slots.map((slot) => {
     const uid = String(slot.userId ?? "").trim();
-    if (!uid) continue;
-    const name = users.find((u) => u.id === uid)?.name ?? uid;
-    const nameLen = [...String(name)].length;
-    const name3 = nameLen === 3 ? " calendar-day-chip--name3" : "";
-    out.push(
-      <span
-        key={`duty_${slot.key}_${uid}`}
-        className={`calendar-day-chip selected-item ${slot.chipClass}${name3}`.trim()}
-        title={`${slot.label} · ${name}`}
-      >
-        <span className="calendar-day-chip__text">{name}</span>
-      </span>
-    );
-  }
-  return out;
+    if (!uid) return { key: slot.key, name: "", label: slot.label, empty: true };
+    return {
+      key: slot.key,
+      name: users.find((u) => u.id === uid)?.name ?? uid,
+      label: slot.label,
+      empty: false,
+    };
+  });
+  if (names.every((n) => n.empty)) return null;
+  const title = names
+    .filter((n) => !n.empty)
+    .map((n) => `${n.label} · ${n.name}`)
+    .join(" / ");
+  return (
+    <div key="duty_box" className="calendar-duty-box" title={title}>
+      {names.map((n) => (
+        <span key={n.key} className={`calendar-duty-box__name${n.empty ? " calendar-duty-box__name--empty" : ""}`}>
+          {n.empty ? "·" : n.name}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function HolidayDutyHistoryBlock({ selectedYmd, holidayDutyHistory, users }) {
@@ -9244,16 +9245,12 @@ function CalendarPage({
                     }
 
                     if (cell.isOffDay) {
-                      const dutyChips = buildCalendarDutyNameChips(duty, users);
-                      if (dutyChips.length) {
+                      const dutyBox = buildCalendarDutyNameBox(duty, users);
+                      if (dutyBox) {
                         if (nodes.length) {
                           nodes.push(<div key="div_duty" className="calendar-cell-divider" aria-hidden />);
                         }
-                        nodes.push(
-                          <div key="wrap_duty" className="calendar-cell-events calendar-cell-events--duty">
-                            {dutyChips}
-                          </div>
-                        );
+                        nodes.push(dutyBox);
                       }
                     }
 
