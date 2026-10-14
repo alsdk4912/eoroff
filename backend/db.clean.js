@@ -10,6 +10,7 @@ import {
   buildFullAutoHolidayDutyPlansForYears,
   OR_DUTY_RULES_EFFECTIVE_FROM,
   OR_DUTY_ROTATION_EFFECTIVE_FROM,
+  OR_DUTY_ROTATION_V2_FROM,
   YUJIN_LEAVE_DUTY_FROM,
 } from "../src/utils/holidayDutyPlan.clean.js";
 import { computeAutoHalfDaySlot } from "../src/utils/halfDayLeave.clean.js";
@@ -497,6 +498,7 @@ export async function initDb() {
   await ensureLeeJihyunRemoveGoldkey20261016();
   await ensureLeeJihyunRemoveGoldkey20261015();
   await ensureYujinLeaveDutyFrom20270301();
+  await ensureOrDutyRotationV2From20270301();
   return client;
 }
 
@@ -3108,5 +3110,156 @@ async function ensureYujinLeaveDutyFrom20270301() {
 
   await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
   console.log(`[db] ${migrationId} applied (upserted≈${upserted} from ${assignFrom})`);
+}
+
+/**
+ * 2027-03-01~ 수술실 당직 순번 V2
+ * 김해림→손다솜→오민아→이양희→이지선→이현숙→임희종→장성필→장지은→정수영→최유리→최유경→최종선→허정숙
+ * 주말 3/6·7 이양희·이지선, 공휴 3/1 최유리·김해림 유지·5/13~ V2, 명절 9/14 이현숙·임희종
+ */
+async function ensureOrDutyRotationV2From20270301() {
+  const migrationId = "or_duty_rotation_v2_20270301_v1";
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
+  if (done) return;
+
+  const assignFrom = OR_DUTY_ROTATION_V2_FROM;
+  const endYear = Math.max(new Date().getFullYear() + 3, 2028);
+
+  const users = await queryAll("SELECT id, name, role, IFNULL(is_active, 1) AS is_active FROM users");
+  const idByName = new Map(
+    users.map((u) => [String(u.name ?? "").trim(), String(u.id ?? "").trim()]).filter(([n, id]) => n && id)
+  );
+  const nameById = new Map(users.map((u) => [String(u.id ?? "").trim(), String(u.name ?? "").trim()]));
+
+  const holidayRows = await queryAll(
+    "SELECT holiday_date, holiday_name, is_holiday FROM holidays WHERE holiday_date >= ? AND holiday_date <= ?",
+    "2026-01-01",
+    `${endYear}-12-31`
+  );
+  const holidays = holidayRows.map((h) => ({
+    holidayDate: String(h.holiday_date ?? "").slice(0, 10),
+    holidayName: h.holiday_name ?? "",
+    isHoliday: Boolean(h.is_holiday),
+  }));
+
+  const dutyRows = await queryAll("SELECT * FROM holiday_duties WHERE holiday_date >= ?", "2026-01-01");
+  const holidayDuties = {};
+  for (const d of dutyRows) {
+    const hd = String(d.holiday_date ?? "").slice(0, 10);
+    if (!hd) continue;
+    holidayDuties[hd] = {
+      nurse1UserId: d.nurse1_user_id ?? "",
+      nurse2UserId: d.nurse2_user_id ?? "",
+      anesthesiaUserId: d.anesthesia_user_id ?? "",
+    };
+  }
+
+  const plan = buildFullAutoHolidayDutyPlansForYears({
+    startYear: 2026,
+    endYear,
+    users: users.map((u) => ({ ...u, isActive: Number(u.is_active ?? 1) === 1 })),
+    holidays,
+    holidayDuties,
+    preserveBeforeYmd: assignFrom,
+    overwriteOrFromYmd: assignFrom,
+    overwriteExisting: true,
+  });
+
+  let upserted = 0;
+  const expect = [
+    { dates: ["2027-03-01"], n1: "최유리", n2: "김해림" },
+    { dates: ["2027-03-06", "2027-03-07"], n1: "이양희", n2: "이지선" },
+    { dates: ["2027-05-13"], n1: "이현숙", n2: "임희종" },
+    { dates: ["2027-07-19"], n1: "장성필", n2: "장지은" },
+    { dates: ["2027-08-16"], n1: "정수영", n2: "최유리" },
+    { dates: ["2027-09-14"], n1: "이현숙", n2: "임희종" },
+    { dates: ["2027-10-04"], n1: "최유경", n2: "최종선" },
+    { dates: ["2027-10-11"], n1: "허정숙", n2: "김해림" },
+  ];
+
+  for (const row of plan) {
+    const hd = String(row.holidayDate ?? "").slice(0, 10);
+    if (!hd || hd < assignFrom) continue;
+
+    const n1 = String(row.nurse1UserId ?? "").trim();
+    const n2 = String(row.nurse2UserId ?? "").trim();
+    if (!n1 || !n2) continue;
+
+    const existing = await queryOne(
+      "SELECT anesthesia_user_id FROM holiday_duties WHERE holiday_date = ?",
+      hd
+    );
+    const anes = String(row.anesthesiaUserId ?? existing?.anesthesia_user_id ?? "").trim();
+
+    await execute(
+      `INSERT INTO holiday_duties (holiday_date, nurse1_user_id, nurse2_user_id, anesthesia_user_id)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(holiday_date) DO UPDATE SET
+         nurse1_user_id = excluded.nurse1_user_id,
+         nurse2_user_id = excluded.nurse2_user_id,
+         anesthesia_user_id = CASE
+           WHEN holiday_duties.anesthesia_user_id IS NULL OR TRIM(holiday_duties.anesthesia_user_id) = ''
+           THEN excluded.anesthesia_user_id
+           ELSE holiday_duties.anesthesia_user_id
+         END`,
+      hd,
+      n1,
+      n2,
+      anes || null
+    );
+    upserted += 1;
+  }
+
+  for (const block of expect) {
+    const n1 = idByName.get(block.n1) || "";
+    const n2 = idByName.get(block.n2) || "";
+    if (!n1 || !n2) {
+      console.warn(`[db] ${migrationId}: missing users ${block.n1}/${block.n2}`);
+      continue;
+    }
+    for (const hd of block.dates) {
+      const existing = await queryOne(
+        "SELECT anesthesia_user_id FROM holiday_duties WHERE holiday_date = ?",
+        hd
+      );
+      const anes = String(existing?.anesthesia_user_id ?? "").trim();
+      await execute(
+        `INSERT INTO holiday_duties (holiday_date, nurse1_user_id, nurse2_user_id, anesthesia_user_id)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(holiday_date) DO UPDATE SET
+           nurse1_user_id = excluded.nurse1_user_id,
+           nurse2_user_id = excluded.nurse2_user_id,
+           anesthesia_user_id = CASE
+             WHEN holiday_duties.anesthesia_user_id IS NULL OR TRIM(holiday_duties.anesthesia_user_id) = ''
+             THEN excluded.anesthesia_user_id
+             ELSE holiday_duties.anesthesia_user_id
+           END`,
+        hd,
+        n1,
+        n2,
+        anes || null
+      );
+      console.log(`[db] ${hd} duty → ${block.n1}/${block.n2}`);
+    }
+  }
+
+  let mismatch = 0;
+  for (const block of expect) {
+    for (const hd of block.dates) {
+      const row = await queryOne(
+        "SELECT nurse1_user_id, nurse2_user_id FROM holiday_duties WHERE holiday_date = ?",
+        hd
+      );
+      const n1 = nameById.get(String(row?.nurse1_user_id ?? "").trim()) || "";
+      const n2 = nameById.get(String(row?.nurse2_user_id ?? "").trim()) || "";
+      if (n1 !== block.n1 || n2 !== block.n2) {
+        mismatch += 1;
+        console.warn(`[db] ${migrationId}: mismatch ${hd} got ${n1}/${n2} want ${block.n1}/${block.n2}`);
+      }
+    }
+  }
+
+  await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+  console.log(`[db] ${migrationId} applied (upserted≈${upserted}, mismatch=${mismatch})`);
 }
 

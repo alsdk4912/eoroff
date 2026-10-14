@@ -3,7 +3,8 @@
  * - 명절당직(설·추석·연휴 + 붙은 주말): 일자별 2인, 명절 순번
  * - 공휴·대체공휴당직(평일): 일자별 2인, 공휴 순번
  * - 주말당직(토·일): 주말 블록당 2인 동일, 주말 순번
- * - 순번: 정수영 → 최종선 → 최유경 → 허정숙 → 최유리 → 김해림 → … (OR_DUTY_ROTATION_NAMES)
+ * - 순번(2026): 정수영 → 최종선 → … (OR_DUTY_ROTATION_NAMES)
+ * - 순번(2027-03-01~): 김해림 → 손다솜 → … (OR_DUTY_ROTATION_NAMES_V2)
  */
 
 import { isUserActive } from "../data/shiftCodes.js";
@@ -67,14 +68,50 @@ export const OR_DUTY_ROTATION_NAMES = [
   "장지은",
 ];
 
+/**
+ * 2027-03-01~ 수술실 당직 순번 (양현아·유진 제외)
+ * 김해림 → 손다솜 → 오민아 → 이양희 → 이지선 → 이현숙 → 임희종 →
+ * 장성필 → 장지은 → 정수영 → 최유리 → 최유경 → 최종선 → 허정숙
+ */
+export const OR_DUTY_ROTATION_V2_FROM = "2027-03-01";
+export const OR_DUTY_ROTATION_NAMES_V2 = [
+  "김해림",
+  "손다솜",
+  "오민아",
+  "이양희",
+  "이지선",
+  "이현숙",
+  "임희종",
+  "장성필",
+  "장지은",
+  "정수영",
+  "최유리",
+  "최유경",
+  "최종선",
+  "허정숙",
+];
+
+export function orDutyRotationNamesForYmd(ymd) {
+  const d = String(ymd ?? "").slice(0, 10);
+  return d >= OR_DUTY_ROTATION_V2_FROM ? OR_DUTY_ROTATION_NAMES_V2 : OR_DUTY_ROTATION_NAMES;
+}
+
 export const OR_DUTY_PUBLIC_ANCHORS = [
   { date: "2026-07-17", nurse1: "유진", nurse2: "오민아" },
   { date: "2026-08-17", nurse1: "이양희", nurse2: "이현숙" },
   { date: "2026-10-05", nurse1: "이지선", nurse2: "임희종" },
   { date: "2026-10-09", nurse1: "장성필", nurse2: "장지은" },
   { date: "2026-12-25", nurse1: "정수영", nurse2: "최종선" },
-  /** 유진 청원휴직(2027-03-01~): 삼일절 공휴 — 최유리·김해림 (유진은 순번에서 건너뜀) */
+  /** 삼일절 — 기존 배정 유지 */
   { date: "2027-03-01", nurse1: "최유리", nurse2: "김해림" },
+  /** 3/1 유지 후 V2 순번 연결(5/13 이현숙·임희종으로 이어짐) */
+  { date: "2027-05-03", nurse1: "손다솜", nurse2: "오민아" },
+  { date: "2027-05-05", nurse1: "이양희", nurse2: "이지선" },
+  { date: "2027-05-13", nurse1: "이현숙", nurse2: "임희종" },
+  { date: "2027-07-19", nurse1: "장성필", nurse2: "장지은" },
+  { date: "2027-08-16", nurse1: "정수영", nurse2: "최유리" },
+  { date: "2027-10-04", nurse1: "최유경", nurse2: "최종선" },
+  { date: "2027-10-11", nurse1: "허정숙", nurse2: "김해림" },
 ];
 
 export const OR_DUTY_WEEKEND_ANCHORS = [
@@ -89,7 +126,7 @@ export const OR_DUTY_WEEKEND_ANCHORS = [
   /** 11/21 이현숙·임희종 다음 — 임희종 중복 방지 */
   { saturday: "2026-11-28", nurse1: "장성필", nurse2: "장지은" },
   { saturday: "2026-12-05", nurse1: "정수영", nurse2: "최종선" },
-  /** 유진 청원휴직: 오민아 다음은 유진 건너뛰고 이양희·이지선 */
+  /** V2 순번 앵커: 이양희·이지선 */
   { saturday: "2027-03-06", nurse1: "이양희", nurse2: "이지선" },
 ];
 
@@ -99,6 +136,8 @@ export const OR_DUTY_FESTIVAL_ANCHORS = [
   { date: "2026-09-25", nurse1: "양현아", nurse2: "오민아" },
   { date: "2026-09-26", nurse1: "유진", nurse2: "이양희" },
   { date: "2026-09-27", nurse1: "이지선", nurse2: "이현숙" },
+  /** 2027 추석 — V2 순번 앵커 */
+  { date: "2027-09-14", nurse1: "이현숙", nurse2: "임희종" },
 ];
 
 /** 유진 청원휴직 1년: 2027-03-01 ~ 2028-02-29 */
@@ -118,10 +157,11 @@ function isDutyBlockedByRule(name, ymd) {
   return false;
 }
 
-/** 고정 순번(OR_DUTY_ROTATION_NAMES) — DB에 없는 이름은 제외 */
-export function buildBaseDutyOrder(nurseUsers) {
+/** 고정 순번 — DB에 없는 이름은 제외. ymd가 있으면 해당일 기준 V1/V2 선택 */
+export function buildBaseDutyOrder(nurseUsers, ymd = null) {
   const byName = new Map((Array.isArray(nurseUsers) ? nurseUsers : []).map((u) => [u.name, u]));
-  return OR_DUTY_ROTATION_NAMES.map((name) => byName.get(name)).filter(Boolean);
+  const names = ymd ? orDutyRotationNamesForYmd(ymd) : OR_DUTY_ROTATION_NAMES;
+  return names.map((name) => byName.get(name)).filter(Boolean);
 }
 
 /** 설·추석 명절·연휴 */
@@ -158,7 +198,12 @@ function pointerAfterPairNames(order, n1Name, n2Name) {
   const i1 = order.findIndex((u) => u.name === n1Name);
   const i2 = order.findIndex((u) => u.name === n2Name);
   if (i1 < 0 || i2 < 0) return 0;
-  return (Math.max(i1, i2) + 1) % order.length;
+  const n = order.length;
+  const lo = Math.min(i1, i2);
+  const hi = Math.max(i1, i2);
+  /** 순환 끝·처음 쌍(예: 허정숙→김해림)은 낮은 인덱스 다음으로 */
+  if (hi - lo > n / 2) return (lo + 1) % n;
+  return (hi + 1) % n;
 }
 
 export function pickSequentialDutyPair(baseOrder, ymd, pointer) {
@@ -346,8 +391,9 @@ function shouldOverwrite(ymd, options) {
  */
 export function buildAutoHolidayDutyPlan({ year, users, holidays, holidayDuties, options = {} }) {
   const nurseUsers = (users ?? []).filter((u) => (u.role === "NURSE" || !u.role) && isUserActive(u));
-  const baseOrder = buildBaseDutyOrder(nurseUsers);
-  if (baseOrder.length < 2) {
+  const orderFor = (ymd) => buildBaseDutyOrder(nurseUsers, ymd);
+  const probeOrder = orderFor(`${year}-06-01`);
+  if (probeOrder.length < 2) {
     return { plan: [], pointers: { weekend: 0, public: 0, festival: 0 } };
   }
 
@@ -363,6 +409,7 @@ export function buildAutoHolidayDutyPlan({ year, users, holidays, holidayDuties,
 
   const festivalDays = [...festivalDates].filter((d) => d.startsWith(`${year}-`)).sort();
   for (const ymd of festivalDays) {
+    const baseOrder = orderFor(ymd);
     const existing = dutyByDate[ymd];
     if (hasDutyPair(existing) && shouldPreserveExisting(ymd, options)) {
       const synced = syncPointerFromExisting(baseOrder, existing);
@@ -389,6 +436,7 @@ export function buildAutoHolidayDutyPlan({ year, users, holidays, holidayDuties,
     const inFestival = block.dates.every((dt) => festivalDates.has(dt));
     if (inFestival) continue;
 
+    const baseOrder = orderFor(block.key);
     const anchor = findWeekendAnchor(block.key);
     let existingPair = null;
     for (const dt of block.dates) {
@@ -447,6 +495,7 @@ export function buildAutoHolidayDutyPlan({ year, users, holidays, holidayDuties,
     .sort();
 
   for (const ymd of publicDays) {
+    const baseOrder = orderFor(ymd);
     const existing = dutyByDate[ymd];
     if (hasDutyPair(existing) && shouldPreserveExisting(ymd, options)) {
       const synced = syncPointerFromExisting(baseOrder, existing);
