@@ -492,6 +492,7 @@ export async function initDb() {
   await ensureJungSuyoungWeddingLeave20261019_23();
   await ensureYoonJiminSickLeave20260812_18();
   await ensureKimInjaRemoveGoldkey20261030();
+  await ensureKimInjaGoldkeyQuota16();
   await ensureYangHyunAhLeaveDutyFrom20261101();
   await ensureNov7_8DutyHistorySlotFix();
   await ensureWeekendDutyFixFrom20261128();
@@ -2510,6 +2511,37 @@ async function ensureKimInjaRemoveGoldkey20261030() {
   console.log(
     `[db] kim_inja_remove_goldkey_20261030_v1 applied (deleted=${rows.length}, used=${used}, remaining=${remaining})`
   );
+}
+
+/** 김인자 골드키 총량 16·잔여 1 (사용 15 유지) */
+async function ensureKimInjaGoldkeyQuota16() {
+  const migrationId = "kim_inja_goldkey_quota_16_v1";
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
+  if (done) return;
+
+  const user = await queryOne(
+    "SELECT id FROM users WHERE name = ? AND role = 'ANESTHESIA' LIMIT 1",
+    "김인자"
+  );
+  if (!user?.id) {
+    console.warn("[db] kim_inja_goldkey_quota_16: user not found - 김인자");
+    await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+    return;
+  }
+
+  const userId = String(user.id);
+  const quota = defaultGoldkeyQuotaForName("김인자");
+  const row = await queryOne("SELECT used_count FROM goldkeys WHERE user_id = ?", userId);
+  const used = Number(row?.used_count ?? 0);
+  const remaining = Math.max(0, quota - used);
+  await execute(
+    "UPDATE goldkeys SET quota_total = ?, remaining_count = ? WHERE user_id = ?",
+    quota,
+    remaining,
+    userId
+  );
+  await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+  console.log(`[db] ${migrationId} applied (quota=${quota}, used=${used}, remaining=${remaining})`);
 }
 
 /** 양현아 2026-11-01~ 휴직: 당직 제외 후 순번 재배정, 11/7·8은 최종선·유진 + 변경 이력 */
