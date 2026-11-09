@@ -543,6 +543,53 @@ async function reconcileGoldkeyUsageByPolicy(nowLike = new Date().toISOString())
   }
 }
 
+/** 휴가 연도 기준 골드키 사용일 수. 다른 해 사용은 포함하지 않는다. */
+async function countUserGoldkeyUsedInLeaveYear(userId, leaveYear, nowLike) {
+  const year = String(leaveYear ?? "").slice(0, 4);
+  if (!/^\d{4}$/.test(year)) return 0;
+  const reqRows = await queryAll(
+    `SELECT id, user_id, leave_type, leave_date, requested_at, status
+     FROM requests
+     WHERE user_id = ? AND leave_type = 'GOLDKEY' AND ${SQL_REQ_ACTIVE}
+       AND substr(leave_date, 1, 4) = ?`,
+    userId,
+    year
+  );
+  const cancelRows = await queryAll(
+    `SELECT c.leave_request_id, IFNULL(c.deduction_exempt, 0) AS deduction_exempt
+     FROM cancellations c
+     JOIN requests r ON r.id = c.leave_request_id
+     WHERE r.user_id = ? AND r.leave_type = 'GOLDKEY' AND r.deleted_at IS NULL
+       AND substr(r.leave_date, 1, 4) = ? AND c.revoked_at IS NULL`,
+    userId,
+    year
+  );
+  const exemptCancelledRequestIds = new Set();
+  for (const c of cancelRows) {
+    if (Number(c.deduction_exempt ?? 0) === 1) exemptCancelledRequestIds.add(String(c.leave_request_id ?? ""));
+  }
+  const dates = new Set();
+  for (const r of reqRows) {
+    const st = String(r.status ?? "").trim();
+    let counts = false;
+    if (st === "REJECTED") counts = false;
+    else if (st === "CANCELLED") counts = !exemptCancelledRequestIds.has(String(r.id ?? ""));
+    else if (st === "APPLIED" || st === "SELECTED" || st === "APPROVED") {
+      if (isSpecialLongTermGoldkeyRequestApril(r)) {
+        const leave = parseYmdParts(r.leave_date);
+        counts = Boolean(leave && isAfterRecruitWindowKst(nowLike, leave.year));
+      } else if (isSpecialLongTermGoldkeyRequestOctober(r)) {
+        const requested = toYmdPartsLoose(r.requested_at);
+        counts = Boolean(requested && isAfterOctoberRecruitBatchKst(nowLike, requested.year));
+      } else counts = true;
+    }
+    if (!counts) continue;
+    const ld = String(r.leave_date ?? "").trim().slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(ld)) dates.add(ld);
+  }
+  return dates.size;
+}
+
 async function upsertKoreanHolidaysFromPublicApi(year, monthOpt) {
   return upsertKoreanHolidaysForYear(year, monthOpt, { execute, queryAll });
 }
@@ -2651,6 +2698,21 @@ app.post("/api/requests", async (req, res) => {
       );
       if (Number(row?.c || 0) >= 4) {
         return res.status(400).json({ error: "해당월에 일반휴가-우선순위는 4개까지 가능합니다." });
+      }
+    }
+
+    if (String(leaveType) === "GOLDKEY") {
+      const year = String(dateList[0] ?? "").slice(0, 4);
+      const gk = await queryOne("SELECT quota_total FROM goldkeys WHERE user_id = ?", userId);
+      let quota = Number(gk?.quota_total ?? 0);
+      if (!gk) {
+        const named = await queryOne("SELECT name FROM users WHERE id = ?", userId);
+        quota = defaultGoldkeyQuotaForName(named?.name);
+      }
+      const used = await countUserGoldkeyUsedInLeaveYear(String(userId), year, new Date().toISOString());
+      const adding = new Set(dateList.filter((d) => String(d).startsWith(`${year}-`)));
+      if (used + adding.size > quota) {
+        return res.status(400).json({ error: "잔여 골드키가 없습니다." });
       }
     }
 

@@ -721,6 +721,10 @@ function App() {
   const isAdmin = isOrLeaveAdmin;
   const canEditHolidayDuty = showHolidayDutyEditorRole(viewerRole);
   const myGoldkey = goldkeys.find((g) => g.userId === auth?.userId);
+  const goldkeyLeaveBalance = useMemo(
+    () => goldkeyBalanceForLeaveDate(myGoldkey, requests, auth?.userId, leaveDate, cancellations),
+    [myGoldkey, requests, auth?.userId, leaveDate, cancellations]
+  );
   const isLoggedIn = Boolean(auth?.userId);
   const prevIsLoggedInRef = useRef(false);
   const prevUnreadNotificationCountRef = useRef(null);
@@ -1876,11 +1880,15 @@ function App() {
       return setMessage("선택한 휴가 구분을 사용할 수 없습니다.");
     }
 
+    const goldkeyBalance =
+      normalizedLeaveType === "GOLDKEY"
+        ? goldkeyBalanceForLeaveDate(myGoldkey, requests, auth.userId, leaveDate, cancellations, nowForValidation.toISOString())
+        : null;
     const error = validateRequest({
       leaveType: normalizedLeaveType,
       leaveDate,
       now: nowForValidation,
-      remainingGoldkey: myGoldkey?.remainingCount ?? 0,
+      remainingGoldkey: goldkeyBalance ? goldkeyBalance.remaining : (myGoldkey?.remainingCount ?? 0),
       holidaysCache: holidays,
       userId: auth.userId,
       requests,
@@ -3164,6 +3172,7 @@ function App() {
               setMemo={setMemo}
               submitRequest={submitRequest}
               myGoldkey={myGoldkey}
+              goldkeyLeaveBalance={goldkeyLeaveBalance}
               message={message}
               viewerRole={viewerRole}
             />
@@ -3292,6 +3301,7 @@ function App() {
               setMemo={setMemo}
               submitRequest={submitRequest}
               myGoldkey={myGoldkey}
+              goldkeyLeaveBalance={goldkeyLeaveBalance}
               message={message}
               isOrLeaveAdmin={isOrLeaveAdmin}
               isAnesthesiaLeaveAdmin={isAnesthesiaLeaveAdmin}
@@ -3815,6 +3825,7 @@ function RequestPage({
   setMemo,
   submitRequest,
   myGoldkey,
+  goldkeyLeaveBalance,
   message,
   viewerRole,
 }) {
@@ -3852,7 +3863,11 @@ function RequestPage({
         <input type="text" placeholder="신청 메모" value={memo} onChange={(e) => setMemo(e.target.value)} />
         <button type="submit">신청</button>
       </form>
-      <p className="help">내 골드키 잔여: {myGoldkey?.remainingCount ?? 0} / {myGoldkey?.quotaTotal ?? 0}</p>
+      <p className="help">
+        {goldkeyLeaveBalance?.year ? `${goldkeyLeaveBalance.year}년 ` : ""}골드키 잔여:{" "}
+        {goldkeyLeaveBalance?.remaining ?? myGoldkey?.remainingCount ?? 0} /{" "}
+        {goldkeyLeaveBalance?.quota ?? myGoldkey?.quotaTotal ?? 0}
+      </p>
       {message ? <p className="msg">{message}</p> : null}
     </section>
   );
@@ -4194,6 +4209,17 @@ function countGoldkeyApplyUse(
     dates.add(ymd);
   }
   return dates.size;
+}
+
+/** 신청 화면·검증: 휴가일이 속한 연도의 잔여(총량 − 그 해 사용). 다른 해 사용은 빼지 않는다. */
+function goldkeyBalanceForLeaveDate(goldkey, requests, userId, leaveDate, cancellations, nowLike = new Date().toISOString()) {
+  const quota = Number(goldkey?.quotaTotal ?? goldkey?.quota_total ?? 0);
+  const year = Number(String(leaveDate ?? "").trim().slice(0, 4));
+  if (!goldkey || !Number.isFinite(year)) {
+    return { year: null, quota, remaining: Number(goldkey?.remainingCount ?? goldkey?.remaining_count ?? 0) };
+  }
+  const used = countGoldkeyApplyUse(requests, userId, nowLike, cancellations, year);
+  return { year, quota, remaining: Math.max(0, quota - used) };
 }
 
 /** 종합현황·관리자: 서버 연결 시 API 총량 우선, 오프라인·누락 시 이름별 정책(간호사별 10~15) */
@@ -8399,6 +8425,7 @@ function CalendarPage({
   setMemo,
   submitRequest,
   myGoldkey,
+  goldkeyLeaveBalance,
   message,
   isOrLeaveAdmin = false,
   isAnesthesiaLeaveAdmin = false,
@@ -9418,7 +9445,11 @@ function CalendarPage({
                         <button type="submit">신청</button>
                       </form>
                       {(viewerRole === "NURSE" || viewerRole === "ANESTHESIA") && myGoldkey ? (
-                        <p className="help">내 골드키 잔여: {myGoldkey?.remainingCount ?? 0} / {myGoldkey?.quotaTotal ?? 0}</p>
+                        <p className="help">
+                          {goldkeyLeaveBalance?.year ? `${goldkeyLeaveBalance.year}년 ` : ""}골드키 잔여:{" "}
+                          {goldkeyLeaveBalance?.remaining ?? myGoldkey?.remainingCount ?? 0} /{" "}
+                          {goldkeyLeaveBalance?.quota ?? myGoldkey?.quotaTotal ?? 0}
+                        </p>
                       ) : null}
                       {message ? <p className="msg">{message}</p> : null}
                     </div>
