@@ -2513,7 +2513,7 @@ async function ensureKimInjaRemoveGoldkey20261030() {
   );
 }
 
-/** 김인자 골드키 총량 16·잔여 1 (사용 15 유지) */
+/** 김인자 골드키 총량을 이름별 정책(현재 15)에 맞춤. 사용 건수는 유지 */
 async function ensureKimInjaGoldkeyQuota16() {
   const migrationId = "kim_inja_goldkey_quota_16_v1";
   const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
