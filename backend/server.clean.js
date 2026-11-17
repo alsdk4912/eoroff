@@ -1607,12 +1607,19 @@ app.post("/api/admin/users/:id/deactivate", async (req, res) => {
     }
     if (Number(target.is_active ?? 1) !== 1) return res.json({ ok: true });
 
+    const effectiveFrom = String(req.body?.effectiveFrom ?? req.body?.fromDate ?? "").trim().slice(0, 10);
+    let inactiveAt = new Date().toISOString();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom)) {
+      // 해당월 1일(KST)부터 근무표 공란·다음 해 제외에 사용
+      inactiveAt = new Date(`${effectiveFrom.slice(0, 7)}-01T00:00:00+09:00`).toISOString();
+    }
+
     await execute(
       `UPDATE users
        SET is_active = 0, inactive_reason = ?, inactive_at = ?, inactive_by = ?
        WHERE id = ?`,
       reason || "퇴사/이동",
-      new Date().toISOString(),
+      inactiveAt,
       actorUserId,
       targetUserId
     );

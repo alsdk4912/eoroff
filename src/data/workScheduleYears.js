@@ -47,8 +47,8 @@ export function parseBaseSchedulePlanKey(planKey) {
   return m ? Number(m[1]) : null;
 }
 
-/** 2026·2027 시드 외 연도는 2026 명단·빈 칸 12개월 (휴직자는 연도별 제외) */
-export function getWorkScheduleTemplateForYear(year, templates) {
+/** 2026·2027 시드 외 연도는 2026 명단·빈 칸 12개월 (휴직·퇴직자는 연도별 제외) */
+export function getWorkScheduleTemplateForYear(year, templates, users = []) {
   const y = Number(year);
   const { rows2026, rows2027 } = templates;
   let rows;
@@ -60,20 +60,24 @@ export function getWorkScheduleTemplateForYear(year, templates) {
       values: emptyScheduleMonthValues(SCHEDULE_MONTH_COUNT),
     }));
   } else rows = rows2026;
-  return filterScheduleRowsOmittingLeaveAbsences(rows, y);
+  return filterScheduleRowsOmittingLeaveAbsences(rows, y, users);
 }
 
 /**
  * 저장 칸이 비어 있으면 코드 시드로 채움(직접 입력·수정한 칸은 유지).
  */
-export function rehydrateScheduleFromSeed(saved, seedTemplate, year = null) {
+export function rehydrateScheduleFromSeed(saved, seedTemplate, year = null, users = []) {
   const template = Array.isArray(seedTemplate) ? seedTemplate : [];
+  const list = Array.isArray(users) ? users : [];
   const y = year != null ? Number(year) : null;
   const savedMap = new Map(
-    normalizeWorkScheduleRowsForAnesthesia(Array.isArray(saved) ? saved : []).map((r) => [String(r?.name ?? ""), r])
+    normalizeWorkScheduleRowsForAnesthesia(Array.isArray(saved) ? saved : [], list).map((r) => [
+      String(r?.name ?? ""),
+      r,
+    ])
   );
   return template
-    .filter((t) => (Number.isFinite(y) ? !shouldOmitFromMonthlyScheduleYear(t.name, y) : true))
+    .filter((t) => (Number.isFinite(y) ? !shouldOmitFromMonthlyScheduleYear(t.name, y, list) : true))
     .map((t) => {
       const hit = savedMap.get(t.name);
       const seedVals = Array.isArray(t.values) ? t.values : [];
@@ -85,7 +89,7 @@ export function rehydrateScheduleFromSeed(saved, seedTemplate, year = null) {
         return s || sd || "";
       });
       const row = { name: t.name, values };
-      return Number.isFinite(y) ? applyMonthlyLeaveBlankValues(row, y) : row;
+      return Number.isFinite(y) ? applyMonthlyLeaveBlankValues(row, y, list) : row;
     });
 }
 

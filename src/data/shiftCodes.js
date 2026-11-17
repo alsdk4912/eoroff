@@ -59,9 +59,9 @@ export function normalizeAnesthesiaShiftCode(value) {
   return s;
 }
 
-export function normalizeWorkScheduleRowsForAnesthesia(rows) {
+export function normalizeWorkScheduleRowsForAnesthesia(rows, users = []) {
   return (Array.isArray(rows) ? rows : []).map((row) => {
-    if (monthlyRowSection(row?.name) !== "anesthesia") return row;
+    if (monthlyRowSection(row?.name, users) !== "anesthesia") return row;
     const vals = Array.isArray(row?.values) ? row.values : [];
     return {
       name: row.name,
@@ -108,20 +108,53 @@ export const ANESTHESIA_MONTHLY_NAMES = ["김인자", "이지현", "박현정", 
 export const CHIEF_MONTHLY_NAMES = ["방현석", "최무영", "김보람", "오문환", "오세연", "강명호"];
 
 /**
- * 장기 휴직: 월간·주간 근무표에서 이름 제외 (당직 제외와 별도).
- * until 빈 값 = 종료일 미정(계속 제외).
+ * 장기 휴직(수동 등록). until 빈 값 = 종료일 미정.
+ * 퇴직·사직·휴직으로 비활성화된 사용자는 inactiveAt 월 1일부터 자동 적용.
  */
 export const SCHEDULE_LEAVE_ABSENCES = [
   { name: "양현아", from: "2026-11-01", until: "" },
   { name: "유진", from: "2027-03-01", until: "2028-02-29" },
 ];
 
-export function isOnScheduleLeaveAbsence(name, ymd) {
+function firstOfMonthYmd(ymdOrIso) {
+  const s = String(ymdOrIso ?? "").trim();
+  const d = s.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return `${d.slice(0, 7)}-01`;
+  const t = Date.parse(s);
+  if (!Number.isFinite(t)) return "";
+  const dt = new Date(t);
+  if (Number.isNaN(dt.getTime())) return "";
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-01`;
+}
+
+/** 비활성(퇴직·사직·휴직) 사용자 → 해당월 1일부터 근무표 공란 */
+export function scheduleLeaveFromInactiveUser(user) {
+  if (!user || isUserActive(user)) return null;
+  const from = firstOfMonthYmd(user.inactiveAt ?? user.inactive_at);
+  if (!from) return null;
+  return { name: String(user.name ?? "").trim(), from, until: "" };
+}
+
+function scheduleLeaveRangesForName(name, users = []) {
+  const n = String(name ?? "").trim();
+  if (!n) return [];
+  const ranges = [];
+  for (const a of SCHEDULE_LEAVE_ABSENCES) {
+    if (String(a.name ?? "").trim() === n) ranges.push(a);
+  }
+  for (const u of Array.isArray(users) ? users : []) {
+    if (String(u?.name ?? "").trim() !== n) continue;
+    const abs = scheduleLeaveFromInactiveUser(u);
+    if (abs) ranges.push(abs);
+  }
+  return ranges;
+}
+
+export function isOnScheduleLeaveAbsence(name, ymd, users = []) {
   const n = String(name ?? "").trim();
   const d = String(ymd ?? "").slice(0, 10);
   if (!n || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
-  for (const a of SCHEDULE_LEAVE_ABSENCES) {
-    if (String(a.name ?? "").trim() !== n) continue;
+  for (const a of scheduleLeaveRangesForName(n, users)) {
     const from = String(a.from ?? "").slice(0, 10);
     const until = String(a.until ?? "").trim().slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || d < from) continue;
@@ -133,43 +166,92 @@ export function isOnScheduleLeaveAbsence(name, ymd) {
 
 /**
  * 해당 연 근무표에서 행 자체를 숨김.
- * 그 해에 근무한 달이 하나라도 있으면 행 유지(휴직 달은 회색 공란).
- * 예) 양현아 2026 유지·2027부터 제외, 유진 2027은 1~2월 유지·3월~ 공란.
+ * 그 해에 근무한 달이 하나라도 있으면 행 유지(휴직·퇴직 달은 회색 공란).
+ * 다음 해부터는 명단에서 제외.
  */
-export function shouldOmitFromMonthlyScheduleYear(name, year) {
+export function shouldOmitFromMonthlyScheduleYear(name, year, users = []) {
   const y = Number(year);
   if (!Number.isFinite(y)) return false;
   let anyLeave = false;
   for (let month = 1; month <= 12; month += 1) {
     const ymd = `${y}-${String(month).padStart(2, "0")}-01`;
-    if (isOnScheduleLeaveAbsence(name, ymd)) anyLeave = true;
+    if (isOnScheduleLeaveAbsence(name, ymd, users)) anyLeave = true;
     else return false;
   }
   return anyLeave;
 }
 
-/** 월간 근무표 해당 칸을 휴직 공란(회색·비편집)으로 둘지 */
-export function isMonthlyScheduleLeaveBlankMonth(name, year, monthIndex0) {
+/** 월간 근무표 해당 칸을 휴직·퇴직 공란(회색·비편집)으로 둘지 */
+export function isMonthlyScheduleLeaveBlankMonth(name, year, monthIndex0, users = []) {
   const y = Number(year);
   const idx = Number(monthIndex0);
   if (!Number.isFinite(y) || !Number.isFinite(idx) || idx < 0 || idx > 11) return false;
   const ymd = `${y}-${String(idx + 1).padStart(2, "0")}-01`;
-  return isOnScheduleLeaveAbsence(name, ymd);
+  return isOnScheduleLeaveAbsence(name, ymd, users);
 }
 
-export function applyMonthlyLeaveBlankValues(row, year) {
+export function applyMonthlyLeaveBlankValues(row, year, users = []) {
   const name = String(row?.name ?? "");
   const vals = Array.isArray(row?.values) ? [...row.values] : [];
   const y = Number(year);
   if (!Number.isFinite(y) || !name) return { name, values: vals };
-  const values = vals.map((v, i) => (isMonthlyScheduleLeaveBlankMonth(name, y, i) ? "" : String(v ?? "")));
+  const values = vals.map((v, i) => (isMonthlyScheduleLeaveBlankMonth(name, y, i, users) ? "" : String(v ?? "")));
   return { name, values };
 }
 
-export function filterScheduleRowsOmittingLeaveAbsences(rows, year) {
+export function filterScheduleRowsOmittingLeaveAbsences(rows, year, users = []) {
   return (Array.isArray(rows) ? rows : []).filter(
-    (r) => !shouldOmitFromMonthlyScheduleYear(r?.name, year)
+    (r) => !shouldOmitFromMonthlyScheduleYear(r?.name, year, users)
   );
+}
+
+/**
+ * 시드 근무표에 신규 가입 간호사·마취과를 자동 추가.
+ * 휴직·퇴직으로 해당 연 전체가 공란인 사람은 제외.
+ */
+export function augmentWorkScheduleTemplateWithUsers(templateRows, users, year) {
+  const y = Number(year);
+  const list = Array.isArray(users) ? users : [];
+  const seed = filterScheduleRowsOmittingLeaveAbsences(templateRows, y, list);
+  const present = new Set(seed.map((r) => String(r?.name ?? "").trim()).filter(Boolean));
+  const monthLen = Math.max(12, ...seed.map((r) => (Array.isArray(r?.values) ? r.values.length : 0)), 12);
+  const empty = emptyScheduleMonthValues(monthLen);
+
+  const candidates = list.filter((u) => {
+    const role = String(u?.role ?? "");
+    if (role !== "NURSE" && role !== "ANESTHESIA") return false;
+    const name = String(u?.name ?? "").trim();
+    if (!name || present.has(name)) return false;
+    if (isUserActive(u)) return true;
+    return Number.isFinite(y) ? !shouldOmitFromMonthlyScheduleYear(name, y, list) : false;
+  });
+
+  const byName = (a, b) => String(a.name).localeCompare(String(b.name), "ko");
+  const orExtra = candidates.filter((u) => u.role === "NURSE").sort(byName);
+  const anesExtra = candidates.filter((u) => u.role === "ANESTHESIA").sort(byName);
+
+  const out = seed.map((r) => applyMonthlyLeaveBlankValues(r, y, list));
+  let lastOr = -1;
+  let lastAnes = -1;
+  for (let i = 0; i < out.length; i += 1) {
+    const sec = monthlyRowSection(out[i].name, list);
+    if (sec === "or") lastOr = i;
+    if (sec === "anesthesia") lastAnes = i;
+  }
+
+  const toRow = (u) => applyMonthlyLeaveBlankValues({ name: u.name, values: [...empty] }, y, list);
+  const orRows = orExtra.map(toRow);
+  const anesRows = anesExtra.map(toRow);
+  if (orRows.length) {
+    const at = lastOr >= 0 ? lastOr + 1 : 0;
+    out.splice(at, 0, ...orRows);
+    if (lastAnes >= at) lastAnes += orRows.length;
+  }
+  if (anesRows.length) {
+    const at = lastAnes >= 0 ? lastAnes + 1 : out.length;
+    out.splice(at, 0, ...anesRows);
+  }
+  return out;
 }
 const LEGACY_CHIEF_MONTHLY_NAMES = ["이찬주"];
 const CHIEF_REPLACEMENT_CUTOFF_YMD = "2026-07-01";
@@ -208,30 +290,38 @@ export function filterMonthlyWorkScheduleRows(rows) {
   return (Array.isArray(rows) ? rows : []).filter((r) => !isChiefMonthlyScheduleName(r?.name));
 }
 
-export function monthlyRowSection(name) {
+export function monthlyRowSection(name, users = []) {
   const n = String(name ?? "").trim();
   if (ANESTHESIA_MONTHLY_NAMES.includes(n)) return "anesthesia";
   if (CHIEF_MONTHLY_NAMES.includes(n) || LEGACY_CHIEF_MONTHLY_NAMES.includes(n)) return "chief";
+  const hit = (Array.isArray(users) ? users : []).find((u) => String(u?.name ?? "").trim() === n);
+  const role = String(hit?.role ?? "").trim();
+  if (role === "ANESTHESIA") return "anesthesia";
+  if (role === "CHIEF") return "chief";
   return "or";
 }
 
 /** 섹션 경계 직전에 두꺼운 구분선 행 삽입 */
-export function separatorBeforeMonthlyRow(name, previousName) {
-  const sec = monthlyRowSection(name);
-  const prevSec = previousName ? monthlyRowSection(previousName) : null;
+export function separatorBeforeMonthlyRow(name, previousName, users = []) {
+  const sec = monthlyRowSection(name, users);
+  const prevSec = previousName ? monthlyRowSection(previousName, users) : null;
   if (sec === "anesthesia" && prevSec !== "anesthesia") return "anesthesia";
   if (sec === "chief" && prevSec !== "chief") return "chief";
   return null;
 }
 
-export function mergeWorkScheduleRows(saved, templateRows, year = null) {
+export function mergeWorkScheduleRows(saved, templateRows, year = null, users = []) {
   const template = Array.isArray(templateRows) ? templateRows : [];
+  const list = Array.isArray(users) ? users : [];
   const map = new Map(
-    normalizeWorkScheduleRowsForAnesthesia(Array.isArray(saved) ? saved : []).map((r) => [String(r?.name ?? ""), r])
+    normalizeWorkScheduleRowsForAnesthesia(Array.isArray(saved) ? saved : [], list).map((r) => [
+      String(r?.name ?? ""),
+      r,
+    ])
   );
   const y = year != null ? Number(year) : null;
   return template
-    .filter((t) => (Number.isFinite(y) ? !shouldOmitFromMonthlyScheduleYear(t.name, y) : true))
+    .filter((t) => (Number.isFinite(y) ? !shouldOmitFromMonthlyScheduleYear(t.name, y, list) : true))
     .map((t) => {
       const seedVals = Array.isArray(t.values) ? t.values : [];
       const hit = map.get(t.name);
@@ -240,19 +330,19 @@ export function mergeWorkScheduleRows(saved, templateRows, year = null) {
       const len = Math.max(seedVals.length, savedVals.length, 12);
       const values = Array.from({ length: len }, (_, i) => {
         if (fixedChief) return fixedChief;
-        const saved = String(savedVals[i] ?? "").trim();
+        const savedCell = String(savedVals[i] ?? "").trim();
         const seed = String(seedVals[i] ?? "").trim();
-        return saved || seed || "";
+        return savedCell || seed || "";
       });
       const row = { name: t.name, values };
-      return Number.isFinite(y) ? applyMonthlyLeaveBlankValues(row, y) : row;
+      return Number.isFinite(y) ? applyMonthlyLeaveBlankValues(row, y, list) : row;
     });
 }
 
-export function canEditMonthlyScheduleCell(viewerRole, rowName) {
+export function canEditMonthlyScheduleCell(viewerRole, rowName, users = []) {
   if (fixedChiefShiftCodeForName(rowName)) return false;
   const role = String(viewerRole ?? "").trim();
-  const sec = monthlyRowSection(rowName);
+  const sec = monthlyRowSection(rowName, users);
   if (role === "ADMIN" || role === "DEPT_HEAD") return true;
   if (sec === "anesthesia") return role === "ANESTHESIA" || role === "ADMIN2";
   if (sec === "chief") return role === "CHIEF";
@@ -362,17 +452,18 @@ export function canUseWeeklyScheduleEditor(viewerRole) {
 }
 
 /** 역할별 저장 시 다른 섹션 행은 기존 값 유지 */
-export function mergeMonthlySaveDraft(saved, draft, templateRows, viewerRole, year = null) {
-  const base = mergeWorkScheduleRows(saved, templateRows, year);
+export function mergeMonthlySaveDraft(saved, draft, templateRows, viewerRole, year = null, users = []) {
+  const list = Array.isArray(users) ? users : [];
+  const base = mergeWorkScheduleRows(saved, templateRows, year, list);
   const draftMap = new Map((Array.isArray(draft) ? draft : []).map((r) => [r.name, r]));
   const y = year != null ? Number(year) : null;
   return base.map((row) => {
     const next = draftMap.get(row.name);
-    if (!next || !canEditMonthlyScheduleCell(viewerRole, row.name)) {
-      return Number.isFinite(y) ? applyMonthlyLeaveBlankValues(row, y) : row;
+    if (!next || !canEditMonthlyScheduleCell(viewerRole, row.name, list)) {
+      return Number.isFinite(y) ? applyMonthlyLeaveBlankValues(row, y, list) : row;
     }
     const merged = { name: row.name, values: Array.isArray(next.values) ? [...next.values] : row.values };
-    return Number.isFinite(y) ? applyMonthlyLeaveBlankValues(merged, y) : merged;
+    return Number.isFinite(y) ? applyMonthlyLeaveBlankValues(merged, y, list) : merged;
   });
 }
 
@@ -388,7 +479,7 @@ export function weeklyStaffForViewer(users, viewerRole, anchorYmd = "") {
   const list = Array.isArray(users) ? users : [];
   const role = String(viewerRole ?? "").trim();
   const probe = scheduleLeaveProbeYmd(anchorYmd);
-  const notOnLeave = (u) => !isOnScheduleLeaveAbsence(u?.name, probe);
+  const notOnLeave = (u) => !isOnScheduleLeaveAbsence(u?.name, probe, list);
   if (role === "ANESTHESIA" || role === "ADMIN2") {
     return staffUsersByRole(list, "ANESTHESIA").filter(notOnLeave);
   }
@@ -413,7 +504,7 @@ export function weeklyRosterAllSections(users, anchorYmd = "") {
         list.filter((u) => u.role === role && isUserActive(u) && !names.includes(u.name)).sort(byName)
       );
   const anchor = scheduleLeaveProbeYmd(anchorYmd);
-  const notOnLeave = (u) => !isOnScheduleLeaveAbsence(u?.name, anchor);
+  const notOnLeave = (u) => !isOnScheduleLeaveAbsence(u?.name, anchor, list);
   const or = staffUsersByRole(list, "NURSE").filter(notOnLeave);
   const anesthesia = pickInOrder(ANESTHESIA_MONTHLY_NAMES, "ANESTHESIA").filter(notOnLeave);
   const chiefNames = chiefNamesForYmd(anchorYmd);

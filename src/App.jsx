@@ -81,6 +81,7 @@ import {
   monthlyRowSection,
   separatorBeforeMonthlyRow,
   isMonthlyScheduleLeaveBlankMonth,
+  augmentWorkScheduleTemplateWithUsers,
 } from "./data/shiftCodes.js";
 import {
   WORK_SCHEDULE_MONTH_LABELS,
@@ -588,7 +589,16 @@ function App() {
     const y = String(year);
     setWorkScheduleByYear((prev) => ({
       ...normalizeWorkScheduleByYear(prev, WORK_SCHEDULE_TEMPLATES),
-      [y]: mergeWorkScheduleRows(rows, getWorkScheduleTemplateForYear(Number(y), WORK_SCHEDULE_TEMPLATES), Number(y)),
+      [y]: mergeWorkScheduleRows(
+        rows,
+        augmentWorkScheduleTemplateWithUsers(
+          getWorkScheduleTemplateForYear(Number(y), WORK_SCHEDULE_TEMPLATES),
+          users,
+          Number(y)
+        ),
+        Number(y),
+        users
+      ),
     }));
   };
   async function persistWorkScheduleForYearToServer(year, rows) {
@@ -598,8 +608,13 @@ function App() {
     const y = String(year);
     const merged = mergeWorkScheduleRows(
       rows,
-      getWorkScheduleTemplateForYear(Number(y), WORK_SCHEDULE_TEMPLATES),
-      Number(y)
+      augmentWorkScheduleTemplateWithUsers(
+        getWorkScheduleTemplateForYear(Number(y), WORK_SCHEDULE_TEMPLATES),
+        users,
+        Number(y)
+      ),
+      Number(y),
+      users
     );
     saveWorkScheduleForYear(y, merged);
     await api.syncWorkScheduleForYear(y, { actorUserId: auth.userId, rows: merged });
@@ -3033,13 +3048,25 @@ function App() {
   }
 
   async function handleDeactivateUser(targetUserId) {
-    const reason = window.prompt?.("비활성화 사유를 입력하세요.", "퇴사/이동");
+    const reason = window.prompt?.("비활성화 사유를 입력하세요. (휴직/퇴직/사직 등)", "퇴사/이동");
     if (reason === null) return;
-    await api.deactivateUser(targetUserId, { actorUserId: auth.userId, reason: reason.trim() || "퇴사/이동" });
+    const now = new Date();
+    const defaultFrom = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+    const fromRaw = window.prompt?.(
+      "근무표 공란 시작일(YYYY-MM-DD). 해당 월부터 저장·수정 불가, 다음 해 명단 제외.",
+      defaultFrom
+    );
+    if (fromRaw === null) return;
+    const effectiveFrom = String(fromRaw || defaultFrom).trim().slice(0, 10);
+    await api.deactivateUser(targetUserId, {
+      actorUserId: auth.userId,
+      reason: reason.trim() || "퇴사/이동",
+      effectiveFrom: /^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom) ? effectiveFrom : defaultFrom,
+    });
     await reloadAdminUserManagement();
     const data = await api.bootstrap();
     applyBootstrapPayload(data);
-    setAccountMessage("선택한 사용자를 비활성화했습니다.");
+    setAccountMessage("선택한 사용자를 비활성화했습니다. 근무표는 시작월부터 공란·다음 해 명단 제외됩니다.");
   }
 
   async function handleActivateUser(targetUserId) {
@@ -4971,8 +4998,8 @@ function WeeklyScheduleTab({
           <tbody>
             {rosterRows.flatMap((u, rowIdx, rows) => {
               const prevName = rowIdx > 0 ? rows[rowIdx - 1]?.name : null;
-              const sep = separatorBeforeMonthlyRow(u.name, prevName);
-              const sec = monthlyRowSection(u.name);
+              const sep = separatorBeforeMonthlyRow(u.name, prevName, users);
+              const sec = monthlyRowSection(u.name, users);
               const baseCellEditable = canEditWeeklyScheduleCell(viewerRole, u, viewerUserId);
               const out = [];
               if (sep) {
@@ -6237,18 +6264,18 @@ function DashboardPage({
   }, [location, currentRole]);
 
   const baseScheduleYear = parseBaseSchedulePlanKey(schedulePlanKey);
-  const activeBaseTemplate = useMemo(
-    () =>
-      baseScheduleYear
-        ? getWorkScheduleTemplateForYear(baseScheduleYear, WORK_SCHEDULE_TEMPLATES)
-        : WORK_SCHEDULE_2026_ROWS,
-    [baseScheduleYear]
-  );
+  const activeBaseTemplate = useMemo(() => {
+    const seed = baseScheduleYear
+      ? getWorkScheduleTemplateForYear(baseScheduleYear, WORK_SCHEDULE_TEMPLATES)
+      : WORK_SCHEDULE_2026_ROWS;
+    return augmentWorkScheduleTemplateWithUsers(seed, users, baseScheduleYear ?? 2026);
+  }, [baseScheduleYear, users]);
   const [draftRows, setDraftRows] = useState(() =>
     rehydrateScheduleFromSeed(
       workScheduleByYear?.["2026"],
-      getWorkScheduleTemplateForYear(2026, WORK_SCHEDULE_TEMPLATES),
-      2026
+      getWorkScheduleTemplateForYear(2026, WORK_SCHEDULE_TEMPLATES, users),
+      2026,
+      users
     )
   );
   /** 연도 전환 시 draft를 새 연도로 강제 교체하기 위한 기준 */
@@ -6263,7 +6290,7 @@ function DashboardPage({
       const prevVals = savedMap.get(row.name) || [];
       const nextVals = row.values || [];
       for (let i = 0; i < WORK_SCHEDULE_MONTH_LABELS.length; i += 1) {
-        if (isMonthlyScheduleLeaveBlankMonth(row.name, baseScheduleYear, i)) continue;
+        if (isMonthlyScheduleLeaveBlankMonth(row.name, baseScheduleYear, i, users)) continue;
         const before = String(prevVals[i] ?? "");
         const after = String(nextVals[i] ?? "");
         if (before !== after) {
@@ -6277,14 +6304,14 @@ function DashboardPage({
       }
     }
     return changes;
-  }, [draftRows, workScheduleByYear, baseScheduleYear, activeBaseTemplate]);
+  }, [draftRows, workScheduleByYear, baseScheduleYear, activeBaseTemplate, users]);
 
   useEffect(() => {
     if (!baseScheduleYear) return;
     const yearChanged = draftScheduleYearRef.current !== baseScheduleYear;
     draftScheduleYearRef.current = baseScheduleYear;
     const saved = workScheduleByYear?.[String(baseScheduleYear)];
-    const next = rehydrateScheduleFromSeed(saved, activeBaseTemplate, baseScheduleYear);
+    const next = rehydrateScheduleFromSeed(saved, activeBaseTemplate, baseScheduleYear, users);
     // 미저장 편집은 유지. 다만 초안이 저장된/시드 값을 공란으로만 비운 경우는 복구.
     if (!yearChanged && scheduleChanges.length > 0) {
       const onlyBlankedFilled = scheduleChanges.every((c) => c.after === "-" && c.before !== "-");
@@ -6292,7 +6319,7 @@ function DashboardPage({
     }
     setDraftRows(next);
     if (yearChanged) setScheduleMsg("");
-  }, [baseScheduleYear, workScheduleByYear, activeBaseTemplate, scheduleChanges]);
+  }, [baseScheduleYear, workScheduleByYear, activeBaseTemplate, scheduleChanges, users]);
 
   const baseScheduleYearList = useMemo(
     () => listBaseScheduleYears(workScheduleByYear, 2026, baseScheduleYear),
@@ -6378,7 +6405,7 @@ function DashboardPage({
   }, []);
 
   function onDraftCellChange(name, monthIndex, value) {
-    if (baseScheduleYear && isMonthlyScheduleLeaveBlankMonth(name, baseScheduleYear, monthIndex)) return;
+    if (baseScheduleYear && isMonthlyScheduleLeaveBlankMonth(name, baseScheduleYear, monthIndex, users)) return;
     setScheduleMsg("");
     const monthLen = activePlan.monthCount ?? SCHEDULE_MONTH_COUNT;
     const defaultRows = activePlan.templateRows ?? activeBaseTemplate;
@@ -6402,7 +6429,7 @@ function DashboardPage({
     const ok = window.confirm(`아래 근무표 변경을 저장할까요?\n\n${lines.join("\n")}`);
     if (!ok) return;
     const saved = workScheduleByYear?.[String(baseScheduleYear)];
-    const next = mergeMonthlySaveDraft(saved, draftRows, activeBaseTemplate, currentRole, baseScheduleYear);
+    const next = mergeMonthlySaveDraft(saved, draftRows, activeBaseTemplate, currentRole, baseScheduleYear, users);
     try {
       if (typeof persistWorkScheduleForYearToServer === "function") {
         await persistWorkScheduleForYearToServer(baseScheduleYear, next);
@@ -6765,8 +6792,8 @@ function DashboardPage({
             <tbody>
               {(Array.isArray(activePlan.rows) ? activePlan.rows : []).flatMap((row, rowIdx, rows) => {
                 const prevName = rowIdx > 0 ? rows[rowIdx - 1]?.name : null;
-                const sep = separatorBeforeMonthlyRow(row.name, prevName);
-                const sec = monthlyRowSection(row.name);
+                const sep = separatorBeforeMonthlyRow(row.name, prevName, users);
+                const sec = monthlyRowSection(row.name, users);
                 const rowOpts =
                   sec === "anesthesia"
                     ? ANESTHESIA_SHIFT_OPTIONS
@@ -6777,7 +6804,7 @@ function DashboardPage({
                   sec === "anesthesia" ? "ANESTHESIA" : sec === "chief" ? "CHIEF" : "NURSE"
                 );
                 const cellEditable =
-                  activePlan.type === "base" && canEditMonthlyScheduleCell(currentRole, row.name);
+                  activePlan.type === "base" && canEditMonthlyScheduleCell(currentRole, row.name, users);
                 const out = [];
                 if (sep) {
                   out.push(
@@ -6802,7 +6829,7 @@ function DashboardPage({
                       const idx = m.index;
                       const leaveBlank =
                         Boolean(baseScheduleYear) &&
-                        isMonthlyScheduleLeaveBlankMonth(row.name, baseScheduleYear, idx);
+                        isMonthlyScheduleLeaveBlankMonth(row.name, baseScheduleYear, idx, users);
                       const rawCellVal = leaveBlank ? "" : row.values?.[idx] ?? "";
                       const cellVal =
                         sec === "anesthesia" && !isCustomShiftCodeValue(rawCellVal)
@@ -6826,7 +6853,7 @@ function DashboardPage({
                           ]
                             .filter(Boolean)
                             .join(" ")}
-                          title={leaveBlank ? "휴직" : undefined}
+                          title={leaveBlank ? "휴직·퇴직 등으로 해당 월부터 근무표 저장 불가" : undefined}
                         >
                           <label className="work-schedule-picker">
                             <span className="work-schedule-picker-face" aria-hidden="true">
