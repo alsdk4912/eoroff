@@ -4472,6 +4472,17 @@ button.ym-wheel-check:hover {
   font-weight: 700;
 }
 
+.work-schedule-table td.work-schedule-month-cell--leave-blank {
+  background: #e8eaed;
+  color: #9aa0a6;
+}
+
+.work-schedule-table td.work-schedule-month-cell--leave-blank .work-schedule-picker-face {
+  background: #e8eaed;
+  color: transparent;
+  border-color: #d0d5db;
+}
+
 .work-schedule-table td.work-schedule-month-cell--current {
   background: #ecfdf5;
 }

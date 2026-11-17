@@ -131,14 +131,39 @@ export function isOnScheduleLeaveAbsence(name, ymd) {
   return false;
 }
 
-/** 해당 연 근무표에서 행 자체를 숨김 (연중 휴직이 있으면 제외) */
+/**
+ * 해당 연 근무표에서 행 자체를 숨김.
+ * 그 해에 근무한 달이 하나라도 있으면 행 유지(휴직 달은 회색 공란).
+ * 예) 양현아 2026 유지·2027부터 제외, 유진 2027은 1~2월 유지·3월~ 공란.
+ */
 export function shouldOmitFromMonthlyScheduleYear(name, year) {
   const y = Number(year);
   if (!Number.isFinite(y)) return false;
-  for (const probe of [`${y}-01-01`, `${y}-06-01`, `${y}-11-01`]) {
-    if (isOnScheduleLeaveAbsence(name, probe)) return true;
+  let anyLeave = false;
+  for (let month = 1; month <= 12; month += 1) {
+    const ymd = `${y}-${String(month).padStart(2, "0")}-01`;
+    if (isOnScheduleLeaveAbsence(name, ymd)) anyLeave = true;
+    else return false;
   }
-  return false;
+  return anyLeave;
+}
+
+/** 월간 근무표 해당 칸을 휴직 공란(회색·비편집)으로 둘지 */
+export function isMonthlyScheduleLeaveBlankMonth(name, year, monthIndex0) {
+  const y = Number(year);
+  const idx = Number(monthIndex0);
+  if (!Number.isFinite(y) || !Number.isFinite(idx) || idx < 0 || idx > 11) return false;
+  const ymd = `${y}-${String(idx + 1).padStart(2, "0")}-01`;
+  return isOnScheduleLeaveAbsence(name, ymd);
+}
+
+export function applyMonthlyLeaveBlankValues(row, year) {
+  const name = String(row?.name ?? "");
+  const vals = Array.isArray(row?.values) ? [...row.values] : [];
+  const y = Number(year);
+  if (!Number.isFinite(y) || !name) return { name, values: vals };
+  const values = vals.map((v, i) => (isMonthlyScheduleLeaveBlankMonth(name, y, i) ? "" : String(v ?? "")));
+  return { name, values };
 }
 
 export function filterScheduleRowsOmittingLeaveAbsences(rows, year) {
@@ -208,22 +233,22 @@ export function mergeWorkScheduleRows(saved, templateRows, year = null) {
   return template
     .filter((t) => (Number.isFinite(y) ? !shouldOmitFromMonthlyScheduleYear(t.name, y) : true))
     .map((t) => {
-    const len = (t.values || []).length;
-    const hit = map.get(t.name);
-    const fixedChief = fixedChiefShiftCodeForName(t.name);
-    if (!hit) {
-      return {
-        name: t.name,
-        values: fixedChief ? Array.from({ length: len }, () => fixedChief) : emptyScheduleMonthValues(len),
-      };
-    }
-    const vals = Array.isArray(hit.values) ? hit.values : [];
-    const values = Array.from({ length: len }, (_, i) => {
-      if (fixedChief) return fixedChief;
-      return String(vals[i] ?? "");
+      const len = (t.values || []).length;
+      const hit = map.get(t.name);
+      const fixedChief = fixedChiefShiftCodeForName(t.name);
+      let values;
+      if (!hit) {
+        values = fixedChief ? Array.from({ length: len }, () => fixedChief) : emptyScheduleMonthValues(len);
+      } else {
+        const vals = Array.isArray(hit.values) ? hit.values : [];
+        values = Array.from({ length: len }, (_, i) => {
+          if (fixedChief) return fixedChief;
+          return String(vals[i] ?? "");
+        });
+      }
+      const row = { name: t.name, values };
+      return Number.isFinite(y) ? applyMonthlyLeaveBlankValues(row, y) : row;
     });
-    return { name: t.name, values };
-  });
 }
 
 export function canEditMonthlyScheduleCell(viewerRole, rowName) {
@@ -342,10 +367,14 @@ export function canUseWeeklyScheduleEditor(viewerRole) {
 export function mergeMonthlySaveDraft(saved, draft, templateRows, viewerRole, year = null) {
   const base = mergeWorkScheduleRows(saved, templateRows, year);
   const draftMap = new Map((Array.isArray(draft) ? draft : []).map((r) => [r.name, r]));
+  const y = year != null ? Number(year) : null;
   return base.map((row) => {
     const next = draftMap.get(row.name);
-    if (!next || !canEditMonthlyScheduleCell(viewerRole, row.name)) return row;
-    return { name: row.name, values: Array.isArray(next.values) ? [...next.values] : row.values };
+    if (!next || !canEditMonthlyScheduleCell(viewerRole, row.name)) {
+      return Number.isFinite(y) ? applyMonthlyLeaveBlankValues(row, y) : row;
+    }
+    const merged = { name: row.name, values: Array.isArray(next.values) ? [...next.values] : row.values };
+    return Number.isFinite(y) ? applyMonthlyLeaveBlankValues(merged, y) : merged;
   });
 }
 

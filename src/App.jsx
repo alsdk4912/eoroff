@@ -80,6 +80,7 @@ import {
   normalizeAnesthesiaShiftCode,
   monthlyRowSection,
   separatorBeforeMonthlyRow,
+  isMonthlyScheduleLeaveBlankMonth,
 } from "./data/shiftCodes.js";
 import {
   WORK_SCHEDULE_MONTH_LABELS,
@@ -4244,6 +4245,7 @@ const WORK_SCHEDULE_2026_ROWS = [
   { name: "이현숙", values: ["9-5", "안D0", "3D2", "3D2", "수E", "1D2", "6D2", "5D2", "수E", "3", "6D2", "6D2"] },
   { name: "유진", values: ["안D0", "5D2", "3D1", "7D2", "7D1", "안E", "안D0", "PRN", "3D2", "6D2", "6D1", "3D2"] },
   { name: "김해림", values: ["7D2", "PRN", "안D0", "1D2", "1D1", "7D1", "수E", "9-5", "3D1", "안D0", "1D2", "9-5"] },
+  { name: "양현아", values: ["5D2", "3D1", "안E", "PRN", "6D2", "6D2", "9-5", "안D0", "9-5", "안D0", "7D2", "7D1"] },
   { name: "장지은", values: ["1D2", "6D1", "6D1", "6D2", "5D1", "7D2", "안D0", "안D0", "PRN", "수E", "9-5", "1D1"] },
   { name: "손다솜", values: ["PRN", "1D2", "1D2", "1D1", "3D1", "5D2", "3D2", "7D1", "안E", "9-5", "3D2", "안D0"] },
   { name: "오민아", values: ["안D0", "3D2", "9-5", "7D1", "PRN", "안D0", "5D1", "안E", "5D2", "PRN", "안D0", "1D2"] },
@@ -4277,6 +4279,7 @@ const WORK_SCHEDULE_2027_ROWS_SEED = [
   { name: "이양희", values: ["1D1", "7D2"] },
   { name: "허정숙", values: ["수E", "6D1"] },
   { name: "이현숙", values: ["5D2", "안D0"] },
+  { name: "유진", values: ["9-5", "9-5"] },
   { name: "김해림", values: ["3D2", "3D2"] },
   { name: "장지은", values: ["1D2", "안E"] },
   { name: "손다솜", values: ["안E", "6D2"] },
@@ -6370,6 +6373,7 @@ function DashboardPage({
   }, []);
 
   function onDraftCellChange(name, monthIndex, value) {
+    if (baseScheduleYear && isMonthlyScheduleLeaveBlankMonth(name, baseScheduleYear, monthIndex)) return;
     setScheduleMsg("");
     const monthLen = activePlan.monthCount ?? SCHEDULE_MONTH_COUNT;
     const defaultRows = activePlan.templateRows ?? activeBaseTemplate;
@@ -6791,33 +6795,39 @@ function DashboardPage({
                     <td className="work-schedule-name-cell">{row.name}</td>
                     {visibleMonths.map((m) => {
                       const idx = m.index;
-                      const rawCellVal = row.values?.[idx] ?? "";
+                      const leaveBlank =
+                        Boolean(baseScheduleYear) &&
+                        isMonthlyScheduleLeaveBlankMonth(row.name, baseScheduleYear, idx);
+                      const rawCellVal = leaveBlank ? "" : row.values?.[idx] ?? "";
                       const cellVal =
                         sec === "anesthesia" && !isCustomShiftCodeValue(rawCellVal)
                           ? normalizeAnesthesiaShiftCode(rawCellVal)
                           : rawCellVal;
                       const displayVal = isCustomShiftCodeValue(cellVal) ? customShiftText(cellVal) : String(cellVal);
-                      const faceLabel = String(displayVal).trim() ? displayVal : "—";
+                      const faceLabel = leaveBlank ? "" : String(displayVal).trim() ? displayVal : "—";
                       const selectValue = isCustomShiftCodeValue(cellVal) ? CUSTOM_SHIFT_SENTINEL : cellVal;
                       const extraOpts =
                         cellVal && !rowOptSet.has(cellVal) && !isCustomShiftCodeValue(cellVal) ? [cellVal] : [];
                       const customPlaceholder =
                         sec === "anesthesia" ? "예: D0" : sec === "chief" ? "예: 9-5" : "예: 3D2/3D1";
+                      const monthEditable = cellEditable && !leaveBlank;
                       return (
                         <td
                           key={`${row.name}-${m.ymd}`}
                           className={[
                             "work-schedule-month-cell",
                             m.ymd === currentScheduleMonthYmd ? "work-schedule-month-cell--current" : "",
+                            leaveBlank ? "work-schedule-month-cell--leave-blank" : "",
                           ]
                             .filter(Boolean)
                             .join(" ")}
+                          title={leaveBlank ? "휴직" : undefined}
                         >
                           <label className="work-schedule-picker">
                             <span className="work-schedule-picker-face" aria-hidden="true">
                               {faceLabel}
                             </span>
-                            {cellEditable ? (
+                            {monthEditable ? (
                               <select
                                 className="work-schedule-select"
                                 value={selectValue}
@@ -6845,7 +6855,7 @@ function DashboardPage({
                               </select>
                             ) : null}
                           </label>
-                          {cellEditable && isCustomShiftCodeValue(cellVal) ? (
+                          {monthEditable && isCustomShiftCodeValue(cellVal) ? (
                             <input
                               type="text"
                               className="work-schedule-custom-input"

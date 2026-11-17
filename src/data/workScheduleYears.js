@@ -4,6 +4,7 @@ import {
   filterScheduleRowsOmittingLeaveAbsences,
   mergeWorkScheduleRows,
   normalizeWorkScheduleRowsForAnesthesia,
+  applyMonthlyLeaveBlankValues,
   shouldOmitFromMonthlyScheduleYear,
 } from "./shiftCodes.js";
 
@@ -83,7 +84,8 @@ export function rehydrateScheduleFromSeed(saved, seedTemplate, year = null) {
         const sd = String(seedVals[i] ?? "").trim();
         return s || sd || "";
       });
-      return { name: t.name, values };
+      const row = { name: t.name, values };
+      return Number.isFinite(y) ? applyMonthlyLeaveBlankValues(row, y) : row;
     });
 }
 
