@@ -104,8 +104,48 @@ export function shiftOptionsForUserId(userId, users) {
 }
 
 /** 월간 근무표 — 정수영 아래 마취과, 윤지민 아래 주임 */
-export const ANESTHESIA_MONTHLY_NAMES = ["김인자", "이지현", "박현정", "윤지민"];
+export const ANESTHESIA_MONTHLY_NAMES = ["김인자", "이지현", "박현정", "윤지민", "한승희"];
 export const CHIEF_MONTHLY_NAMES = ["방현석", "최무영", "김보람", "오문환", "오세연", "강명호"];
+
+/**
+ * 장기 휴직: 월간·주간 근무표에서 이름 제외 (당직 제외와 별도).
+ * until 빈 값 = 종료일 미정(계속 제외).
+ */
+export const SCHEDULE_LEAVE_ABSENCES = [
+  { name: "양현아", from: "2026-11-01", until: "" },
+  { name: "유진", from: "2027-03-01", until: "2028-02-29" },
+];
+
+export function isOnScheduleLeaveAbsence(name, ymd) {
+  const n = String(name ?? "").trim();
+  const d = String(ymd ?? "").slice(0, 10);
+  if (!n || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+  for (const a of SCHEDULE_LEAVE_ABSENCES) {
+    if (String(a.name ?? "").trim() !== n) continue;
+    const from = String(a.from ?? "").slice(0, 10);
+    const until = String(a.until ?? "").trim().slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || d < from) continue;
+    if (until && /^\d{4}-\d{2}-\d{2}$/.test(until) && d > until) continue;
+    return true;
+  }
+  return false;
+}
+
+/** 해당 연 근무표에서 행 자체를 숨김 (연중 휴직이 있으면 제외) */
+export function shouldOmitFromMonthlyScheduleYear(name, year) {
+  const y = Number(year);
+  if (!Number.isFinite(y)) return false;
+  for (const probe of [`${y}-01-01`, `${y}-06-01`, `${y}-11-01`]) {
+    if (isOnScheduleLeaveAbsence(name, probe)) return true;
+  }
+  return false;
+}
+
+export function filterScheduleRowsOmittingLeaveAbsences(rows, year) {
+  return (Array.isArray(rows) ? rows : []).filter(
+    (r) => !shouldOmitFromMonthlyScheduleYear(r?.name, year)
+  );
+}
 const LEGACY_CHIEF_MONTHLY_NAMES = ["이찬주"];
 const CHIEF_REPLACEMENT_CUTOFF_YMD = "2026-07-01";
 const CHIEF_REPLACEMENT_NAMES = new Set(["이찬주", "오문환"]);
@@ -159,12 +199,15 @@ export function separatorBeforeMonthlyRow(name, previousName) {
   return null;
 }
 
-export function mergeWorkScheduleRows(saved, templateRows) {
+export function mergeWorkScheduleRows(saved, templateRows, year = null) {
   const template = Array.isArray(templateRows) ? templateRows : [];
   const map = new Map(
     normalizeWorkScheduleRowsForAnesthesia(Array.isArray(saved) ? saved : []).map((r) => [String(r?.name ?? ""), r])
   );
-  return template.map((t) => {
+  const y = year != null ? Number(year) : null;
+  return template
+    .filter((t) => (Number.isFinite(y) ? !shouldOmitFromMonthlyScheduleYear(t.name, y) : true))
+    .map((t) => {
     const len = (t.values || []).length;
     const hit = map.get(t.name);
     const fixedChief = fixedChiefShiftCodeForName(t.name);
@@ -296,8 +339,8 @@ export function canUseWeeklyScheduleEditor(viewerRole) {
 }
 
 /** 역할별 저장 시 다른 섹션 행은 기존 값 유지 */
-export function mergeMonthlySaveDraft(saved, draft, templateRows, viewerRole) {
-  const base = mergeWorkScheduleRows(saved, templateRows);
+export function mergeMonthlySaveDraft(saved, draft, templateRows, viewerRole, year = null) {
+  const base = mergeWorkScheduleRows(saved, templateRows, year);
   const draftMap = new Map((Array.isArray(draft) ? draft : []).map((r) => [r.name, r]));
   return base.map((row) => {
     const next = draftMap.get(row.name);
@@ -306,19 +349,29 @@ export function mergeMonthlySaveDraft(saved, draft, templateRows, viewerRole) {
   });
 }
 
+function scheduleLeaveProbeYmd(anchorYmd = "") {
+  const anchorRaw = String(anchorYmd ?? "").slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(anchorRaw)) return anchorRaw;
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
 /** 주간 번표에 표시할 인원(보는 사람 역할 기준) — 구역별만 볼 때 */
 export function weeklyStaffForViewer(users, viewerRole, anchorYmd = "") {
   const list = Array.isArray(users) ? users : [];
   const role = String(viewerRole ?? "").trim();
+  const probe = scheduleLeaveProbeYmd(anchorYmd);
+  const notOnLeave = (u) => !isOnScheduleLeaveAbsence(u?.name, probe);
   if (role === "ANESTHESIA" || role === "ADMIN2") {
-    return staffUsersByRole(list, "ANESTHESIA");
+    return staffUsersByRole(list, "ANESTHESIA").filter(notOnLeave);
   }
   if (role === "CHIEF") {
     return chiefNamesForYmd(anchorYmd)
       .map((n) => list.find((u) => u.role === "CHIEF" && u.name === n && isUserActive(u)))
-      .filter(Boolean);
+      .filter(Boolean)
+      .filter(notOnLeave);
   }
-  return staffUsersByRole(list, "NURSE");
+  return staffUsersByRole(list, "NURSE").filter(notOnLeave);
 }
 
 /** 주간 번표: 수술실 → 마취과 → 주임 (월간근무표와 동일 순서) */
@@ -332,8 +385,10 @@ export function weeklyRosterAllSections(users, anchorYmd = "") {
       .concat(
         list.filter((u) => u.role === role && isUserActive(u) && !names.includes(u.name)).sort(byName)
       );
-  const or = staffUsersByRole(list, "NURSE");
-  const anesthesia = pickInOrder(ANESTHESIA_MONTHLY_NAMES, "ANESTHESIA");
+  const anchor = scheduleLeaveProbeYmd(anchorYmd);
+  const notOnLeave = (u) => !isOnScheduleLeaveAbsence(u?.name, anchor);
+  const or = staffUsersByRole(list, "NURSE").filter(notOnLeave);
+  const anesthesia = pickInOrder(ANESTHESIA_MONTHLY_NAMES, "ANESTHESIA").filter(notOnLeave);
   const chiefNames = chiefNamesForYmd(anchorYmd);
   const chief = chiefNames
     .map((n) => list.find((u) => u.role === "CHIEF" && u.name === n && isUserActive(u)))
@@ -349,6 +404,7 @@ export function weeklyRosterAllSections(users, anchorYmd = "") {
             !CHIEF_FUTURE_START_NAMES.has(u.name)
         )
         .sort(byName)
-    );
+    )
+    .filter(notOnLeave);
   return [...or, ...anesthesia, ...chief];
 }

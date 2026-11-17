@@ -586,7 +586,7 @@ function App() {
     const y = String(year);
     setWorkScheduleByYear((prev) => ({
       ...normalizeWorkScheduleByYear(prev, WORK_SCHEDULE_TEMPLATES),
-      [y]: mergeWorkScheduleRows(rows, getWorkScheduleTemplateForYear(Number(y), WORK_SCHEDULE_TEMPLATES)),
+      [y]: mergeWorkScheduleRows(rows, getWorkScheduleTemplateForYear(Number(y), WORK_SCHEDULE_TEMPLATES), Number(y)),
     }));
   };
   async function persistWorkScheduleForYearToServer(year, rows) {
@@ -594,7 +594,11 @@ function App() {
       throw new Error("서버에 연결된 상태에서만 근무표를 저장할 수 있습니다.");
     }
     const y = String(year);
-    const merged = mergeWorkScheduleRows(rows, getWorkScheduleTemplateForYear(Number(y), WORK_SCHEDULE_TEMPLATES));
+    const merged = mergeWorkScheduleRows(
+      rows,
+      getWorkScheduleTemplateForYear(Number(y), WORK_SCHEDULE_TEMPLATES),
+      Number(y)
+    );
     saveWorkScheduleForYear(y, merged);
     await api.syncWorkScheduleForYear(y, { actorUserId: auth.userId, rows: merged });
     const data = await api.bootstrap();
@@ -4240,7 +4244,6 @@ const WORK_SCHEDULE_2026_ROWS = [
   { name: "이현숙", values: ["9-5", "안D0", "3D2", "3D2", "수E", "1D2", "6D2", "5D2", "수E", "3", "6D2", "6D2"] },
   { name: "유진", values: ["안D0", "5D2", "3D1", "7D2", "7D1", "안E", "안D0", "PRN", "3D2", "6D2", "6D1", "3D2"] },
   { name: "김해림", values: ["7D2", "PRN", "안D0", "1D2", "1D1", "7D1", "수E", "9-5", "3D1", "안D0", "1D2", "9-5"] },
-  { name: "양현아", values: ["5D2", "3D1", "안E", "PRN", "6D2", "6D2", "9-5", "안D0", "9-5", "안D0", "7D2", "7D1"] },
   { name: "장지은", values: ["1D2", "6D1", "6D1", "6D2", "5D1", "7D2", "안D0", "안D0", "PRN", "수E", "9-5", "1D1"] },
   { name: "손다솜", values: ["PRN", "1D2", "1D2", "1D1", "3D1", "5D2", "3D2", "7D1", "안E", "9-5", "3D2", "안D0"] },
   { name: "오민아", values: ["안D0", "3D2", "9-5", "7D1", "PRN", "안D0", "5D1", "안E", "5D2", "PRN", "안D0", "1D2"] },
@@ -4274,9 +4277,7 @@ const WORK_SCHEDULE_2027_ROWS_SEED = [
   { name: "이양희", values: ["1D1", "7D2"] },
   { name: "허정숙", values: ["수E", "6D1"] },
   { name: "이현숙", values: ["5D2", "안D0"] },
-  { name: "유진", values: ["9-5", "9-5"] },
   { name: "김해림", values: ["3D2", "3D2"] },
-  { name: "양현아", values: ["5D1", "1D1"] },
   { name: "장지은", values: ["1D2", "안E"] },
   { name: "손다솜", values: ["안E", "6D2"] },
   { name: "오민아", values: ["7D2", "7D1"] },
@@ -6240,7 +6241,11 @@ function DashboardPage({
     [baseScheduleYear]
   );
   const [draftRows, setDraftRows] = useState(() =>
-    mergeWorkScheduleRows(workScheduleByYear?.["2026"], WORK_SCHEDULE_2026_ROWS)
+    mergeWorkScheduleRows(
+      workScheduleByYear?.["2026"],
+      getWorkScheduleTemplateForYear(2026, WORK_SCHEDULE_TEMPLATES),
+      2026
+    )
   );
   /** 연도 전환 시 draft를 새 연도로 강제 교체하기 위한 기준 */
   const draftScheduleYearRef = useRef(baseScheduleYear ?? 2026);
@@ -6277,7 +6282,7 @@ function DashboardPage({
     // 연도가 바뀌면 이전 연도 draft가 남아 보이는 버그를 막기 위해 항상 교체.
     if (!yearChanged && scheduleChanges.length > 0) return;
     const saved = workScheduleByYear?.[String(baseScheduleYear)];
-    setDraftRows(mergeWorkScheduleRows(saved, activeBaseTemplate));
+    setDraftRows(mergeWorkScheduleRows(saved, activeBaseTemplate, baseScheduleYear));
     if (yearChanged) setScheduleMsg("");
   }, [baseScheduleYear, workScheduleByYear, activeBaseTemplate, scheduleChanges.length]);
 
@@ -6388,7 +6393,7 @@ function DashboardPage({
     const ok = window.confirm(`아래 근무표 변경을 저장할까요?\n\n${lines.join("\n")}`);
     if (!ok) return;
     const saved = workScheduleByYear?.[String(baseScheduleYear)];
-    const next = mergeMonthlySaveDraft(saved, draftRows, activeBaseTemplate, currentRole);
+    const next = mergeMonthlySaveDraft(saved, draftRows, activeBaseTemplate, currentRole, baseScheduleYear);
     try {
       if (typeof persistWorkScheduleForYearToServer === "function") {
         await persistWorkScheduleForYearToServer(baseScheduleYear, next);

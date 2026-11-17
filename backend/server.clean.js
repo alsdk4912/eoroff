@@ -802,7 +802,7 @@ function normalizeAnesthesiaShiftCodeServer(value) {
   return s;
 }
 
-const ANESTHESIA_MONTHLY_NAMES = ["김인자", "이지현", "박현정", "윤지민"];
+const ANESTHESIA_MONTHLY_NAMES = ["김인자", "이지현", "박현정", "윤지민", "한승희"];
 const CHIEF_MONTHLY_SCHEDULE_NAMES = ["방현석", "최무영", "김보람", "오문환", "오세연", "강명호", "이찬주"];
 
 function normalizeWorkScheduleRowsServer(rows) {

@@ -1,8 +1,10 @@
 import {
   emptyScheduleMonthValues,
   filterMonthlyWorkScheduleRows,
+  filterScheduleRowsOmittingLeaveAbsences,
   mergeWorkScheduleRows,
   normalizeWorkScheduleRowsForAnesthesia,
+  shouldOmitFromMonthlyScheduleYear,
 } from "./shiftCodes.js";
 
 export const WORK_SCHEDULE_MONTH_LABELS = [
@@ -44,41 +46,45 @@ export function parseBaseSchedulePlanKey(planKey) {
   return m ? Number(m[1]) : null;
 }
 
-/** 2026·2027 시드 외 연도는 2026 명단·빈 칸 12개월 */
+/** 2026·2027 시드 외 연도는 2026 명단·빈 칸 12개월 (휴직자는 연도별 제외) */
 export function getWorkScheduleTemplateForYear(year, templates) {
   const y = Number(year);
   const { rows2026, rows2027 } = templates;
-  if (y === 2026) return rows2026;
-  if (y === 2027) return rows2027;
-  if (y >= 2028) {
-    return (Array.isArray(rows2026) ? rows2026 : []).map((r) => ({
+  let rows;
+  if (y === 2026) rows = rows2026;
+  else if (y === 2027) rows = rows2027;
+  else if (y >= 2028) {
+    rows = (Array.isArray(rows2026) ? rows2026 : []).map((r) => ({
       name: r.name,
       values: emptyScheduleMonthValues(SCHEDULE_MONTH_COUNT),
     }));
-  }
-  return rows2026;
+  } else rows = rows2026;
+  return filterScheduleRowsOmittingLeaveAbsences(rows, y);
 }
 
 /**
  * 저장 칸이 비어 있으면 코드 시드로 채움(직접 입력·수정한 칸은 유지).
  */
-export function rehydrateScheduleFromSeed(saved, seedTemplate) {
+export function rehydrateScheduleFromSeed(saved, seedTemplate, year = null) {
   const template = Array.isArray(seedTemplate) ? seedTemplate : [];
+  const y = year != null ? Number(year) : null;
   const savedMap = new Map(
     normalizeWorkScheduleRowsForAnesthesia(Array.isArray(saved) ? saved : []).map((r) => [String(r?.name ?? ""), r])
   );
-  return template.map((t) => {
-    const hit = savedMap.get(t.name);
-    const seedVals = Array.isArray(t.values) ? t.values : [];
-    const savedVals = Array.isArray(hit?.values) ? hit.values : [];
-    const len = Math.max(seedVals.length, savedVals.length, SCHEDULE_MONTH_COUNT);
-    const values = Array.from({ length: len }, (_, i) => {
-      const s = String(savedVals[i] ?? "").trim();
-      const sd = String(seedVals[i] ?? "").trim();
-      return s || sd || "";
+  return template
+    .filter((t) => (Number.isFinite(y) ? !shouldOmitFromMonthlyScheduleYear(t.name, y) : true))
+    .map((t) => {
+      const hit = savedMap.get(t.name);
+      const seedVals = Array.isArray(t.values) ? t.values : [];
+      const savedVals = Array.isArray(hit?.values) ? hit.values : [];
+      const len = Math.max(seedVals.length, savedVals.length, SCHEDULE_MONTH_COUNT);
+      const values = Array.from({ length: len }, (_, i) => {
+        const s = String(savedVals[i] ?? "").trim();
+        const sd = String(seedVals[i] ?? "").trim();
+        return s || sd || "";
+      });
+      return { name: t.name, values };
     });
-    return { name: t.name, values };
-  });
 }
 
 function tryParseLocalStorageJson(key) {
@@ -98,15 +104,15 @@ export function normalizeWorkScheduleByYear(byYear, templates) {
     const y = Number(key);
     if (!Number.isFinite(y) || y < 2026) continue;
     if (y === 2026) {
-      out["2026"] = rehydrateScheduleFromSeed(src[key], templates.rows2026);
+      out["2026"] = rehydrateScheduleFromSeed(src[key], templates.rows2026, 2026);
     } else if (y === 2027) {
-      out["2027"] = rehydrateScheduleFromSeed(src[key], templates.rows2027);
+      out["2027"] = rehydrateScheduleFromSeed(src[key], templates.rows2027, 2027);
     } else {
-      out[String(y)] = mergeWorkScheduleRows(src[key], getWorkScheduleTemplateForYear(y, templates));
+      out[String(y)] = mergeWorkScheduleRows(src[key], getWorkScheduleTemplateForYear(y, templates), y);
     }
   }
-  if (!out["2026"]) out["2026"] = rehydrateScheduleFromSeed(null, templates.rows2026);
-  if (!out["2027"]) out["2027"] = rehydrateScheduleFromSeed(null, templates.rows2027);
+  if (!out["2026"]) out["2026"] = rehydrateScheduleFromSeed(null, templates.rows2026, 2026);
+  if (!out["2027"]) out["2027"] = rehydrateScheduleFromSeed(null, templates.rows2027, 2027);
   return out;
 }
 
@@ -130,15 +136,15 @@ export function loadWorkScheduleByYearFromStorage(storageKeys, templates) {
     tryParseLocalStorageJson(storageKeys.byYear) ?? tryParseLocalStorageJson(storageKeys.byYearLegacy);
 
   const by = {};
-  by["2026"] = rehydrateScheduleFromSeed(legacy26 ?? fromByYear?.["2026"], templates.rows2026);
-  by["2027"] = rehydrateScheduleFromSeed(legacy27 ?? fromByYear?.["2027"], templates.rows2027);
+  by["2026"] = rehydrateScheduleFromSeed(legacy26 ?? fromByYear?.["2026"], templates.rows2026, 2026);
+  by["2027"] = rehydrateScheduleFromSeed(legacy27 ?? fromByYear?.["2027"], templates.rows2027, 2027);
 
   if (fromByYear && typeof fromByYear === "object") {
     for (const key of Object.keys(fromByYear)) {
       if (key === "2026" || key === "2027") continue;
       const y = Number(key);
       if (!Number.isFinite(y) || y < 2028) continue;
-      by[String(y)] = mergeWorkScheduleRows(fromByYear[key], getWorkScheduleTemplateForYear(y, templates));
+      by[String(y)] = mergeWorkScheduleRows(fromByYear[key], getWorkScheduleTemplateForYear(y, templates), y);
     }
   }
   return by;
