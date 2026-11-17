@@ -233,19 +233,17 @@ export function mergeWorkScheduleRows(saved, templateRows, year = null) {
   return template
     .filter((t) => (Number.isFinite(y) ? !shouldOmitFromMonthlyScheduleYear(t.name, y) : true))
     .map((t) => {
-      const len = (t.values || []).length;
+      const seedVals = Array.isArray(t.values) ? t.values : [];
       const hit = map.get(t.name);
       const fixedChief = fixedChiefShiftCodeForName(t.name);
-      let values;
-      if (!hit) {
-        values = fixedChief ? Array.from({ length: len }, () => fixedChief) : emptyScheduleMonthValues(len);
-      } else {
-        const vals = Array.isArray(hit.values) ? hit.values : [];
-        values = Array.from({ length: len }, (_, i) => {
-          if (fixedChief) return fixedChief;
-          return String(vals[i] ?? "");
-        });
-      }
+      const savedVals = Array.isArray(hit?.values) ? hit.values : [];
+      const len = Math.max(seedVals.length, savedVals.length, 12);
+      const values = Array.from({ length: len }, (_, i) => {
+        if (fixedChief) return fixedChief;
+        const saved = String(savedVals[i] ?? "").trim();
+        const seed = String(seedVals[i] ?? "").trim();
+        return saved || seed || "";
+      });
       const row = { name: t.name, values };
       return Number.isFinite(y) ? applyMonthlyLeaveBlankValues(row, y) : row;
     });

@@ -92,6 +92,7 @@ import {
   normalizeWorkScheduleByYear,
   padScheduleRowValues,
   parseBaseSchedulePlanKey,
+  rehydrateScheduleFromSeed,
   workScheduleMonthYmds,
   generatorYearOptions,
 } from "./data/workScheduleYears.js";
@@ -6244,7 +6245,7 @@ function DashboardPage({
     [baseScheduleYear]
   );
   const [draftRows, setDraftRows] = useState(() =>
-    mergeWorkScheduleRows(
+    rehydrateScheduleFromSeed(
       workScheduleByYear?.["2026"],
       getWorkScheduleTemplateForYear(2026, WORK_SCHEDULE_TEMPLATES),
       2026
@@ -6262,6 +6263,7 @@ function DashboardPage({
       const prevVals = savedMap.get(row.name) || [];
       const nextVals = row.values || [];
       for (let i = 0; i < WORK_SCHEDULE_MONTH_LABELS.length; i += 1) {
+        if (isMonthlyScheduleLeaveBlankMonth(row.name, baseScheduleYear, i)) continue;
         const before = String(prevVals[i] ?? "");
         const after = String(nextVals[i] ?? "");
         if (before !== after) {
@@ -6281,13 +6283,16 @@ function DashboardPage({
     if (!baseScheduleYear) return;
     const yearChanged = draftScheduleYearRef.current !== baseScheduleYear;
     draftScheduleYearRef.current = baseScheduleYear;
-    // 같은 연도·미저장 편집 중이면 서버/캐시 갱신으로 draft를 덮지 않음.
-    // 연도가 바뀌면 이전 연도 draft가 남아 보이는 버그를 막기 위해 항상 교체.
-    if (!yearChanged && scheduleChanges.length > 0) return;
     const saved = workScheduleByYear?.[String(baseScheduleYear)];
-    setDraftRows(mergeWorkScheduleRows(saved, activeBaseTemplate, baseScheduleYear));
+    const next = rehydrateScheduleFromSeed(saved, activeBaseTemplate, baseScheduleYear);
+    // 미저장 편집은 유지. 다만 초안이 저장된/시드 값을 공란으로만 비운 경우는 복구.
+    if (!yearChanged && scheduleChanges.length > 0) {
+      const onlyBlankedFilled = scheduleChanges.every((c) => c.after === "-" && c.before !== "-");
+      if (!onlyBlankedFilled) return;
+    }
+    setDraftRows(next);
     if (yearChanged) setScheduleMsg("");
-  }, [baseScheduleYear, workScheduleByYear, activeBaseTemplate, scheduleChanges.length]);
+  }, [baseScheduleYear, workScheduleByYear, activeBaseTemplate, scheduleChanges]);
 
   const baseScheduleYearList = useMemo(
     () => listBaseScheduleYears(workScheduleByYear, 2026, baseScheduleYear),
