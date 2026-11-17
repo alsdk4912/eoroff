@@ -615,6 +615,17 @@ export function validateRequest({
     return "";
   }
 
+  /** 반차: 사후 입력 가능(지난 날짜·지난 달 허용). 미래는 현재달·다음달만 */
+  if (leaveType === "HALF_DAY") {
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    if (target < todayStart) return "";
+    if (targetMonth !== currentMonth && targetMonth !== plus1) {
+      return "반차는 현재달 또는 다음달만 신청 가능합니다.";
+    }
+    return "";
+  }
+
   /** 마취과 일반휴가: 수술실 우선·후순위를 합친 개념(당월·익월, 잔여일자부터) */
   if (leaveType === "GENERAL") {
     if (targetMonth !== currentMonth && targetMonth !== plus1) {
@@ -626,9 +637,9 @@ export function validateRequest({
     return "";
   }
 
-  // 일반·반차: 해당월(잔여일자) + 다음달 모두 신청 가능
+  // 일반: 해당월(잔여일자) + 다음달 모두 신청 가능
   if (targetMonth !== currentMonth && targetMonth !== plus1) {
-    return "일반휴가·반차는 현재달(잔여일자) 또는 다음달만 신청 가능합니다.";
+    return "일반휴가는 현재달(잔여일자) 또는 다음달만 신청 가능합니다.";
   }
 
   // 잔여일자만 허용: 신청 시각(now) 기준으로 과거 날짜는 차단
