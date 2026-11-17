@@ -636,7 +636,7 @@ app.get("/api/bootstrap", async (_, res) => {
     const auditCountRow = await queryOne("SELECT COUNT(*) AS c FROM leave_request_audit");
     res.json({
       users: await queryAll(
-        "SELECT id, name, employee_no, role, phone, IFNULL(is_active, 1) AS is_active, inactive_reason, inactive_at FROM users"
+        "SELECT id, name, employee_no, role, phone, IFNULL(is_active, 1) AS is_active, inactive_reason, inactive_at, inactive_kind, inactive_until FROM users"
       ),
       goldkeys: await queryAll("SELECT * FROM goldkeys"),
       requests: await queryAll(`SELECT * FROM requests WHERE ${SQL_REQ_ACTIVE}`),
@@ -1572,12 +1572,48 @@ app.get("/api/admin/users", async (req, res) => {
   res.json({
     users: await queryAll(
       `SELECT id, name, employee_no, role, phone,
-              IFNULL(is_active, 1) AS is_active, inactive_reason, inactive_at
+              IFNULL(is_active, 1) AS is_active, inactive_reason, inactive_at,
+              inactive_kind, inactive_until
        FROM users
        ORDER BY IFNULL(is_active, 1) DESC, role DESC, name ASC`
     ),
   });
 });
+
+function addCalendarMonthsYmdServer(ymd, months) {
+  const d = String(ymd ?? "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return "";
+  const y = Number(d.slice(0, 4));
+  const m = Number(d.slice(5, 7));
+  const day = Number(d.slice(8, 10));
+  const n = Number(months);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(day) || !Number.isFinite(n)) return "";
+  const dt = new Date(y, m - 1 + n, 1);
+  const last = new Date(dt.getFullYear(), dt.getMonth() + 1, 0).getDate();
+  const dd = Math.min(day, last);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
+}
+
+function isLongTermLeaveAtLeastThreeMonthsServer(fromYmd, untilYmd) {
+  const from = String(fromYmd ?? "").slice(0, 10);
+  const until = String(untilYmd ?? "").trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) return false;
+  if (!until) return true;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(until)) return false;
+  const threshold = addCalendarMonthsYmdServer(from, 3);
+  return Boolean(threshold) && until >= threshold;
+}
+
+function firstOfMonthYmdServer(ymdOrIso) {
+  const s = String(ymdOrIso ?? "").trim();
+  const d = s.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return `${d.slice(0, 7)}-01`;
+  const t = Date.parse(s);
+  if (!Number.isFinite(t)) return "";
+  const dt = new Date(t);
+  if (Number.isNaN(dt.getTime())) return "";
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-01`;
+}
 
 app.post("/api/admin/users/:id/reset-password", async (req, res) => {
   const { adminUserId, nextPassword } = req.body ?? {};
@@ -1590,8 +1626,12 @@ app.post("/api/admin/users/:id/reset-password", async (req, res) => {
 app.post("/api/admin/users/:id/deactivate", async (req, res) => {
   try {
     const actorUserId = String(req.body?.actorUserId ?? "").trim();
-    const reason = String(req.body?.reason ?? "").trim();
+    const reasonRaw = String(req.body?.reason ?? "").trim();
     const targetUserId = String(req.params.id ?? "").trim();
+    let kind = String(req.body?.kind ?? req.body?.inactiveKind ?? "RESIGN")
+      .trim()
+      .toUpperCase();
+    if (kind !== "LEAVE" && kind !== "RESIGN") kind = "RESIGN";
     const actor = await requireOrLeaveAdminUser(actorUserId);
     if (!actor) return res.status(403).json({ error: "관리자 또는 부서파트장 권한이 필요합니다." });
     if (!targetUserId) return res.status(400).json({ error: "대상 사용자 id가 필요합니다." });
@@ -1605,25 +1645,58 @@ app.post("/api/admin/users/:id/deactivate", async (req, res) => {
     if (String(actor.role) === "DEPT_HEAD" && !["NURSE", "ANESTHESIA", "CHIEF"].includes(String(target.role ?? ""))) {
       return res.status(403).json({ error: "부서파트장은 직원 계정만 비활성화할 수 있습니다." });
     }
-    if (Number(target.is_active ?? 1) !== 1) return res.json({ ok: true });
+    if (Number(target.is_active ?? 1) !== 1) return res.json({ ok: true, kind });
 
     const effectiveFrom = String(req.body?.effectiveFrom ?? req.body?.fromDate ?? "").trim().slice(0, 10);
+    const untilRaw = String(req.body?.until ?? req.body?.inactiveUntil ?? "").trim().slice(0, 10);
     let inactiveAt = new Date().toISOString();
+    let fromYmd = "";
     if (/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom)) {
-      // 해당월 1일(KST)부터 근무표 공란·다음 해 제외에 사용
-      inactiveAt = new Date(`${effectiveFrom.slice(0, 7)}-01T00:00:00+09:00`).toISOString();
+      fromYmd = `${effectiveFrom.slice(0, 7)}-01`;
+      inactiveAt = new Date(`${fromYmd}T00:00:00+09:00`).toISOString();
+    } else {
+      fromYmd = firstOfMonthYmdServer(inactiveAt);
     }
+
+    let untilYmd = /^\d{4}-\d{2}-\d{2}$/.test(untilRaw) ? untilRaw : "";
+    let autoResigned = false;
+    if (kind === "LEAVE") {
+      if (!untilYmd) {
+        return res.status(400).json({ error: "휴직은 복직 예정일(종료일)이 필요합니다." });
+      }
+      if (untilYmd < fromYmd) {
+        return res.status(400).json({ error: "휴직 종료일은 시작일 이후여야 합니다." });
+      }
+      // 3개월 이상(또는 종료일 없음) 휴직 → 자동 퇴직 처리
+      if (isLongTermLeaveAtLeastThreeMonthsServer(fromYmd, untilYmd)) {
+        kind = "RESIGN";
+        autoResigned = true;
+      }
+    } else {
+      untilYmd = "";
+    }
+
+    const reason =
+      reasonRaw ||
+      (kind === "LEAVE" ? "휴직" : autoResigned ? "장기휴직(3개월 이상)→퇴직 처리" : "퇴직");
 
     await execute(
       `UPDATE users
-       SET is_active = 0, inactive_reason = ?, inactive_at = ?, inactive_by = ?
+       SET is_active = 0,
+           inactive_reason = ?,
+           inactive_at = ?,
+           inactive_by = ?,
+           inactive_kind = ?,
+           inactive_until = ?
        WHERE id = ?`,
-      reason || "퇴사/이동",
+      reason,
       inactiveAt,
       actorUserId,
+      kind,
+      untilYmd || null,
       targetUserId
     );
-    return res.json({ ok: true });
+    return res.json({ ok: true, kind, autoResigned, until: untilYmd || null });
   } catch (err) {
     console.error("POST /api/admin/users/:id/deactivate", err);
     return res.status(500).json({ error: String(err?.message || err) });
@@ -1634,23 +1707,47 @@ app.post("/api/admin/users/:id/activate", async (req, res) => {
   try {
     const actorUserId = String(req.body?.actorUserId ?? "").trim();
     const targetUserId = String(req.params.id ?? "").trim();
+    const mode = String(req.body?.mode ?? "").trim().toUpperCase(); // REINSTATE | RESTORE
     const actor = await requireOrLeaveAdminUser(actorUserId);
     if (!actor) return res.status(403).json({ error: "관리자 또는 부서파트장 권한이 필요합니다." });
     if (!targetUserId) return res.status(400).json({ error: "대상 사용자 id가 필요합니다." });
 
-    const target = await queryOne("SELECT id, role FROM users WHERE id = ?", targetUserId);
+    const target = await queryOne(
+      `SELECT id, role, IFNULL(is_active, 1) AS is_active,
+              inactive_kind, inactive_at, inactive_until, inactive_reason
+       FROM users WHERE id = ?`,
+      targetUserId
+    );
     if (!target?.id) return res.status(404).json({ error: "사용자를 찾을 수 없습니다." });
     if (String(actor.role) === "DEPT_HEAD" && !["NURSE", "ANESTHESIA", "CHIEF"].includes(String(target.role ?? ""))) {
       return res.status(403).json({ error: "부서파트장은 직원 계정만 복구할 수 있습니다." });
     }
 
+    const kind = String(target.inactive_kind ?? "").trim().toUpperCase() || "RESIGN";
+    const fromYmd = firstOfMonthYmdServer(target.inactive_at);
+    const untilYmd = String(target.inactive_until ?? "").trim().slice(0, 10);
+    const isShortLeave =
+      kind === "LEAVE" && !isLongTermLeaveAtLeastThreeMonthsServer(fromYmd, untilYmd);
+
+    // 복직: 3개월 미만 휴직만. 접속 복구(실수 복원)는 퇴직도 허용.
+    if (mode === "REINSTATE" && !isShortLeave) {
+      return res.status(400).json({
+        error: "복직은 3개월 미만 휴직만 가능합니다. 퇴직·장기휴직은 접속 복구를 사용하세요.",
+      });
+    }
+
     await execute(
       `UPDATE users
-       SET is_active = 1, inactive_reason = NULL, inactive_at = NULL, inactive_by = NULL
+       SET is_active = 1,
+           inactive_reason = NULL,
+           inactive_at = NULL,
+           inactive_by = NULL,
+           inactive_kind = NULL,
+           inactive_until = NULL
        WHERE id = ?`,
       targetUserId
     );
-    return res.json({ ok: true });
+    return res.json({ ok: true, mode: mode || (isShortLeave ? "REINSTATE" : "RESTORE") });
   } catch (err) {
     console.error("POST /api/admin/users/:id/activate", err);
     return res.status(500).json({ error: String(err?.message || err) });

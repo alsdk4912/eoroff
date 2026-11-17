@@ -82,6 +82,10 @@ import {
   separatorBeforeMonthlyRow,
   isMonthlyScheduleLeaveBlankMonth,
   augmentWorkScheduleTemplateWithUsers,
+  isLongTermLeaveAtLeastThreeMonths,
+  canReinstateInactiveUser,
+  normalizeInactiveKind,
+  addCalendarMonthsYmd,
 } from "./data/shiftCodes.js";
 import {
   WORK_SCHEDULE_MONTH_LABELS,
@@ -969,6 +973,8 @@ function App() {
         isActive: Number(u.is_active ?? 1) === 1,
         inactiveReason: String(u.inactive_reason ?? "").trim(),
         inactiveAt: u.inactive_at ?? null,
+        inactiveKind: String(u.inactive_kind ?? "").trim().toUpperCase() || null,
+        inactiveUntil: u.inactive_until ?? null,
       }))
     );
     const mappedReqs = (data.requests ?? []).map(mapRequestRow);
@@ -1228,6 +1234,8 @@ function App() {
           isActive: Number(u.is_active ?? 1) === 1,
           inactiveReason: String(u.inactive_reason ?? "").trim(),
           inactiveAt: u.inactive_at ?? null,
+          inactiveKind: String(u.inactive_kind ?? "").trim().toUpperCase() || null,
+          inactiveUntil: u.inactive_until ?? null,
         }))
       );
     } catch {
@@ -3047,34 +3055,76 @@ function App() {
     setAccountMessage("선택한 사용자의 비밀번호를 1234로 초기화했습니다.");
   }
 
-  async function handleDeactivateUser(targetUserId) {
-    const reason = window.prompt?.("비활성화 사유를 입력하세요. (휴직/퇴직/사직 등)", "퇴사/이동");
-    if (reason === null) return;
+  async function handleStaffStatusChange(targetUserId, kind) {
+    const statusKind = kind === "LEAVE" ? "LEAVE" : "RESIGN";
     const now = new Date();
     const defaultFrom = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
     const fromRaw = window.prompt?.(
-      "근무표 공란 시작일(YYYY-MM-DD). 해당 월부터 저장·수정 불가, 다음 해 명단 제외.",
+      statusKind === "LEAVE"
+        ? "휴직 시작일(YYYY-MM-DD). 해당 월부터 근무표 공란·접속 차단."
+        : "퇴직 시작일(YYYY-MM-DD). 해당 월부터 근무표 공란·접속 차단·다음 해 명단 제외.",
       defaultFrom
     );
     if (fromRaw === null) return;
     const effectiveFrom = String(fromRaw || defaultFrom).trim().slice(0, 10);
-    await api.deactivateUser(targetUserId, {
+    const fromOk = /^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom) ? effectiveFrom : defaultFrom;
+
+    let until = "";
+    if (statusKind === "LEAVE") {
+      const defaultUntil = addCalendarMonthsYmd(fromOk, 1) || fromOk;
+      const untilRaw = window.prompt?.(
+        "복직 예정일(YYYY-MM-DD). 3개월 이상이면 자동 퇴직 처리됩니다.",
+        defaultUntil
+      );
+      if (untilRaw === null) return;
+      until = String(untilRaw || "").trim().slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(until)) {
+        window.alert?.("복직 예정일 형식이 올바르지 않습니다. (YYYY-MM-DD)");
+        return;
+      }
+      if (until < fromOk) {
+        window.alert?.("복직 예정일은 휴직 시작일 이후여야 합니다.");
+        return;
+      }
+      if (isLongTermLeaveAtLeastThreeMonths(fromOk, until)) {
+        const ok = window.confirm?.(
+          "휴직 기간이 3개월 이상입니다. 장기휴직은 자동으로 퇴직 처리됩니다. 계속할까요?"
+        );
+        if (!ok) return;
+      }
+    }
+
+    const reasonDefault = statusKind === "LEAVE" ? "휴직" : "퇴직";
+    const reason = window.prompt?.("사유(선택)", reasonDefault);
+    if (reason === null) return;
+
+    const result = await api.deactivateUser(targetUserId, {
       actorUserId: auth.userId,
-      reason: reason.trim() || "퇴사/이동",
-      effectiveFrom: /^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom) ? effectiveFrom : defaultFrom,
+      kind: statusKind,
+      reason: String(reason).trim() || reasonDefault,
+      effectiveFrom: fromOk,
+      until: until || undefined,
     });
     await reloadAdminUserManagement();
     const data = await api.bootstrap();
     applyBootstrapPayload(data);
-    setAccountMessage("선택한 사용자를 비활성화했습니다. 근무표는 시작월부터 공란·다음 해 명단 제외됩니다.");
+    if (result?.autoResigned || result?.kind === "RESIGN") {
+      setAccountMessage(
+        statusKind === "LEAVE" && result?.autoResigned
+          ? "3개월 이상 휴직으로 자동 퇴직 처리되었습니다. 근무표는 시작월부터 공란·다음 해 명단 제외됩니다."
+          : "퇴직 처리되었습니다. 근무표는 시작월부터 공란·다음 해 명단 제외됩니다."
+      );
+    } else {
+      setAccountMessage("휴직 처리되었습니다. 3개월 미만이면 휴직·퇴직 관리에서 복직할 수 있습니다.");
+    }
   }
 
-  async function handleActivateUser(targetUserId) {
-    await api.activateUser(targetUserId, { actorUserId: auth.userId });
+  async function handleActivateUser(targetUserId, mode = "RESTORE") {
+    await api.activateUser(targetUserId, { actorUserId: auth.userId, mode });
     await reloadAdminUserManagement();
     const data = await api.bootstrap();
     applyBootstrapPayload(data);
-    setAccountMessage("선택한 사용자를 다시 활성화했습니다.");
+    setAccountMessage(mode === "REINSTATE" ? "복직 처리되었습니다." : "접속을 복구했습니다.");
   }
 
   if (!isLoggedIn) {
@@ -3425,7 +3475,7 @@ function App() {
                 onRestore={handleRestoreSql}
                 managedUsers={managedUsers}
                 onResetPassword={handleResetPassword}
-                onDeactivateUser={handleDeactivateUser}
+                onStaffStatusChange={handleStaffStatusChange}
                 onActivateUser={handleActivateUser}
                 accountMessage={accountMessage}
                 onResetLeaveData={handleResetLeaveData}
@@ -10136,7 +10186,7 @@ function RegistrationApprovalRow({ row, onApprove, onReject }) {
 function SettingsPage({
   managedUsers,
   onResetPassword,
-  onDeactivateUser,
+  onStaffStatusChange,
   onActivateUser,
   accountMessage,
   pendingRegistrations,
@@ -10179,7 +10229,7 @@ function SettingsPage({
           className={`settings-tab${tab === "inactive" ? " settings-tab--active" : ""}`}
           onClick={() => setTab("inactive")}
         >
-          퇴직자 관리
+          휴직·퇴직 관리
         </button>
       </div>
 
@@ -10209,7 +10259,9 @@ function SettingsPage({
       {tab === "active" ? (
         <>
           <h3 className="settings-subheading">재직자 관리</h3>
-          <p className="help">비밀번호 초기화 및 퇴직 처리(접속 차단)를 할 수 있습니다.</p>
+          <p className="help">
+            비밀번호 초기화, 휴직·퇴직 처리를 할 수 있습니다. 휴직 3개월 이상은 자동 퇴직 처리됩니다.
+          </p>
           {activeStaff.length === 0 ? (
             <p className="help">재직 중인 사용자가 없습니다.</p>
           ) : (
@@ -10222,7 +10274,18 @@ function SettingsPage({
                   <button type="button" className="settings-password-reset-btn" onClick={() => onResetPassword(u.id)}>
                     비밀번호 1234로 초기화
                   </button>
-                  <button type="button" className="settings-password-reset-btn" onClick={() => onDeactivateUser(u.id)}>
+                  <button
+                    type="button"
+                    className="settings-password-reset-btn"
+                    onClick={() => onStaffStatusChange(u.id, "LEAVE")}
+                  >
+                    휴직 처리
+                  </button>
+                  <button
+                    type="button"
+                    className="settings-password-reset-btn"
+                    onClick={() => onStaffStatusChange(u.id, "RESIGN")}
+                  >
                     퇴직 처리
                   </button>
                 </li>
@@ -10235,26 +10298,50 @@ function SettingsPage({
 
       {tab === "inactive" ? (
         <>
-          <h3 className="settings-subheading">퇴직자 관리</h3>
-          <p className="help">접속이 차단된 직원입니다. 복구 시 재직자 관리 탭으로 이동합니다.</p>
+          <h3 className="settings-subheading">휴직·퇴직 관리</h3>
+          <p className="help">
+            3개월 미만 휴직은 복직 처리가 가능합니다. 퇴직·장기휴직은 실수 시에만 접속 복구하세요.
+          </p>
           {inactiveStaff.length === 0 ? (
-            <p className="help">퇴직 처리된 사용자가 없습니다.</p>
+            <p className="help">휴직·퇴직 처리된 사용자가 없습니다.</p>
           ) : (
             <ul className="settings-password-reset-list">
-              {inactiveStaff.map((u) => (
-                <li key={u.id} className="settings-password-reset-row settings-password-reset-row--inactive">
-                  <span className="settings-password-reset-name">{u.name}</span>
-                  <span className="settings-password-reset-emp">{u.employeeNo}</span>
-                  <span className="settings-password-reset-role">
-                    {u.role}
-                    {u.inactiveReason ? ` · ${u.inactiveReason}` : ""}
-                    {u.inactiveAt ? ` · ${String(u.inactiveAt).slice(0, 10)}` : ""}
-                  </span>
-                  <button type="button" className="settings-password-reset-btn" onClick={() => onActivateUser(u.id)}>
-                    접속 복구
-                  </button>
-                </li>
-              ))}
+              {inactiveStaff.map((u) => {
+                const kind = normalizeInactiveKind(u.inactiveKind, u.inactiveReason);
+                const reinstate = canReinstateInactiveUser(u);
+                const fromLabel = u.inactiveAt ? String(u.inactiveAt).slice(0, 10) : "";
+                const untilLabel = u.inactiveUntil ? String(u.inactiveUntil).slice(0, 10) : "";
+                return (
+                  <li key={u.id} className="settings-password-reset-row settings-password-reset-row--inactive">
+                    <span className="settings-password-reset-name">{u.name}</span>
+                    <span className="settings-password-reset-emp">{u.employeeNo}</span>
+                    <span className="settings-password-reset-role">
+                      {u.role}
+                      {` · ${kind === "LEAVE" ? "휴직" : "퇴직"}`}
+                      {u.inactiveReason ? ` · ${u.inactiveReason}` : ""}
+                      {fromLabel ? ` · ${fromLabel}` : ""}
+                      {untilLabel ? `~${untilLabel}` : ""}
+                    </span>
+                    {reinstate ? (
+                      <button
+                        type="button"
+                        className="settings-password-reset-btn"
+                        onClick={() => onActivateUser(u.id, "REINSTATE")}
+                      >
+                        복직 처리
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="settings-password-reset-btn"
+                        onClick={() => onActivateUser(u.id, "RESTORE")}
+                      >
+                        접속 복구
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
           {accountMessage ? <p className="msg">{accountMessage}</p> : null}

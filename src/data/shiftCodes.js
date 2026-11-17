@@ -127,12 +127,58 @@ function firstOfMonthYmd(ymdOrIso) {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-01`;
 }
 
+/** YYYY-MM-DD에 달 수 더하기 (일자는 말일 overflow 보정) */
+export function addCalendarMonthsYmd(ymd, months) {
+  const d = String(ymd ?? "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return "";
+  const y = Number(d.slice(0, 4));
+  const m = Number(d.slice(5, 7));
+  const day = Number(d.slice(8, 10));
+  const n = Number(months);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(day) || !Number.isFinite(n)) return "";
+  const dt = new Date(y, m - 1 + n, 1);
+  const last = new Date(dt.getFullYear(), dt.getMonth() + 1, 0).getDate();
+  const dd = Math.min(day, last);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
+}
+
+/** 휴직 기간이 3개월 이상이면 퇴직 처리 대상으로 본다 (종료일 없음도 장기) */
+export function isLongTermLeaveAtLeastThreeMonths(fromYmd, untilYmd) {
+  const from = String(fromYmd ?? "").slice(0, 10);
+  const until = String(untilYmd ?? "").trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) return false;
+  if (!until) return true;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(until)) return false;
+  const threshold = addCalendarMonthsYmd(from, 3);
+  return Boolean(threshold) && until >= threshold;
+}
+
+export function normalizeInactiveKind(kind, reason = "") {
+  const k = String(kind ?? "").trim().toUpperCase();
+  if (k === "LEAVE" || k === "RESIGN") return k;
+  const r = String(reason ?? "");
+  if (/휴직/.test(r) && !/퇴직|사직|퇴사/.test(r)) return "LEAVE";
+  return "RESIGN";
+}
+
 /** 비활성(퇴직·사직·휴직) 사용자 → 해당월 1일부터 근무표 공란 */
 export function scheduleLeaveFromInactiveUser(user) {
   if (!user || isUserActive(user)) return null;
   const from = firstOfMonthYmd(user.inactiveAt ?? user.inactive_at);
   if (!from) return null;
-  return { name: String(user.name ?? "").trim(), from, until: "" };
+  const untilRaw = String(user.inactiveUntil ?? user.inactive_until ?? "").trim().slice(0, 10);
+  const until = /^\d{4}-\d{2}-\d{2}$/.test(untilRaw) ? untilRaw : "";
+  return { name: String(user.name ?? "").trim(), from, until };
+}
+
+/** 3개월 미만 휴직만 관리 화면에서 복직 가능 */
+export function canReinstateInactiveUser(user) {
+  if (!user || isUserActive(user)) return false;
+  const kind = normalizeInactiveKind(user.inactiveKind ?? user.inactive_kind, user.inactiveReason ?? user.inactive_reason);
+  if (kind !== "LEAVE") return false;
+  const from = firstOfMonthYmd(user.inactiveAt ?? user.inactive_at);
+  const until = String(user.inactiveUntil ?? user.inactive_until ?? "").trim().slice(0, 10);
+  return !isLongTermLeaveAtLeastThreeMonths(from, until);
 }
 
 function scheduleLeaveRangesForName(name, users = []) {

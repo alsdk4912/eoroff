@@ -127,7 +127,9 @@ CREATE TABLE IF NOT EXISTS users (
   is_active INTEGER NOT NULL DEFAULT 1,
   inactive_reason TEXT,
   inactive_at TEXT,
-  inactive_by TEXT
+  inactive_by TEXT,
+  inactive_kind TEXT,
+  inactive_until TEXT
 );
 
 CREATE TABLE IF NOT EXISTS goldkeys (
@@ -927,7 +929,20 @@ async function ensureUsersActiveColumns() {
   if (!names.has("inactive_by")) {
     await execute("ALTER TABLE users ADD COLUMN inactive_by TEXT");
   }
+  if (!names.has("inactive_kind")) {
+    await execute("ALTER TABLE users ADD COLUMN inactive_kind TEXT");
+  }
+  if (!names.has("inactive_until")) {
+    await execute("ALTER TABLE users ADD COLUMN inactive_until TEXT");
+  }
   await execute("UPDATE users SET is_active = 1 WHERE is_active IS NULL");
+  // 기존 비활성 계정: 종류 미기입 시 퇴직으로 간주
+  await execute(
+    `UPDATE users
+     SET inactive_kind = 'RESIGN'
+     WHERE IFNULL(is_active, 1) = 0
+       AND (inactive_kind IS NULL OR TRIM(inactive_kind) = '')`
+  );
 }
 
 async function ensureUserPhones() {
