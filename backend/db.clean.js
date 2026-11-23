@@ -3181,6 +3181,12 @@ async function ensureLeeJihyunRemoveCancelledGoldkey20261207() {
     `[db] ${migrationId} applied (deleted=${requestIds.length}, used=${used}, remaining=${remaining})`
   );
 }
+
+/**
+ * 유진 청원휴직(2027-03-01~2028-02-29): 주말·공휴·명절 당직에서 제외(순번 건너뜀).
+ * 3/1 공휴 최유리·김해림, 3/6·7 주말 이양희·이지선 기준 이후 재배정.
+ */
+async function ensureYujinLeaveDutyFrom20270301() {
   const migrationId = "yujin_leave_duty_from_20270301_v2";
   const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
   if (done) return;
