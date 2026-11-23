@@ -501,6 +501,7 @@ export async function initDb() {
   await ensureWeekendDutyFixFrom20261128();
   await ensureLeeJihyunRemoveGoldkey20261016();
   await ensureLeeJihyunRemoveGoldkey20261015();
+  await ensureLeeJihyunRemoveCancelledGoldkey20261207();
   await ensureYujinLeaveDutyFrom20270301();
   await ensureOrDutyRotationV2From20270301();
   return client;
@@ -3099,11 +3100,87 @@ async function ensureLeeJihyunRemoveGoldkey20261015() {
   );
 }
 
-/**
- * 유진 청원휴직(2027-03-01~2028-02-29): 주말·공휴·명절 당직에서 제외(순번 건너뜀).
- * 3/1 공휴 최유리·김해림, 3/6·7 주말 이양희·이지선 기준 이후 재배정.
- */
-async function ensureYujinLeaveDutyFrom20270301() {
+/** 이지현 2026-12-07 취소 골드키를 기록까지 삭제하고 사용 수를 재집계(15→14) */
+async function ensureLeeJihyunRemoveCancelledGoldkey20261207() {
+  const migrationId = "lee_jihyun_remove_cancelled_goldkey_20261207_v1";
+  const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
+  if (done) return;
+
+  const user = await queryOne(
+    "SELECT id FROM users WHERE name = ? AND role = 'ANESTHESIA' LIMIT 1",
+    "이지현"
+  );
+  if (!user?.id) {
+    console.warn("[db] lee_jihyun_remove_cancelled_goldkey_20261207: user not found - 이지현");
+    await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+    return;
+  }
+
+  const userId = String(user.id);
+  const leaveDate = "2026-12-07";
+  const rows = await queryAll(
+    `SELECT id FROM requests
+     WHERE user_id = ? AND leave_date = ? AND leave_type = 'GOLDKEY'
+       AND deleted_at IS NULL`,
+    userId,
+    leaveDate
+  );
+  const requestIds = rows.map((row) => String(row.id ?? "")).filter(Boolean);
+
+  for (const reqId of requestIds) {
+    await execute("DELETE FROM notes WHERE leave_request_id = ?", reqId);
+    await execute("DELETE FROM cancellations WHERE leave_request_id = ?", reqId);
+    await execute("DELETE FROM selections WHERE leave_request_id = ?", reqId);
+    await execute("DELETE FROM leave_request_audit WHERE leave_request_id = ?", reqId);
+    await execute("DELETE FROM substitute_assignments WHERE request_id = ?", reqId);
+    await execute("DELETE FROM notifications WHERE leave_request_id = ?", reqId);
+    await execute("DELETE FROM requests WHERE id = ?", reqId);
+  }
+
+  const quota = defaultGoldkeyQuotaForName("이지현");
+  const reqRows = await queryAll(
+    `SELECT id, leave_date, status
+     FROM requests
+     WHERE user_id = ? AND leave_type = 'GOLDKEY' AND deleted_at IS NULL`,
+    userId
+  );
+  const cancelRows = await queryAll(
+    `SELECT c.leave_request_id, IFNULL(c.deduction_exempt, 0) AS deduction_exempt
+     FROM cancellations c
+     JOIN requests r ON r.id = c.leave_request_id
+     WHERE r.user_id = ? AND r.leave_type = 'GOLDKEY' AND r.deleted_at IS NULL AND c.revoked_at IS NULL`,
+    userId
+  );
+  const exemptCancelled = new Set(
+    cancelRows.filter((c) => Number(c.deduction_exempt) === 1).map((c) => String(c.leave_request_id))
+  );
+  const usedDates = new Set();
+  for (const row of reqRows) {
+    const status = String(row.status ?? "").trim();
+    if (status === "REJECTED") continue;
+    if (status === "CANCELLED" && exemptCancelled.has(String(row.id))) continue;
+    if (status === "APPLIED" || status === "SELECTED" || status === "APPROVED" || status === "CANCELLED") {
+      const d = String(row.leave_date ?? "").trim().slice(0, 10);
+      if (d) usedDates.add(d);
+    }
+  }
+  let used = usedDates.size;
+  // 요청대로 사용 횟수를 14로 맞춤(재집계가 이미 14 이하면 유지)
+  if (used > 14) used = 14;
+  const remaining = Math.max(0, quota - used);
+  await execute(
+    "UPDATE goldkeys SET quota_total = ?, used_count = ?, remaining_count = ? WHERE user_id = ?",
+    quota,
+    used,
+    remaining,
+    userId
+  );
+
+  await execute("INSERT INTO app_migrations (id) VALUES (?)", migrationId);
+  console.log(
+    `[db] ${migrationId} applied (deleted=${requestIds.length}, used=${used}, remaining=${remaining})`
+  );
+}
   const migrationId = "yujin_leave_duty_from_20270301_v2";
   const done = await queryOne("SELECT id FROM app_migrations WHERE id = ?", migrationId);
   if (done) return;
