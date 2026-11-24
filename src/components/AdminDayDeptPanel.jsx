@@ -100,6 +100,32 @@ function AdminDayDeptBlock({
       </button>
       {open ? (
         <div className="admin-day-dept-block__body">
+          {leaveCount > 0 ? (
+            <ul className="admin-day-leave-lines">
+              {leaveList.map((a) => (
+                <li key={`leave_${a.id ?? a.userId}`} className="admin-day-leave-line">
+                  <span className="admin-day-leave-line__name">{a.name ?? "—"}</span>
+                  <span className="admin-day-leave-line__type">
+                    {String(a.leaveType ?? "") === "CHIEF_LEAVE"
+                      ? "휴가"
+                      : String(a.leaveType ?? "") === "GOLDKEY"
+                        ? "골드키"
+                        : String(a.leaveType ?? "") === "SICK_LEAVE"
+                          ? "병가"
+                          : String(a.leaveType ?? "") === "WEDDING_LEAVE"
+                            ? "결혼휴가"
+                            : String(a.leaveType ?? "") === "MATERNITY_LEAVE"
+                              ? "분만휴가"
+                              : String(a.leaveType ?? "") === "HALF_DAY"
+                                ? "반차"
+                                : "휴가"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="help admin-day-dept-block__empty">확정 휴가 없음</p>
+          )}
           {subCount === 0 ? (
             <p className="help admin-day-dept-block__empty">대체 없음</p>
           ) : (
@@ -184,7 +210,7 @@ export default function AdminDayDeptPanel({
   return (
     <section className="admin-day-panel admin-day-panel--by-dept">
       <p className="admin-day-panel__date">{selectedYmd}</p>
-      <p className="help admin-day-panel__date-hint">대체자 (부서별)</p>
+      <p className="help admin-day-panel__date-hint">확정 휴가·대체자 (부서별)</p>
       <div className="admin-day-dept-stack">
         {sections.map((sec) => (
           <AdminDayDeptBlock

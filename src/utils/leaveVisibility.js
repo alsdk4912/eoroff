@@ -103,6 +103,12 @@ function orViewerSeesAnesthesiaGoldkeyOnCalendar(viewerRole) {
   return r === "NURSE" || r === "ADMIN" || r === "DEPT_HEAD";
 }
 
+/** 수술실·관리자1·부서파트장(진기숙): 주임 확정 휴가 캘린더 표시 */
+function orViewerSeesChiefConfirmedOnCalendar(viewerRole) {
+  const r = String(viewerRole ?? "").trim();
+  return r === "NURSE" || r === "ADMIN" || r === "DEPT_HEAD";
+}
+
 function isAnesthesiaGoldkeyRequest(row, users) {
   return (
     userById(users, row?.userId)?.role === "ANESTHESIA" &&
@@ -111,10 +117,10 @@ function isAnesthesiaGoldkeyRequest(row, users) {
 }
 
 /**
- * 월간 달력 칩: 소속 부서만 (+ 수술실 화면은 마취과 골드키 포함).
+ * 월간 달력 칩: 소속 부서 (+ 수술실 화면은 마취과 골드키·주임 확정 포함).
  * - 해당일 일반휴가 등 선정 확정 있음 → 선정 확정만 (+ 병가·결혼·분만은 별도 항상 표시)
  * - 미확정(오늘 이후) → 신청·반려 표시, 취소(회색) 제외
- * - 타 부서 일반휴가 등 → 표시 안 함 (팝업 상세에서만)
+ * - 타 부서: 마취 골드키·주임 확정만 칩 표시 (그 외는 팝업 상세)
  * - 관리자2·마취과 화면은 기존과 동일(마취 소속만)
  */
 export function filterRequestsForCalendarGrid(requests, users, viewerRole) {
@@ -123,6 +129,7 @@ export function filterRequestsForCalendarGrid(requests, users, viewerRole) {
   if (!ownDepts) return [];
 
   const includeAnesGoldkey = orViewerSeesAnesthesiaGoldkeyOnCalendar(viewerRole);
+  const includeChiefConfirmed = orViewerSeesChiefConfirmedOnCalendar(viewerRole);
   const visibleIds = new Set();
   const byDayKey = new Map();
 
@@ -132,7 +139,9 @@ export function filterRequestsForCalendarGrid(requests, users, viewerRole) {
 
     const isOwn = ownDepts.has(subjectRole);
     const isAnesGold = includeAnesGoldkey && isAnesthesiaGoldkeyRequest(r, users);
-    if (!isOwn && !isAnesGold) continue;
+    const isChiefConfirmed =
+      includeChiefConfirmed && subjectRole === "CHIEF" && isConfirmedLeaveStatus(r.status);
+    if (!isOwn && !isAnesGold && !isChiefConfirmed) continue;
 
     // 마취 골드키는 일반휴가와 확정/신청 판정을 섞지 않도록 별도 키
     const key = isAnesGold
@@ -144,6 +153,14 @@ export function filterRequestsForCalendarGrid(requests, users, viewerRole) {
 
   for (const [key, dayRows] of byDayKey) {
     const leaveDateYmd = key.split("|")[0];
+    const subjectRole = key.split("|")[1];
+    // 주임 칩: 확정만 (소속 부서 신청 규칙 미적용)
+    if (subjectRole === "CHIEF" && !ownDepts.has("CHIEF")) {
+      for (const r of dayRows) {
+        if (isConfirmedLeaveStatus(r.status)) visibleIds.add(String(r.id ?? ""));
+      }
+      continue;
+    }
     for (const r of ownDeptRowsVisibleOnCalendarGrid(dayRows, leaveDateYmd)) {
       visibleIds.add(String(r.id ?? ""));
     }
